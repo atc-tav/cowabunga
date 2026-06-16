@@ -77,6 +77,12 @@ export class GridMover {
     this._y = y;
   }
 
+  /** Halt movement and clear any queued turn. */
+  stop(): void {
+    this._dir = { x: 0, y: 0 };
+    this.desired = { x: 0, y: 0 };
+  }
+
   update(deltaMs: number): void {
     const step = (this.speed * deltaMs) / 1000;
     const col = this.grid.worldToCol(this._x);
