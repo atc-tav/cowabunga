@@ -41,7 +41,9 @@ export class DKScene extends BaseGameScene {
     this.mario = new PlatformerBody(MARIO_START.x, MARIO_START.y - MARIO_H / 2, MARIO_W, MARIO_H);
     this.sprite = this.add.image(this.mario.x, this.mario.y, TX.marioWalk0).setDepth(10);
 
-    this.add.text(4, HEIGHT - 10, 'ARROWS MOVE   SPACE JUMP', HINT_STYLE);
+    this.add
+      .text(WIDTH / 2, 34, 'ARROWS MOVE   SPACE JUMP', HINT_STYLE)
+      .setOrigin(0.5, 0);
   }
 
   protected updateGame(_time: number, delta: number): void {
