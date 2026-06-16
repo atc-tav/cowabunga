@@ -20,13 +20,16 @@ import {
   BARREL_SPEED,
   BARREL_FALL_SPEED,
   BARREL_INTERVAL_MS,
+  BARREL_INTERVAL_JITTER,
   BARREL_FRAME_MS,
   BARREL_DESCEND_CHANCE,
   BARREL_RIDE,
   BARREL_HIT_DIST,
   LIVES_START,
-  READY_MS,
   COUNTDOWN_STEP_MS,
+  HELP_FLASH_MS,
+  HELP_PERIOD_MIN_MS,
+  HELP_PERIOD_MAX_MS,
   DEATH_PAUSE_MS,
   WIN_MS,
   GAMEOVER_MS,
@@ -65,10 +68,11 @@ export class DKScene extends BaseGameScene {
   private lives!: LivesManager;
   private readonly lifeIcons: Phaser.GameObjects.Image[] = [];
   private banner!: Phaser.GameObjects.Text;
+  private countdownText!: Phaser.GameObjects.Text;
   private helpText!: Phaser.GameObjects.Text;
-  private readyTimer = 0;
   private countdownTimer = 0;
   private countdownNum = 0;
+  private helpTimer = 0;
 
   private facing: 1 | -1 = 1;
   private walkTimer = 0;
@@ -115,10 +119,17 @@ export class DKScene extends BaseGameScene {
       .setOrigin(0.5)
       .setColor('#fcfc00')
       .setDepth(1000);
+    this.countdownText = this.add
+      .text(WIDTH / 2, HEIGHT / 2, '', { fontFamily: 'monospace', fontSize: '40px', color: '#ffffff' })
+      .setOrigin(0.5)
+      .setDepth(1000)
+      .setVisible(false);
+
+    this.helpTimer = Phaser.Math.Between(HELP_PERIOD_MIN_MS, HELP_PERIOD_MAX_MS);
 
     this.flow = new StateMachine<DKScene>(this)
-      .add('intro', { enter: () => this.enterIntro(), update: (_c, dt) => this.updateIntro(dt) })
-      .add('ready', { enter: () => this.enterReady(), update: (_c, dt) => this.updateReady(dt) })
+      .add('intro', { enter: () => this.enterIntro() })
+      .add('countdown', { enter: () => this.enterCountdown(), update: (_c, dt) => this.updateCountdown(dt) })
       .add('playing', { update: (_c, dt) => this.updatePlaying(dt) })
       .add('dying', { enter: () => this.enterDying() })
       .add('won', { enter: () => this.enterWon() })
@@ -139,20 +150,25 @@ export class DKScene extends BaseGameScene {
 
   // --- flow ---------------------------------------------------------------
 
-  /** Level-start sequence: Pauline cries HELP, DK immediately rolls barrels,
-   *  and a 3-2-1-GO! countdown lets the barrels pre-roll down the screen. */
+  /** Level start only: Pauline cries HELP! (flashes 3x), then the countdown. */
   private enterIntro(): void {
     this.placeMarioAtStart();
     this.clearBarrels();
-    this.barrelTimer = 0; // DK throws immediately
-    this.helpText.setVisible(true);
-    this.countdownNum = 3;
-    this.countdownTimer = COUNTDOWN_STEP_MS;
-    this.banner.setText('3').setColor('#fcfc00').setVisible(true);
+    this.flashHelp(3, () => this.flow.transition('countdown'));
   }
 
-  private updateIntro(delta: number): void {
-    // Barrels roll during the countdown; the player can't move or be hit yet.
+  /** Plays at level start (after HELP) AND on every respawn: big 3-2-1-GO!
+   *  while DK's barrels begin rolling. Player is frozen and safe until GO. */
+  private enterCountdown(): void {
+    this.placeMarioAtStart();
+    this.clearBarrels();
+    this.barrelTimer = 0; // DK starts rolling immediately
+    this.countdownNum = 3;
+    this.countdownTimer = COUNTDOWN_STEP_MS;
+    this.countdownText.setText('3').setVisible(true);
+  }
+
+  private updateCountdown(delta: number): void {
     this.spawnBarrels(delta);
     this.updateBarrels(delta);
 
@@ -163,29 +179,29 @@ export class DKScene extends BaseGameScene {
     this.countdownTimer = COUNTDOWN_STEP_MS;
     this.countdownNum -= 1;
     if (this.countdownNum > 0) {
-      this.banner.setText(String(this.countdownNum));
+      this.countdownText.setText(String(this.countdownNum));
     } else if (this.countdownNum === 0) {
-      this.banner.setText('GO!');
+      this.countdownText.setText('GO!');
     } else {
-      this.banner.setVisible(false);
+      this.countdownText.setVisible(false);
       this.flow.transition('playing');
     }
   }
 
-  private enterReady(): void {
-    this.readyTimer = READY_MS;
-    this.banner.setText('READY!').setColor('#fcfc00').setVisible(true);
-    this.placeMarioAtStart();
-    this.clearBarrels();
-    this.barrelTimer = BARREL_INTERVAL_MS;
-  }
-
-  private updateReady(delta: number): void {
-    this.readyTimer -= delta;
-    if (this.readyTimer <= 0) {
-      this.banner.setVisible(false);
-      this.flow.transition('playing');
-    }
+  /** Flash HELP! `times`, then hide; optional callback when done. */
+  private flashHelp(times: number, onComplete?: () => void): void {
+    this.helpText.setVisible(true).setAlpha(1);
+    this.tweens.add({
+      targets: this.helpText,
+      alpha: 0,
+      duration: HELP_FLASH_MS,
+      yoyo: true,
+      repeat: times - 1,
+      onComplete: () => {
+        this.helpText.setVisible(false).setAlpha(1);
+        onComplete?.();
+      },
+    });
   }
 
   private updatePlaying(delta: number): void {
@@ -198,6 +214,7 @@ export class DKScene extends BaseGameScene {
 
     this.spawnBarrels(delta);
     this.updateBarrels(delta);
+    this.tickHelp(delta);
 
     if (this.reachedPauline()) {
       this.flow.transition('won');
@@ -223,7 +240,7 @@ export class DKScene extends BaseGameScene {
       return;
     }
     this.refreshLives();
-    this.flow.transition('ready');
+    this.flow.transition('countdown'); // replay the 3-2-1-GO! on respawn
   }
 
   private enterWon(): void {
@@ -360,12 +377,21 @@ export class DKScene extends BaseGameScene {
 
   // --- barrels ------------------------------------------------------------
 
+  /** Periodically flash HELP! twice while playing, at random 5-15s intervals. */
+  private tickHelp(delta: number): void {
+    this.helpTimer -= delta;
+    if (this.helpTimer <= 0) {
+      this.helpTimer = Phaser.Math.Between(HELP_PERIOD_MIN_MS, HELP_PERIOD_MAX_MS);
+      this.flashHelp(2);
+    }
+  }
+
   private spawnBarrels(delta: number): void {
     this.barrelTimer -= delta;
     if (this.barrelTimer > 0) {
       return;
     }
-    this.barrelTimer = BARREL_INTERVAL_MS;
+    this.barrelTimer = BARREL_INTERVAL_MS + Phaser.Math.Between(-BARREL_INTERVAL_JITTER, BARREL_INTERVAL_JITTER);
     const x = DK_X + 16;
     this.barrels.push({
       sprite: this.add.image(x, this.surfaceAt(0, x) - BARREL_RIDE, BARREL_KEYS[0]).setDepth(8),
