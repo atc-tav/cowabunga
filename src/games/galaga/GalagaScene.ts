@@ -5,7 +5,7 @@ import { LivesManager } from '../../shared/LivesManager';
 import { floatingText } from '../../shared/popups';
 import { playFrames } from '../../shared/effects';
 import { PathFollower } from '../../shared/PathFollower';
-import { LABEL_STYLE } from '../../shared/ui';
+import { LABEL_STYLE, HINT_STYLE } from '../../shared/ui';
 import {
   WIDTH,
   HEIGHT,
@@ -19,11 +19,14 @@ import {
   WAVE_RESPAWN_MS,
   SWAY_AMP,
   SWAY_FREQ,
+  ENTRY_SPEED,
   DIVE_SPEED,
   DIVE_INTERVAL_MS,
+  DIVE_INTERVAL_MIN_MS,
   MAX_DIVERS,
   ENEMY_BULLET_SPEED,
   ENEMY_FIRE_MS,
+  ENEMY_FIRE_MIN_MS,
   LIVES_START,
   READY_MS,
   DEATH_PAUSE_MS,
@@ -34,23 +37,50 @@ import {
   BEAM_HOLD_MS,
   BEAM_RETRACT_MS,
   BEAM_HALF_WIDTH,
-  CAPTURE_CHANCE,
+  BEAM_LOCK_MS,
+  PULL_MS,
+  TOW_MS,
+  CAPTURE_INTERVAL_MS,
   DUAL_OFFSET,
   RESCUE_FLY_MS,
+  WAVE_SPEED_RAMP,
+  MAX_WAVE_RAMP,
+  STAGE_BANNER_MS,
+  CHALLENGE_EVERY,
+  CHALLENGE_BONUS_PER,
+  CHALLENGE_PERFECT_BONUS,
+  CHALLENGE_SPEED,
+  CHAIN_STAGGER_MS,
+  CHALLENGE_SAFETY_MS,
+  CHALLENGE_PATTERN_COUNT,
+  CHAIN_FIRST_AT_MS,
+  CHAIN_GAP_MS,
+  CHALLENGE_BASE_CHAINS,
+  CHALLENGE_CHAIN_COUNT,
+  INVULN_MS,
+  DIVE_GRACE_MS,
+  ENEMY_SCORE,
+  EnemyType,
 } from './constants';
 import { COLORS } from './palette';
 import { buildGalagaTextures, enemyFrame, EXPLOSION_KEYS, TX } from './sprites';
 import { Starfield } from './starfield';
 import { buildFormation, Enemy } from './enemies';
-import { makeEntryPath, makeDivePath, makeApproachPath } from './entryPaths';
+import { makeEntryPath, makeDivePath, makeApproachPath, makeChallengePath } from './entryPaths';
+
+interface ChainSpec {
+  type: EnemyType;
+  variant: number;
+  count: number;
+}
 
 type CapturePhase = 'approach' | 'grow' | 'hold' | 'retract';
 
 /**
- * Galaga — slice 4: dives, enemy fire, and player death. Enemies peel off the
- * formation to dive and shoot; getting hit (by a bolt or a diver) costs a life.
- * Round flow runs through the shared StateMachine (ready/playing/dying/
- * gameover), reusing LivesManager just like Pac-Man.
+ * Galaga — slice 6: waves, the bonus stage, and the capture cutscene. Rounds
+ * ramp in speed per wave, every Nth wave is a no-fire challenge stage, and the
+ * tractor beam now animates with a readable spin-and-rise capture + a rescue
+ * fly-back. Round flow runs through the shared StateMachine.
  */
 export class GalagaScene extends BaseGameScene {
   private stars!: Starfield;
@@ -70,17 +100,39 @@ export class GalagaScene extends BaseGameScene {
   private readyTimer = 0;
   private respawning = false;
 
+  // wave / difficulty
+  private wave = 1;
+  private isChallenge = false;
+  private challengeChains: ChainSpec[] = [];
+  private challengeClock = 0;
+  private challengeGap = 0;
+  private challengeHits = 0;
+  private challengeTotal = 0;
+  private entrySpeed = ENTRY_SPEED;
+  private diveSpeed = DIVE_SPEED;
+  private fireMs = ENEMY_FIRE_MS;
+  private diveIntervalMs = DIVE_INTERVAL_MS;
+
+  // tractor beam / capture
   private beamGfx!: Phaser.GameObjects.Graphics;
   private captor?: Enemy;
   private capturePhase: CapturePhase = 'approach';
   private captureTimer = 0;
+  private captureCooldown = 0;
+  private lockTimer = 0;
+  private beamClock = 0;
+  private captureBoss?: Enemy;
   private captiveSprite?: Phaser.GameObjects.Image;
   private lostToCapture = false;
 
+  // dual fighter
   private dual = false;
   private wingman?: Phaser.GameObjects.Image;
+  private invuln = 0; // i-frames after a wingman loss
+  private diveGrace = 0; // breathing space before diving starts a stage
 
   private banner!: Phaser.GameObjects.Text;
+  private stageBanner!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'game-galaga', gameId: 'galaga', width: WIDTH, height: HEIGHT });
@@ -89,27 +141,27 @@ export class GalagaScene extends BaseGameScene {
   protected createGame(): void {
     buildGalagaTextures(this);
 
-    // Full reset (createGame re-runs on every entry; the constructor does not).
     this.destroyAll(this.bullets);
     this.destroyAll(this.enemyBullets);
     this.destroyAll(this.lifeIcons);
     this.enemies.forEach((e) => e.sprite.destroy());
     this.enemies = [];
-    this.respawning = false;
-    this.diveTimer = DIVE_INTERVAL_MS;
-
     this.captor = undefined;
+    this.captureBoss = undefined;
     this.captiveSprite?.destroy();
     this.captiveSprite = undefined;
-    this.lostToCapture = false;
     this.wingman?.destroy();
     this.wingman = undefined;
     this.dual = false;
+    this.lostToCapture = false;
+    this.respawning = false;
+    this.invuln = 0;
+    this.diveGrace = 0;
+    this.wave = 1;
 
     this.stars = new Starfield(this, WIDTH, HEIGHT);
     this.beamGfx = this.add.graphics().setDepth(7);
     this.player = this.add.image(WIDTH / 2, PLAYER_Y, TX.ship).setDepth(10);
-    this.enemies = buildFormation(this);
 
     this.lives = new LivesManager(LIVES_START);
     this.refreshLives();
@@ -119,10 +171,18 @@ export class GalagaScene extends BaseGameScene {
       .setOrigin(0.5)
       .setColor('#fcfc00')
       .setDepth(1000);
+    this.stageBanner = this.add
+      .text(WIDTH / 2, HEIGHT / 2 - 24, '', HINT_STYLE)
+      .setOrigin(0.5)
+      .setColor('#3cbcfc')
+      .setDepth(1000);
+
+    this.startWave();
 
     this.flow = new StateMachine<GalagaScene>(this)
       .add('ready', { enter: () => this.enterReady(), update: (_c, dt) => this.updateReady(dt) })
       .add('playing', { update: (_c, dt) => this.updatePlaying(dt) })
+      .add('captured', { enter: () => this.enterCaptured(), update: (_c, dt) => this.updateCaptured(dt) })
       .add('dying', { enter: () => this.enterDying() })
       .add('gameover', { enter: () => this.enterGameOver() });
     this.flow.transition('ready');
@@ -133,12 +193,77 @@ export class GalagaScene extends BaseGameScene {
     this.flow.update(delta);
   }
 
+  // --- waves --------------------------------------------------------------
+
+  private startWave(): void {
+    this.applyWaveDifficulty();
+    this.isChallenge = this.wave % CHALLENGE_EVERY === 0;
+
+    this.diveGrace = DIVE_GRACE_MS;
+    if (this.isChallenge) {
+      this.startChallenge();
+    } else {
+      this.enemies = buildFormation(this, this.entrySpeed);
+      this.diveTimer = this.diveIntervalMs;
+      this.captureCooldown = CAPTURE_INTERVAL_MS;
+    }
+
+    const text = this.isChallenge ? 'CHALLENGING STAGE' : `STAGE ${this.wave}`;
+    this.stageBanner.setText(text).setVisible(true);
+    this.time.delayedCall(STAGE_BANNER_MS, () => this.stageBanner.setVisible(false));
+  }
+
+  private startChallenge(): void {
+    this.enemies = [];
+    this.challengeClock = 0;
+    this.challengeHits = 0;
+    this.challengeGap = CHAIN_FIRST_AT_MS; // breathing space before the first chain
+
+    // Progressively longer stages: +1 chain per challenge stage reached.
+    const stageIndex = Math.floor(this.wave / CHALLENGE_EVERY); // 1, 2, 3, ...
+    const numChains = CHALLENGE_BASE_CHAINS + (stageIndex - 1);
+    const types: EnemyType[] = ['bee', 'butterfly', 'bee', 'butterfly', 'boss'];
+
+    this.challengeChains = [];
+    for (let k = 0; k < numChains; k++) {
+      this.challengeChains.push({
+        type: types[k % types.length],
+        variant: k % CHALLENGE_PATTERN_COUNT, // cycle loops / zig-zags / swoops
+        count: CHALLENGE_CHAIN_COUNT,
+      });
+    }
+    this.challengeTotal = this.challengeChains.reduce((n, c) => n + c.count, 0);
+  }
+
+  private applyWaveDifficulty(): void {
+    const r = Math.min(this.wave - 1, MAX_WAVE_RAMP);
+    this.entrySpeed = ENTRY_SPEED + r * WAVE_SPEED_RAMP;
+    this.diveSpeed = DIVE_SPEED + r * WAVE_SPEED_RAMP;
+    this.fireMs = Math.max(ENEMY_FIRE_MS - r * 60, ENEMY_FIRE_MIN_MS);
+    this.diveIntervalMs = Math.max(DIVE_INTERVAL_MS - r * 160, DIVE_INTERVAL_MIN_MS);
+  }
+
+  private advanceWave(): void {
+    this.respawning = true;
+    this.captor = undefined;
+    this.beamGfx.clear();
+    this.captiveSprite?.destroy();
+    this.captiveSprite = undefined;
+    this.time.delayedCall(WAVE_RESPAWN_MS, () => {
+      this.wave++;
+      this.startWave();
+      this.respawning = false;
+    });
+  }
+
   // --- flow ---------------------------------------------------------------
 
   private enterReady(): void {
     this.readyTimer = READY_MS;
+    this.diveGrace = DIVE_GRACE_MS;
+    this.invuln = 0;
     this.banner.setText('READY!').setColor('#fcfc00').setVisible(true);
-    this.player.setPosition(WIDTH / 2, PLAYER_Y).setVisible(true);
+    this.player.setPosition(WIDTH / 2, PLAYER_Y).setAngle(0).setAlpha(1).setVisible(true);
     this.destroyAll(this.enemyBullets);
     this.recallDivers();
     this.clearActiveCapture();
@@ -157,30 +282,209 @@ export class GalagaScene extends BaseGameScene {
     this.movePlayer(delta);
     this.handleFire();
     this.updateBullets(delta);
-    this.advanceFormation(delta, true);
+
+    if (this.isChallenge) {
+      this.flapEnemies(delta);
+      this.updateChallenge(delta);
+      this.checkHits();
+      // Dying in a challenge stage costs no life — it just ends the stage.
+      if (this.playerOverlapped()) {
+        this.endChallenge();
+      }
+      return;
+    }
+
+    if (this.diveGrace > 0) {
+      this.diveGrace -= delta;
+    }
+    if (this.invuln > 0) {
+      this.invuln -= delta;
+      this.player.setAlpha(Math.floor(this.invuln / 80) % 2 === 0 ? 1 : 0.4);
+      if (this.invuln <= 0) {
+        this.player.setAlpha(1);
+      }
+    }
+
+    this.advanceFormation(delta, this.diveGrace <= 0);
     this.updateCapture(delta);
-    this.updateCaptive();
+    this.scheduleCapture(delta);
     this.updateEnemyFire(delta);
     this.updateEnemyBullets(delta);
     this.checkHits();
-    if (this.playerWasHit() && this.lethalHit(false)) {
+    if (this.resolvePlayerHit()) {
       return;
     }
     this.checkWaveCleared();
   }
 
+  // --- challenge stage ----------------------------------------------------
+
+  private updateChallenge(delta: number): void {
+    this.challengeClock += delta;
+
+    // Move chain enemies; remove those that have flown off the screen.
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const enemy = this.enemies[i];
+      enemy.elapsed += delta;
+      if (enemy.elapsed < enemy.startDelay) {
+        continue;
+      }
+      const p = enemy.follower.update(delta);
+      enemy.sprite.setPosition(p.x, p.y);
+      if (enemy.follower.done) {
+        enemy.sprite.destroy();
+        this.enemies.splice(i, 1);
+      }
+    }
+
+    if (this.respawning) {
+      return;
+    }
+    if (this.challengeClock >= CHALLENGE_SAFETY_MS) {
+      this.endChallenge();
+      return;
+    }
+
+    // Event-driven spacing: only launch the next chain once the screen is clear
+    // for a gap, guaranteeing >=1s of empty space between chains.
+    if (this.enemies.length > 0) {
+      this.challengeGap = CHAIN_GAP_MS;
+      return;
+    }
+    this.challengeGap -= delta;
+    if (this.challengeGap > 0) {
+      return;
+    }
+    if (this.challengeChains.length > 0) {
+      this.spawnChain(this.challengeChains.shift() as ChainSpec);
+      this.challengeGap = CHAIN_GAP_MS;
+    } else {
+      this.endChallenge();
+    }
+  }
+
+  private spawnChain(spec: ChainSpec): void {
+    const path = makeChallengePath(spec.variant);
+    for (let i = 0; i < spec.count; i++) {
+      const sprite = this.add.image(path[0].x, path[0].y, enemyFrame(spec.type, 0)).setDepth(8);
+      this.enemies.push({
+        sprite,
+        type: spec.type,
+        points: ENEMY_SCORE[spec.type],
+        home: { x: path[0].x, y: path[0].y },
+        follower: new PathFollower(path, CHALLENGE_SPEED),
+        startDelay: i * CHAIN_STAGGER_MS,
+        elapsed: 0,
+        state: 'challenge',
+        fireTimer: 0,
+        hasCaptive: false,
+      });
+    }
+  }
+
+  private endChallenge(): void {
+    if (this.respawning) {
+      return;
+    }
+    const perfect = this.challengeHits >= this.challengeTotal;
+    const bonus = this.challengeHits * CHALLENGE_BONUS_PER + (perfect ? CHALLENGE_PERFECT_BONUS : 0);
+    this.addScore(bonus);
+    this.audio.play('bonus');
+    floatingText(this, WIDTH / 2, HEIGHT / 2, perfect ? `PERFECT! ${bonus}` : `BONUS ${bonus}`, {
+      color: '#fcff5e',
+      fontSize: '10px',
+      durationMs: 1200,
+    });
+    this.enemies.forEach((e) => e.sprite.destroy());
+    this.enemies = [];
+    this.challengeChains = [];
+    this.advanceWave();
+  }
+
+  private enterCaptured(): void {
+    const boss = this.captureBoss;
+    if (!boss) {
+      this.flow.transition('dying');
+      return;
+    }
+    this.audio.play('captured');
+    this.cameras.main.flash(160, 255, 80, 80);
+    floatingText(this, this.player.x, this.player.y - 14, 'CAPTURED!', {
+      color: '#ff5555',
+      fontSize: '8px',
+    });
+    // Phase 1: the caught ship spins and rises into the boss.
+    this.tweens.add({
+      targets: this.player,
+      x: boss.sprite.x,
+      y: boss.sprite.y,
+      angle: 720,
+      duration: PULL_MS,
+      ease: 'Sine.easeIn',
+      onComplete: () => this.towCaptive(),
+    });
+  }
+
+  private towCaptive(): void {
+    const boss = this.captureBoss;
+    if (!boss) {
+      this.flow.transition('dying');
+      return;
+    }
+    this.player.setVisible(false).setAngle(0);
+    this.beamGfx.clear();
+    boss.hasCaptive = true;
+    // Docks BEHIND the boss (above it, drawn behind) so the boss shields it —
+    // you must destroy the boss to rescue, not the captive.
+    this.captiveSprite = this.add
+      .image(boss.sprite.x, boss.sprite.y - 11, TX.ship)
+      .setTint(COLORS.captive)
+      .setAngle(180)
+      .setDepth(7);
+    // Phase 2: the boss flies up and off the top towing the captive, then
+    // re-enters from the top when play resumes.
+    this.tweens.add({
+      targets: boss.sprite,
+      y: -24,
+      duration: TOW_MS,
+      ease: 'Sine.easeIn',
+      onComplete: () => {
+        this.recycleToFormation(boss);
+        this.captureBoss = undefined;
+        this.lostToCapture = true;
+        this.flow.transition('dying');
+      },
+    });
+  }
+
+  private updateCaptured(delta: number): void {
+    this.beamClock += delta;
+    if (!this.captureBoss) {
+      return;
+    }
+    if (this.captiveSprite) {
+      // Tow phase: glue the captive behind the rising boss.
+      this.captiveSprite.setPosition(this.captureBoss.sprite.x, this.captureBoss.sprite.y - 11);
+    } else {
+      // Pull phase: keep the locked beam drawn while the ship spirals in.
+      this.drawBeam(this.captureBoss, 1, 1);
+    }
+  }
+
   private enterDying(): void {
     if (this.lostToCapture) {
-      this.lostToCapture = false; // ship was pulled away, not blown up
+      this.lostToCapture = false; // pulled away, not blown up
     } else {
       this.audio.play('explosion');
       playFrames(this, this.player.x, this.player.y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
     }
     this.player.setVisible(false);
     this.setDual(false);
+    this.destroyAll(this.bullets); // your shots die with you
     this.destroyAll(this.enemyBullets);
     this.recallDivers();
     this.clearActiveCapture();
+    this.invuln = 0;
     this.time.delayedCall(DEATH_PAUSE_MS, () => this.afterDeath());
   }
 
@@ -219,17 +523,15 @@ export class GalagaScene extends BaseGameScene {
     }
     const shipXs = this.dual && this.wingman ? [this.player.x, this.wingman.x] : [this.player.x];
     const cap = this.dual ? MAX_BULLETS * 2 : MAX_BULLETS;
-    let fired = false;
+    // Fire the whole volley atomically so both ships always shoot together
+    // (never a lone shot when rapid-firing).
+    if (this.bullets.length + shipXs.length > cap) {
+      return;
+    }
     for (const x of shipXs) {
-      if (this.bullets.length >= cap) {
-        break;
-      }
       this.bullets.push(this.add.image(x, PLAYER_Y - 8, TX.bullet).setDepth(9));
-      fired = true;
     }
-    if (fired) {
-      this.audio.play('shoot');
-    }
+    this.audio.play('shoot');
   }
 
   private setDual(on: boolean): void {
@@ -245,15 +547,61 @@ export class GalagaScene extends BaseGameScene {
     }
   }
 
-  /** Route a lethal event: a dual fighter sacrifices its wingman; a single ship dies. */
-  private lethalHit(captured: boolean): boolean {
+  private shipBounds(): Phaser.Geom.Rectangle[] {
+    const list = [this.player.getBounds()];
+    if (this.dual && this.wingman) {
+      list.push(this.wingman.getBounds());
+    }
+    return list;
+  }
+
+  /** No-side-effect overlap test (used by the challenge stage). */
+  private playerOverlapped(): boolean {
+    const ships = this.shipBounds();
+    const hit = (r: Phaser.Geom.Rectangle): boolean =>
+      ships.some((s) => Phaser.Geom.Intersects.RectangleToRectangle(s, r));
+    if (this.enemyBullets.some((eb) => hit(eb.getBounds()))) {
+      return true;
+    }
+    return this.enemies.some(
+      (e) => (e.state === 'diving' || e.state === 'challenge') && hit(e.sprite.getBounds()),
+    );
+  }
+
+  /** Resolve a hit in normal play: consume the offending bolt, lose one ship. */
+  private resolvePlayerHit(): boolean {
+    if (this.invuln > 0) {
+      return false;
+    }
+    const ships = this.shipBounds();
+    const hit = (r: Phaser.Geom.Rectangle): boolean =>
+      ships.some((s) => Phaser.Geom.Intersects.RectangleToRectangle(s, r));
+
+    for (let i = this.enemyBullets.length - 1; i >= 0; i--) {
+      if (hit(this.enemyBullets[i].getBounds())) {
+        this.enemyBullets[i].destroy();
+        this.enemyBullets.splice(i, 1);
+        return this.applyPlayerHit();
+      }
+    }
+    for (const enemy of this.enemies) {
+      if (enemy.state === 'diving' && hit(enemy.sprite.getBounds())) {
+        return this.applyPlayerHit();
+      }
+    }
+    return false;
+  }
+
+  /** Lose one ship: a dual fighter drops its wingman (i-frames), a single ship dies. */
+  private applyPlayerHit(): boolean {
     if (this.dual && this.wingman) {
       playFrames(this, this.wingman.x, this.wingman.y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
       this.audio.play('explosion');
       this.setDual(false);
-      return false; // keep playing as a single ship, no life lost
+      this.invuln = INVULN_MS; // so the same bolt/diver can't kill the survivor
+      return false;
     }
-    this.lostToCapture = captured;
+    this.lostToCapture = false;
     this.flow.transition('dying');
     return true;
   }
@@ -278,7 +626,7 @@ export class GalagaScene extends BaseGameScene {
 
     for (const enemy of this.enemies) {
       if (enemy.state === 'capturing') {
-        continue; // driven by updateCapture()
+        continue;
       }
       if (enemy.state === 'entering') {
         enemy.elapsed += delta;
@@ -305,6 +653,9 @@ export class GalagaScene extends BaseGameScene {
     if (allowDive) {
       this.scheduleDives(delta);
     }
+    // Keep the captive glued to its captor here so it stays visible through
+    // the boss's re-entry fly-in during READY, not just during PLAYING.
+    this.updateCaptive();
   }
 
   private flapEnemies(delta: number): void {
@@ -324,7 +675,7 @@ export class GalagaScene extends BaseGameScene {
     if (this.diveTimer > 0) {
       return;
     }
-    this.diveTimer = DIVE_INTERVAL_MS;
+    this.diveTimer = this.diveIntervalMs;
     if (this.enemies.filter((e) => e.state === 'diving').length >= MAX_DIVERS) {
       return;
     }
@@ -333,153 +684,18 @@ export class GalagaScene extends BaseGameScene {
       return;
     }
     const enemy = Phaser.Utils.Array.GetRandom(formed);
-    // A boss with no active captive may attempt a tractor-beam capture instead.
-    if (
-      enemy.type === 'boss' &&
-      !this.captor &&
-      !this.captiveSprite &&
-      Math.random() < CAPTURE_CHANCE
-    ) {
-      this.startCapture(enemy);
-      return;
-    }
     enemy.state = 'diving';
-    enemy.follower = new PathFollower(makeDivePath(enemy.home, this.player.x), DIVE_SPEED);
-    enemy.fireTimer = ENEMY_FIRE_MS * 0.5;
+    enemy.follower = new PathFollower(makeDivePath(enemy.home, this.player.x), this.diveSpeed);
+    enemy.fireTimer = this.fireMs * 0.5;
     this.audio.play('dive');
-  }
-
-  // --- tractor beam (capture) ---------------------------------------------
-
-  private startCapture(boss: Enemy): void {
-    const hoverX = Phaser.Math.Clamp(this.player.x, PLAYER_MARGIN, WIDTH - PLAYER_MARGIN);
-    boss.state = 'capturing';
-    boss.follower = new PathFollower(makeApproachPath(boss.home, hoverX, BEAM_HOVER_Y), APPROACH_SPEED);
-    this.captor = boss;
-    this.capturePhase = 'approach';
-    this.audio.play('beam');
-  }
-
-  private updateCapture(delta: number): void {
-    const boss = this.captor;
-    if (!boss) {
-      return;
-    }
-    if (this.capturePhase === 'approach') {
-      const p = boss.follower.update(delta);
-      boss.sprite.setPosition(p.x, p.y);
-      if (boss.follower.done) {
-        this.capturePhase = 'grow';
-        this.captureTimer = BEAM_GROW_MS;
-      }
-      return;
-    }
-
-    this.captureTimer -= delta;
-    if (this.capturePhase === 'grow') {
-      this.drawBeam(boss, 1 - this.captureTimer / BEAM_GROW_MS);
-      if (this.captureTimer <= 0) {
-        this.capturePhase = 'hold';
-        this.captureTimer = BEAM_HOLD_MS;
-      }
-    } else if (this.capturePhase === 'hold') {
-      this.drawBeam(boss, 1);
-      if (this.player.visible && Math.abs(this.player.x - boss.sprite.x) < BEAM_HALF_WIDTH) {
-        this.doCapture(boss);
-        return;
-      }
-      if (this.captureTimer <= 0) {
-        this.capturePhase = 'retract';
-        this.captureTimer = BEAM_RETRACT_MS;
-      }
-    } else if (this.capturePhase === 'retract') {
-      this.drawBeam(boss, this.captureTimer / BEAM_RETRACT_MS);
-      if (this.captureTimer <= 0) {
-        this.endCapture(boss);
-      }
-    }
-  }
-
-  /** Draw the cone from the boss to the bottom; `scale` in 0..1 sets opacity. */
-  private drawBeam(boss: Enemy, scale: number): void {
-    const s = Phaser.Math.Clamp(scale, 0, 1);
-    const bx = boss.sprite.x;
-    const by = boss.sprite.y + 6;
-    this.beamGfx.clear();
-    this.beamGfx.fillStyle(COLORS.beam, 0.28 * s);
-    this.beamGfx.fillPoints(
-      [
-        new Phaser.Geom.Point(bx - 3, by),
-        new Phaser.Geom.Point(bx + 3, by),
-        new Phaser.Geom.Point(bx + BEAM_HALF_WIDTH, HEIGHT),
-        new Phaser.Geom.Point(bx - BEAM_HALF_WIDTH, HEIGHT),
-      ],
-      true,
-    );
-  }
-
-  private doCapture(boss: Enemy): void {
-    this.beamGfx.clear();
-    this.captor = undefined;
-
-    // A dual fighter just loses its wingman to the beam — no capture, no life.
-    if (this.dual) {
-      this.setDual(false);
-      this.audio.play('captured');
-      this.recycleToFormation(boss);
-      return;
-    }
-
-    boss.hasCaptive = true;
-
-    // The pulled-in ship rides above its captor.
-    this.captiveSprite = this.add
-      .image(boss.sprite.x, boss.sprite.y - 12, TX.ship)
-      .setTint(COLORS.captive)
-      .setDepth(9);
-
-    this.recycleToFormation(boss);
-
-    this.lostToCapture = true;
-    this.audio.play('captured');
-    this.flow.transition('dying');
-  }
-
-  private endCapture(boss: Enemy): void {
-    this.beamGfx.clear();
-    this.captor = undefined;
-    this.recycleToFormation(boss);
-  }
-
-  private clearActiveCapture(): void {
-    if (this.captor) {
-      const boss = this.captor;
-      this.captor = undefined;
-      this.beamGfx.clear();
-      this.recycleToFormation(boss);
-    }
-  }
-
-  /** Keep a captured ship glued above its captor. */
-  private updateCaptive(): void {
-    if (!this.captiveSprite) {
-      return;
-    }
-    const captor = this.enemies.find((e) => e.hasCaptive);
-    if (!captor) {
-      this.captiveSprite.destroy();
-      this.captiveSprite = undefined;
-      return;
-    }
-    this.captiveSprite.setPosition(captor.sprite.x, captor.sprite.y - 12);
   }
 
   private recycleToFormation(enemy: Enemy): void {
     const fromLeft = enemy.home.x < WIDTH / 2;
     const points = makeEntryPath(enemy.home, fromLeft);
     enemy.sprite.setPosition(points[0].x, points[0].y);
-    enemy.follower = new PathFollower(points, DIVE_SPEED);
-    enemy.elapsed = enemy.startDelay; // re-enter immediately, no stagger
+    enemy.follower = new PathFollower(points, this.entrySpeed);
+    enemy.elapsed = enemy.startDelay;
     enemy.state = 'entering';
   }
 
@@ -498,7 +714,7 @@ export class GalagaScene extends BaseGameScene {
       }
       enemy.fireTimer -= delta;
       if (enemy.fireTimer <= 0) {
-        enemy.fireTimer = ENEMY_FIRE_MS;
+        enemy.fireTimer = this.fireMs;
         this.enemyBullets.push(
           this.add.image(enemy.sprite.x, enemy.sprite.y + 6, TX.enemyBullet).setDepth(9),
         );
@@ -518,6 +734,184 @@ export class GalagaScene extends BaseGameScene {
     }
   }
 
+  // --- tractor beam / capture ---------------------------------------------
+
+  private scheduleCapture(delta: number): void {
+    if (this.captor || this.captiveSprite || this.dual) {
+      return;
+    }
+    this.captureCooldown -= delta;
+    if (this.captureCooldown > 0) {
+      return;
+    }
+    const bosses = this.enemies.filter((e) => e.type === 'boss' && e.state === 'formed');
+    if (bosses.length === 0) {
+      this.captureCooldown = 500; // try again soon
+      return;
+    }
+    this.captureCooldown = CAPTURE_INTERVAL_MS;
+    this.startCapture(Phaser.Utils.Array.GetRandom(bosses));
+  }
+
+  private startCapture(boss: Enemy): void {
+    const hoverX = Phaser.Math.Clamp(this.player.x, PLAYER_MARGIN, WIDTH - PLAYER_MARGIN);
+    boss.state = 'capturing';
+    boss.follower = new PathFollower(makeApproachPath(boss.home, hoverX, BEAM_HOVER_Y), APPROACH_SPEED);
+    this.captor = boss;
+    this.capturePhase = 'approach';
+    this.beamClock = 0;
+    this.audio.play('beam');
+  }
+
+  private updateCapture(delta: number): void {
+    const boss = this.captor;
+    if (!boss) {
+      return;
+    }
+    this.beamClock += delta;
+    if (this.capturePhase === 'approach') {
+      const p = boss.follower.update(delta);
+      boss.sprite.setPosition(p.x, p.y);
+      if (boss.follower.done) {
+        this.capturePhase = 'grow';
+        this.captureTimer = BEAM_GROW_MS;
+        this.lockTimer = 0;
+      }
+      return;
+    }
+
+    this.captureTimer -= delta;
+    if (this.capturePhase === 'grow') {
+      this.drawBeam(boss, 1 - this.captureTimer / BEAM_GROW_MS);
+      if (this.captureTimer <= 0) {
+        this.capturePhase = 'hold';
+        this.captureTimer = BEAM_HOLD_MS;
+      }
+    } else if (this.capturePhase === 'hold') {
+      // Staying in the beam charges the lock (warning pulse); leaving resets it.
+      const inBeam = this.player.visible && Math.abs(this.player.x - boss.sprite.x) < BEAM_HALF_WIDTH;
+      this.lockTimer = inBeam ? this.lockTimer + delta : 0;
+      this.drawBeam(boss, 1, Math.min(this.lockTimer / BEAM_LOCK_MS, 1));
+      if (this.lockTimer >= BEAM_LOCK_MS) {
+        this.beginCapture(boss);
+        return;
+      }
+      if (this.captureTimer <= 0) {
+        this.capturePhase = 'retract';
+        this.captureTimer = BEAM_RETRACT_MS;
+      }
+    } else if (this.capturePhase === 'retract') {
+      this.drawBeam(boss, this.captureTimer / BEAM_RETRACT_MS);
+      if (this.captureTimer <= 0) {
+        this.endCapture(boss);
+      }
+    }
+  }
+
+  private beginCapture(boss: Enemy): void {
+    // A dual fighter just loses its wingman to the beam.
+    if (this.dual) {
+      this.beamGfx.clear();
+      this.captor = undefined;
+      this.setDual(false);
+      this.audio.play('captured');
+      this.recycleToFormation(boss);
+      return;
+    }
+    this.captor = undefined;
+    this.captureBoss = boss;
+    this.flow.transition('captured');
+  }
+
+  private endCapture(boss: Enemy): void {
+    this.beamGfx.clear();
+    this.captor = undefined;
+    this.recycleToFormation(boss);
+  }
+
+  private clearActiveCapture(): void {
+    if (this.captor) {
+      const boss = this.captor;
+      this.captor = undefined;
+      this.beamGfx.clear();
+      this.recycleToFormation(boss);
+    }
+  }
+
+  /**
+   * Draw the cone with energy bands streaming UP toward the boss. `warn` (0..1)
+   * pulses the beam blue while the lock charges, and goes solid once locked.
+   */
+  private drawBeam(boss: Enemy, scale: number, warn = 0): void {
+    const s = Phaser.Math.Clamp(scale, 0, 1);
+    const bx = boss.sprite.x;
+    const by = boss.sprite.y + 6;
+    const g = this.beamGfx;
+    let coneAlpha = 0.22 * s;
+    if (warn >= 1) {
+      coneAlpha = 0.6 * s; // locked: solid blue
+    } else if (warn > 0) {
+      coneAlpha = (0.28 + 0.32 * Math.abs(Math.sin(this.beamClock / 110))) * s; // warning pulse
+    }
+    g.clear();
+    g.fillStyle(COLORS.beam, coneAlpha);
+    g.fillPoints(
+      [
+        new Phaser.Geom.Point(bx - 3, by),
+        new Phaser.Geom.Point(bx + 3, by),
+        new Phaser.Geom.Point(bx + BEAM_HALF_WIDTH, HEIGHT),
+        new Phaser.Geom.Point(bx - BEAM_HALF_WIDTH, HEIGHT),
+      ],
+      true,
+    );
+
+    const bands = 4;
+    g.fillStyle(0xffffff, 0.45 * s);
+    for (let k = 0; k < bands; k++) {
+      const t = ((this.beamClock / 700 + k / bands) % 1 + 1) % 1;
+      const y = HEIGHT - t * (HEIGHT - by); // rises from player toward the boss
+      const frac = (y - by) / (HEIGHT - by); // 1 at the bottom, 0 at the top
+      const half = 3 + (BEAM_HALF_WIDTH - 3) * frac;
+      g.fillRect(bx - half, y - 1, half * 2, 2);
+    }
+  }
+
+  private updateCaptive(): void {
+    if (!this.captiveSprite) {
+      return;
+    }
+    const captor = this.enemies.find((e) => e.hasCaptive);
+    if (!captor) {
+      this.captiveSprite.destroy();
+      this.captiveSprite = undefined;
+      return;
+    }
+    this.captiveSprite.setPosition(captor.sprite.x, captor.sprite.y - 11);
+  }
+
+  private rescueCaptive(): void {
+    if (!this.captiveSprite) {
+      this.setDual(true);
+      return;
+    }
+    const captive = this.captiveSprite;
+    this.captiveSprite = undefined;
+    this.audio.play('rescue');
+    this.cameras.main.flash(160, 120, 200, 255);
+    floatingText(this, captive.x, captive.y, 'RESCUED!', { color: '#fcff5e', fontSize: '8px' });
+    this.tweens.add({
+      targets: captive,
+      x: this.player.x + DUAL_OFFSET,
+      y: PLAYER_Y,
+      angle: 360,
+      duration: RESCUE_FLY_MS,
+      onComplete: () => {
+        captive.destroy();
+        this.setDual(true);
+      },
+    });
+  }
+
   // --- collisions ---------------------------------------------------------
 
   private checkHits(): void {
@@ -525,7 +919,43 @@ export class GalagaScene extends BaseGameScene {
       const bullet = this.bullets[b];
       const bounds = bullet.getBounds();
 
-      // Shooting the captive ship itself loses it (the rescue risk).
+      // Enemies first, so the boss (shielding a captive) is hit before the
+      // captive behind it — that's what makes a rescue possible.
+      let consumed = false;
+      for (let e = this.enemies.length - 1; e >= 0; e--) {
+        const enemy = this.enemies[e];
+        if (!Phaser.Geom.Intersects.RectangleToRectangle(bounds, enemy.sprite.getBounds())) {
+          continue;
+        }
+        const { x, y } = enemy.sprite;
+        playFrames(this, x, y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
+        floatingText(this, x, y, String(enemy.points), { color: '#ffffff', fontSize: '8px' });
+        this.addScore(enemy.points);
+        this.audio.play('explosion');
+        if (this.isChallenge) {
+          this.challengeHits++;
+        }
+
+        if (enemy === this.captor) {
+          this.captor = undefined;
+          this.beamGfx.clear();
+        }
+        if (enemy.hasCaptive) {
+          this.rescueCaptive();
+        }
+
+        enemy.sprite.destroy();
+        this.enemies.splice(e, 1);
+        bullet.destroy();
+        this.bullets.splice(b, 1);
+        consumed = true;
+        break;
+      }
+      if (consumed) {
+        continue;
+      }
+
+      // Only an exposed captive (no shielding boss left) can be lost to fire.
       if (
         this.captiveSprite &&
         Phaser.Geom.Intersects.RectangleToRectangle(bounds, this.captiveSprite.getBounds())
@@ -537,93 +967,15 @@ export class GalagaScene extends BaseGameScene {
         this.enemies.forEach((e) => (e.hasCaptive = false));
         bullet.destroy();
         this.bullets.splice(b, 1);
-        continue;
-      }
-
-      for (let e = this.enemies.length - 1; e >= 0; e--) {
-        const enemy = this.enemies[e];
-        if (!Phaser.Geom.Intersects.RectangleToRectangle(bounds, enemy.sprite.getBounds())) {
-          continue;
-        }
-        const { x, y } = enemy.sprite;
-        playFrames(this, x, y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
-        floatingText(this, x, y, String(enemy.points), { color: '#ffffff', fontSize: '8px' });
-        this.addScore(enemy.points);
-        this.audio.play('explosion');
-
-        if (enemy === this.captor) {
-          this.captor = undefined;
-          this.beamGfx.clear();
-        }
-        // Destroying the captor frees the captive -> rescue into a dual fighter.
-        if (enemy.hasCaptive) {
-          this.rescueCaptive();
-        }
-
-        enemy.sprite.destroy();
-        this.enemies.splice(e, 1);
-        bullet.destroy();
-        this.bullets.splice(b, 1);
-        break;
       }
     }
-  }
-
-  /** Free the captured ship: fly it down to the player and form a dual fighter. */
-  private rescueCaptive(): void {
-    if (!this.captiveSprite) {
-      this.setDual(true);
-      return;
-    }
-    const captive = this.captiveSprite;
-    this.captiveSprite = undefined;
-    this.audio.play('rescue');
-    this.tweens.add({
-      targets: captive,
-      x: this.player.x + DUAL_OFFSET,
-      y: PLAYER_Y,
-      duration: RESCUE_FLY_MS,
-      onComplete: () => {
-        captive.destroy();
-        this.setDual(true);
-      },
-    });
-  }
-
-  private playerWasHit(): boolean {
-    const hitboxes = [this.player.getBounds()];
-    if (this.dual && this.wingman) {
-      hitboxes.push(this.wingman.getBounds());
-    }
-    const overlaps = (r: Phaser.Geom.Rectangle): boolean =>
-      hitboxes.some((h) => Phaser.Geom.Intersects.RectangleToRectangle(h, r));
-
-    for (const bullet of this.enemyBullets) {
-      if (overlaps(bullet.getBounds())) {
-        return true;
-      }
-    }
-    for (const enemy of this.enemies) {
-      if (enemy.state === 'diving' && overlaps(enemy.sprite.getBounds())) {
-        return true;
-      }
-    }
-    return false;
   }
 
   private checkWaveCleared(): void {
     if (this.enemies.length > 0 || this.respawning) {
       return;
     }
-    this.respawning = true;
-    this.captor = undefined;
-    this.beamGfx.clear();
-    this.captiveSprite?.destroy();
-    this.captiveSprite = undefined;
-    this.time.delayedCall(WAVE_RESPAWN_MS, () => {
-      this.enemies = buildFormation(this);
-      this.respawning = false;
-    });
+    this.advanceWave();
   }
 
   // --- hud -----------------------------------------------------------------

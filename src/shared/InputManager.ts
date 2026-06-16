@@ -12,7 +12,8 @@ export type InputAction =
   | 'right'
   | 'confirm'
   | 'cancel'
-  | 'fire';
+  | 'fire'
+  | 'pause';
 
 const KEY_MAP: Record<InputAction, number[]> = {
   up: [Phaser.Input.Keyboard.KeyCodes.UP, Phaser.Input.Keyboard.KeyCodes.W],
@@ -22,6 +23,7 @@ const KEY_MAP: Record<InputAction, number[]> = {
   confirm: [Phaser.Input.Keyboard.KeyCodes.ENTER, Phaser.Input.Keyboard.KeyCodes.SPACE],
   cancel: [Phaser.Input.Keyboard.KeyCodes.ESC],
   fire: [Phaser.Input.Keyboard.KeyCodes.SPACE, Phaser.Input.Keyboard.KeyCodes.Z],
+  pause: [Phaser.Input.Keyboard.KeyCodes.ENTER, Phaser.Input.Keyboard.KeyCodes.P],
 };
 
 const ALL_ACTIONS: InputAction[] = [
@@ -32,6 +34,7 @@ const ALL_ACTIONS: InputAction[] = [
   'confirm',
   'cancel',
   'fire',
+  'pause',
 ];
 
 export class InputManager {

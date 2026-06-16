@@ -3,7 +3,7 @@ import { InputManager } from './InputManager';
 import { ScoreManager } from './ScoreManager';
 import { SoundManager } from './SoundManager';
 import { CRTOverlay } from './CRTOverlay';
-import { HUD_STYLE } from './ui';
+import { HUD_STYLE, LABEL_STYLE } from './ui';
 
 export interface BaseGameSceneConfig {
   /** Phaser scene key (must be unique + match the registry entry). */
@@ -33,6 +33,8 @@ export abstract class BaseGameScene extends Phaser.Scene {
 
   private scoreText?: Phaser.GameObjects.Text;
   private highText?: Phaser.GameObjects.Text;
+  private pauseText?: Phaser.GameObjects.Text;
+  private paused = false;
 
   constructor(config: BaseGameSceneConfig) {
     super({ key: config.key });
@@ -54,6 +56,7 @@ export abstract class BaseGameScene extends Phaser.Scene {
     // Unlock the (deferred) audio context on the first input gesture.
     this.controls.onFirstInput(() => this.audio.unlock());
 
+    this.paused = false;
     this.createHud();
     this.createGame();
     this.crt.apply();
@@ -62,11 +65,30 @@ export abstract class BaseGameScene extends Phaser.Scene {
   /** Phaser lifecycle — concrete games override `updateGame()` instead. */
   update(time: number, delta: number): void {
     this.controls.update();
+    if (this.controls.justPressed('pause')) {
+      this.togglePause();
+    }
+    if (this.paused) {
+      return;
+    }
     if (this.controls.justPressed('cancel')) {
       this.returnToMenu();
       return;
     }
     this.updateGame(time, delta);
+  }
+
+  /** Universal pause (Enter): freezes game update, tweens, and timers. */
+  private togglePause(): void {
+    this.paused = !this.paused;
+    if (this.paused) {
+      this.tweens.pauseAll();
+      this.time.paused = true;
+    } else {
+      this.tweens.resumeAll();
+      this.time.paused = false;
+    }
+    this.pauseText?.setVisible(this.paused);
   }
 
   /** Build the game world. Called once after services are ready. */
@@ -94,5 +116,11 @@ export abstract class BaseGameScene extends Phaser.Scene {
       .text(this.nativeWidth - 4, 4, `HI ${this.scores.high}`, HUD_STYLE)
       .setOrigin(1, 0)
       .setDepth(1000);
+    this.pauseText = this.add
+      .text(this.nativeWidth / 2, this.nativeHeight / 2, 'PAUSE', LABEL_STYLE)
+      .setOrigin(0.5)
+      .setColor('#ffffff')
+      .setDepth(2000)
+      .setVisible(false);
   }
 }
