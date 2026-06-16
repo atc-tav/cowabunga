@@ -22,7 +22,16 @@ import {
   GAMEOVER_MS,
   CATCH_DISTANCE,
   PLAYER_START,
-  BLINKY_START,
+  GhostName,
+  GHOST_STARTS,
+  GHOST_RELEASE_MS,
+  SCATTER_CORNERS,
+  GHOST_EXIT_TARGET,
+  GHOST_EXIT_ROW,
+  PINKY_LEAD,
+  INKY_LEAD,
+  CLYDE_SCATTER_DIST,
+  PHASE_SCHEDULE,
 } from './constants';
 import { toCells, WALL, DOOR, DOT, ENERGIZER } from './maze';
 import { COLORS } from './palette';
@@ -34,27 +43,35 @@ interface Pellet {
   energizer: boolean;
 }
 
+interface Tile {
+  col: number;
+  row: number;
+}
+
 type Phase = 'ready' | 'playing' | 'dying' | 'over';
 
 /**
- * Pac-Man — slice 3: Blinky chases, and Pac-Man can die. Adds the first ghost
- * (shared Ghost + grid-AI), a lives system (shared LivesManager), collision,
- * the death-spin animation, and a tiny round state machine (READY -> PLAYING ->
- * DYING -> ... -> GAME OVER). The flow FSM is intentionally inline here; it
- * gets generalised into a shared GameFlow in a later slice.
+ * Pac-Man — slice 4: the full ghost quartet. Adds Pinky/Inky/Clyde with their
+ * distinct targeting, a global scatter<->chase phase timer (with the classic
+ * reversal), and a working ghost house with staggered exits. All four ghosts
+ * share one Ghost class + the shared grid-AI; only the target tile differs.
  */
 export class PacmanScene extends BaseGameScene {
   private grid!: Grid;
   private mover!: GridMover;
   private pac!: Phaser.GameObjects.Image;
-  private blinky!: Ghost;
   private lives!: LivesManager;
+
+  private ghosts!: Record<GhostName, Ghost>;
+  private phaseMode: 'scatter' | 'chase' = 'scatter';
+  private phaseIndex = 0;
+  private phaseTimer = 0;
 
   private readonly pellets = new Map<string, Pellet>();
   private readonly lifeIcons: Phaser.GameObjects.Image[] = [];
 
   private phase: Phase = 'ready';
-  private phaseTimer = 0;
+  private readyTimer = 0;
   private chompTimer = 0;
   private chompOpen = true;
 
@@ -76,22 +93,16 @@ export class PacmanScene extends BaseGameScene {
       startCol: PLAYER_START.col,
       startRow: PLAYER_START.row,
       speed: PLAYER_SPEED,
-      canEnter: (col, row) => this.canEnter(col, row),
+      canEnter: (col, row) => this.pacCanEnter(col, row),
     });
-    this.pac = this.add
-      .image(this.mover.x, this.mover.y, TX.pacOpen)
-      .setDepth(10)
-      .setAngle(180);
+    this.pac = this.add.image(this.mover.x, this.mover.y, TX.pacOpen).setDepth(10).setAngle(180);
 
-    this.blinky = new Ghost(
-      this,
-      this.grid,
-      BLINKY_START.col,
-      BLINKY_START.row,
-      GHOST_SPEED,
-      (col, row) => this.canEnter(col, row),
-      [TX.blinky0, TX.blinky1],
-    );
+    this.ghosts = {
+      blinky: this.makeGhost('blinky'),
+      pinky: this.makeGhost('pinky'),
+      inky: this.makeGhost('inky'),
+      clyde: this.makeGhost('clyde'),
+    };
 
     this.lives = new LivesManager(LIVES_START);
     this.refreshLives();
@@ -106,36 +117,26 @@ export class PacmanScene extends BaseGameScene {
   }
 
   protected updateGame(_time: number, delta: number): void {
-    switch (this.phase) {
-      case 'ready':
-        this.tickReady(delta);
-        break;
-      case 'playing':
-        this.tickPlaying(delta);
-        break;
-      case 'dying':
-      case 'over':
-        // Animations / timers run via tweens + delayedCall; nothing to step.
-        break;
+    if (this.phase === 'ready') {
+      this.tickReady(delta);
+    } else if (this.phase === 'playing') {
+      this.tickPlaying(delta);
     }
+    // 'dying' / 'over' progress via tweens + delayedCall.
   }
 
   // --- phases -------------------------------------------------------------
 
   private startReady(): void {
     this.phase = 'ready';
-    this.phaseTimer = READY_MS;
-    this.banner.setText('READY!').setVisible(true);
-
-    this.mover.teleport(this.grid.tileToWorldX(PLAYER_START.col), this.grid.tileToWorldY(PLAYER_START.row));
-    this.mover.stop();
-    this.pac.setPosition(this.mover.x, this.mover.y).setAngle(180).setTexture(TX.pacOpen);
-    this.blinky.reset(BLINKY_START.col, BLINKY_START.row);
+    this.readyTimer = READY_MS;
+    this.banner.setText('READY!').setColor('#fcfc00').setVisible(true);
+    this.resetActors();
   }
 
   private tickReady(delta: number): void {
-    this.phaseTimer -= delta;
-    if (this.phaseTimer <= 0) {
+    this.readyTimer -= delta;
+    if (this.readyTimer <= 0) {
       this.banner.setVisible(false);
       this.phase = 'playing';
     }
@@ -150,11 +151,8 @@ export class PacmanScene extends BaseGameScene {
     this.animateChomp(delta);
     this.eatPellet();
 
-    const target = this.mover.currentTile();
-    this.blinky.update(delta, target.col, target.row);
-    this.wrap(this.blinky.mover);
-
-    if (this.caughtByGhost()) {
+    this.updateGhosts(delta);
+    if (this.ghostCaughtPac()) {
       this.die();
     }
   }
@@ -188,17 +186,131 @@ export class PacmanScene extends BaseGameScene {
     this.time.delayedCall(GAMEOVER_MS, () => this.scene.restart());
   }
 
-  // --- helpers ------------------------------------------------------------
+  // --- ghosts -------------------------------------------------------------
 
-  private caughtByGhost(): boolean {
-    return (
-      Phaser.Math.Distance.Between(
+  private makeGhost(name: GhostName): Ghost {
+    const start = GHOST_STARTS[name];
+    return new Ghost(
+      this,
+      this.grid,
+      name,
+      start.col,
+      start.row,
+      GHOST_SPEED,
+      GHOST_RELEASE_MS[name],
+      (col, row, allowDoor) => this.ghostCanEnter(col, row, allowDoor),
+    );
+  }
+
+  private updateGhosts(delta: number): void {
+    this.advancePhase(delta);
+
+    const pac = this.mover.currentTile();
+    const pacDir = this.mover.dir;
+    const blinkyTile = this.ghosts.blinky.tile();
+
+    for (const ghost of this.ghostList()) {
+      if (ghost.mode === 'house') {
+        if (ghost.tickHouse(delta)) {
+          ghost.mode = 'leaving';
+        }
+        continue;
+      }
+      if (ghost.mode === 'leaving') {
+        ghost.update(delta, GHOST_EXIT_TARGET.col, GHOST_EXIT_TARGET.row);
+        this.wrap(ghost.mover);
+        if (ghost.tile().row <= GHOST_EXIT_ROW) {
+          ghost.mode = this.phaseMode;
+        }
+        continue;
+      }
+      const target = this.ghostTarget(ghost.name, pac, pacDir, blinkyTile);
+      ghost.update(delta, target.col, target.row);
+      this.wrap(ghost.mover);
+    }
+  }
+
+  private advancePhase(delta: number): void {
+    if (!Number.isFinite(this.phaseTimer)) {
+      return;
+    }
+    this.phaseTimer -= delta;
+    if (this.phaseTimer > 0 || this.phaseIndex >= PHASE_SCHEDULE.length - 1) {
+      return;
+    }
+    this.phaseIndex++;
+    const next = PHASE_SCHEDULE[this.phaseIndex];
+    this.phaseMode = next.mode;
+    this.phaseTimer = next.ms;
+    // Classic: active ghosts reverse on every scatter/chase switch.
+    for (const ghost of this.ghostList()) {
+      if (ghost.mode === 'scatter' || ghost.mode === 'chase') {
+        ghost.mode = this.phaseMode;
+        ghost.reverse();
+      }
+    }
+  }
+
+  private ghostTarget(name: GhostName, pac: Tile, pacDir: { x: number; y: number }, blinky: Tile): Tile {
+    if (this.phaseMode === 'scatter') {
+      return SCATTER_CORNERS[name];
+    }
+    switch (name) {
+      case 'blinky':
+        return pac;
+      case 'pinky':
+        return { col: pac.col + pacDir.x * PINKY_LEAD, row: pac.row + pacDir.y * PINKY_LEAD };
+      case 'inky': {
+        const ax = pac.col + pacDir.x * INKY_LEAD;
+        const ay = pac.row + pacDir.y * INKY_LEAD;
+        return { col: 2 * ax - blinky.col, row: 2 * ay - blinky.row };
+      }
+      case 'clyde': {
+        const gt = this.ghosts.clyde.tile();
+        const dist = Math.hypot(gt.col - pac.col, gt.row - pac.row);
+        return dist > CLYDE_SCATTER_DIST ? pac : SCATTER_CORNERS.clyde;
+      }
+      default:
+        return pac;
+    }
+  }
+
+  private ghostList(): Ghost[] {
+    return [this.ghosts.blinky, this.ghosts.pinky, this.ghosts.inky, this.ghosts.clyde];
+  }
+
+  private ghostCaughtPac(): boolean {
+    for (const ghost of this.ghostList()) {
+      if (ghost.mode === 'house' || ghost.mode === 'leaving') {
+        continue;
+      }
+      const dist = Phaser.Math.Distance.Between(
         this.mover.x,
         this.mover.y,
-        this.blinky.mover.x,
-        this.blinky.mover.y,
-      ) < CATCH_DISTANCE
-    );
+        ghost.mover.x,
+        ghost.mover.y,
+      );
+      if (dist < CATCH_DISTANCE) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // --- shared helpers -----------------------------------------------------
+
+  private resetActors(): void {
+    this.mover.teleport(this.grid.tileToWorldX(PLAYER_START.col), this.grid.tileToWorldY(PLAYER_START.row));
+    this.mover.stop();
+    this.pac.setPosition(this.mover.x, this.mover.y).setAngle(180).setScale(1).setTexture(TX.pacOpen);
+
+    for (const name of Object.keys(GHOST_STARTS) as GhostName[]) {
+      this.ghosts[name].reset(GHOST_STARTS[name].col, GHOST_STARTS[name].row, GHOST_RELEASE_MS[name]);
+    }
+
+    this.phaseIndex = 0;
+    this.phaseMode = PHASE_SCHEDULE[0].mode;
+    this.phaseTimer = PHASE_SCHEDULE[0].ms;
   }
 
   private readInput(): void {
@@ -213,7 +325,7 @@ export class PacmanScene extends BaseGameScene {
     }
   }
 
-  private canEnter(col: number, row: number): boolean {
+  private pacCanEnter(col: number, row: number): boolean {
     if (row === TUNNEL_ROW && (col < 0 || col >= COLS)) {
       return true;
     }
@@ -222,6 +334,23 @@ export class PacmanScene extends BaseGameScene {
     }
     const tile = this.grid.get(col, row);
     return tile !== WALL && tile !== DOOR;
+  }
+
+  private ghostCanEnter(col: number, row: number, allowDoor: boolean): boolean {
+    if (row === TUNNEL_ROW && (col < 0 || col >= COLS)) {
+      return true;
+    }
+    if (col < 0 || row < 0 || col >= COLS || row >= ROWS) {
+      return false;
+    }
+    const tile = this.grid.get(col, row);
+    if (tile === WALL) {
+      return false;
+    }
+    if (tile === DOOR) {
+      return allowDoor;
+    }
+    return true;
   }
 
   private wrap(mover: GridMover): void {

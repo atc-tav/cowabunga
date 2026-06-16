@@ -65,15 +65,27 @@ const ENERGIZER_ART: string[] = [
   '  EE  ',
 ];
 
+import type { GhostName } from './constants';
+
 /** Texture keys created by buildPacmanTextures(). */
 export const TX = {
   pacOpen: 'pac-open',
   pacClosed: 'pac-closed',
   dot: 'pac-dot',
   energizer: 'pac-energizer',
-  blinky0: 'ghost-blinky-0',
-  blinky1: 'ghost-blinky-1',
 } as const;
+
+const GHOST_BODY_COLOR: Record<GhostName, number> = {
+  blinky: COLORS.ghostBlinky,
+  pinky: COLORS.ghostPinky,
+  inky: COLORS.ghostInky,
+  clyde: COLORS.ghostClyde,
+};
+
+/** The two foot-wobble frame keys for a given ghost. */
+export function ghostFrames(name: GhostName): [string, string] {
+  return [`ghost-${name}-0`, `ghost-${name}-1`];
+}
 
 export function buildPacmanTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, TX.pacOpen, PAC_OPEN, { Y: COLORS.pacman });
@@ -81,11 +93,10 @@ export function buildPacmanTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, TX.dot, DOT_ART, { D: COLORS.dot });
   drawPixelArt(scene, TX.energizer, ENERGIZER_ART, { E: COLORS.energizer });
 
-  const ghostPalette = {
-    R: COLORS.ghostBlinky,
-    W: COLORS.ghostEye,
-    b: COLORS.ghostPupil,
-  };
-  drawPixelArt(scene, TX.blinky0, GHOST_FEET_A, ghostPalette);
-  drawPixelArt(scene, TX.blinky1, GHOST_FEET_B, ghostPalette);
+  (Object.keys(GHOST_BODY_COLOR) as GhostName[]).forEach((name) => {
+    const palette = { R: GHOST_BODY_COLOR[name], W: COLORS.ghostEye, b: COLORS.ghostPupil };
+    const [frame0, frame1] = ghostFrames(name);
+    drawPixelArt(scene, frame0, GHOST_FEET_A, palette);
+    drawPixelArt(scene, frame1, GHOST_FEET_B, palette);
+  });
 }
