@@ -10,6 +10,9 @@ export const COLORS = {
   dot: 0xffb897, // pellet peach
   energizer: 0xffb897,
   pacman: 0xffff00,
+  ghostBlinky: 0xff0000, // Blinky red
+  ghostEye: 0xffffff,
+  ghostPupil: 0x2121ff,
 } as const;
 
 export const PAC_PALETTE: PixelPalette = {
