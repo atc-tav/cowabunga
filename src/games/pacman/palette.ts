@@ -10,7 +10,10 @@ export const COLORS = {
   dot: 0xffb897, // pellet peach
   energizer: 0xffb897,
   pacman: 0xffff00,
-  ghostBlinky: 0xff0000, // Blinky red
+  ghostBlinky: 0xff0000, // Blinky — red (chaser)
+  ghostPinky: 0xffb8ff, // Pinky — pink (ambusher)
+  ghostInky: 0x00ffff, // Inky — cyan (flanker)
+  ghostClyde: 0xffb852, // Clyde — orange (random)
   ghostEye: 0xffffff,
   ghostPupil: 0x2121ff,
 } as const;

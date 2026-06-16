@@ -83,6 +83,12 @@ export class GridMover {
     this.desired = { x: 0, y: 0 };
   }
 
+  /** Force an immediate U-turn (e.g. the classic scatter<->chase reversal). */
+  reverse(): void {
+    this._dir = { x: -this._dir.x, y: -this._dir.y };
+    this.desired = { ...this._dir };
+  }
+
   update(deltaMs: number): void {
     const step = (this.speed * deltaMs) / 1000;
     const col = this.grid.worldToCol(this._x);
