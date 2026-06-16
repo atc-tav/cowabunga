@@ -16,6 +16,10 @@ export const COLORS = {
   ghostClyde: 0xffb852, // Clyde — orange (random)
   ghostEye: 0xffffff,
   ghostPupil: 0x2121ff,
+  frightBody: 0x2121ff, // frightened ghost — deep blue
+  frightFace: 0xffffff, // frightened eyes/mouth
+  frightBlinkBody: 0xffffff, // blink-warning body
+  frightBlinkFace: 0xff0000, // blink-warning face
 } as const;
 
 export const PAC_PALETTE: PixelPalette = {

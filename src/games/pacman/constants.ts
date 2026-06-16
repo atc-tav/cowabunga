@@ -10,6 +10,8 @@ export const MAZE_OFFSET_Y = 24;
 
 export const PLAYER_SPEED = 70; // px/sec
 export const GHOST_SPEED = 66; // slightly slower than Pac-Man so he's beatable
+export const FRIGHT_SPEED = 45; // frightened ghosts crawl
+export const EYES_SPEED = 130; // eaten ghosts (eyes) dash back to the house
 export const CHOMP_INTERVAL = 90; // ms between open/closed mouth frames
 export const GHOST_FOOT_INTERVAL = 150; // ms between ghost foot-wobble frames
 
@@ -17,6 +19,11 @@ export const TUNNEL_ROW = 14; // the warp row with open left/right edges
 
 export const SCORE_DOT = 10;
 export const SCORE_ENERGIZER = 50;
+export const GHOST_EAT_BASE = 200; // 200/400/800/1600 for a chain of ghost eats
+export const GHOST_EAT_MAX_CHAIN = 4;
+
+export const FRIGHT_MS = 6000; // how long an energizer keeps ghosts frightened
+export const FRIGHT_BLINK_MS = 2000; // final stretch where they flash a warning
 
 export const LIVES_START = 3;
 export const READY_MS = 1500; // pause on "READY!" before a round
@@ -59,6 +66,9 @@ export const SCATTER_CORNERS: Record<GhostName, { col: number; row: number }> = 
 // While leaving the house, ghosts aim up-and-out; they're "out" at this row.
 export const GHOST_EXIT_TARGET = { col: 13, row: 8 } as const;
 export const GHOST_EXIT_ROW = 10;
+// Eaten ghosts (eyes) head back here; they revive once inside the house.
+export const GHOST_HOME_TARGET = { col: 13, row: 14 } as const;
+export const GHOST_HOME_ROW = 13;
 
 export const PINKY_LEAD = 4; // tiles ahead of Pac-Man Pinky targets
 export const INKY_LEAD = 2; // tiles ahead used in Inky's vector

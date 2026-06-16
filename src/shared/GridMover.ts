@@ -27,7 +27,7 @@ export interface GridMoverConfig {
  */
 export class GridMover {
   private readonly grid: Grid;
-  private readonly speed: number;
+  private speed: number;
   private readonly canEnter: (col: number, row: number) => boolean;
 
   private _x: number;
@@ -87,6 +87,11 @@ export class GridMover {
   reverse(): void {
     this._dir = { x: -this._dir.x, y: -this._dir.y };
     this.desired = { ...this._dir };
+  }
+
+  /** Change movement speed (e.g. frightened slow-down, returning-eyes speed-up). */
+  setSpeed(speed: number): void {
+    this.speed = speed;
   }
 
   update(deltaMs: number): void {
