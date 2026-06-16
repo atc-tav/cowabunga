@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { PacmanScene } from './games/pacman/PacmanScene';
 import { SandboxScene } from './games/sandbox/SandboxScene';
 
 export interface GameResolution {
@@ -21,12 +22,19 @@ export interface GameEntry {
 
 export const GAMES: GameEntry[] = [
   {
+    id: 'pacman',
+    title: 'PAC-MAN',
+    key: 'game-pacman',
+    resolution: { width: 224, height: 288 },
+    SceneClass: PacmanScene,
+  },
+  {
     id: 'sandbox',
     title: 'TEST',
     key: 'game-sandbox',
     resolution: { width: 224, height: 288 },
     SceneClass: SandboxScene,
   },
-  // Games land here one at a time: Pac-Man -> Galaga -> Donkey Kong ->
+  // More games land here one at a time: Galaga -> Donkey Kong ->
   // Mario Bros. -> Dig Dug.
 ];
