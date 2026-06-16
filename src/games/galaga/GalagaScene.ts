@@ -35,6 +35,8 @@ import {
   BEAM_RETRACT_MS,
   BEAM_HALF_WIDTH,
   CAPTURE_CHANCE,
+  DUAL_OFFSET,
+  RESCUE_FLY_MS,
 } from './constants';
 import { COLORS } from './palette';
 import { buildGalagaTextures, enemyFrame, EXPLOSION_KEYS, TX } from './sprites';
@@ -75,6 +77,9 @@ export class GalagaScene extends BaseGameScene {
   private captiveSprite?: Phaser.GameObjects.Image;
   private lostToCapture = false;
 
+  private dual = false;
+  private wingman?: Phaser.GameObjects.Image;
+
   private banner!: Phaser.GameObjects.Text;
 
   constructor() {
@@ -97,6 +102,9 @@ export class GalagaScene extends BaseGameScene {
     this.captiveSprite?.destroy();
     this.captiveSprite = undefined;
     this.lostToCapture = false;
+    this.wingman?.destroy();
+    this.wingman = undefined;
+    this.dual = false;
 
     this.stars = new Starfield(this, WIDTH, HEIGHT);
     this.beamGfx = this.add.graphics().setDepth(7);
@@ -155,8 +163,7 @@ export class GalagaScene extends BaseGameScene {
     this.updateEnemyFire(delta);
     this.updateEnemyBullets(delta);
     this.checkHits();
-    if (this.playerWasHit()) {
-      this.flow.transition('dying');
+    if (this.playerWasHit() && this.lethalHit(false)) {
       return;
     }
     this.checkWaveCleared();
@@ -170,6 +177,7 @@ export class GalagaScene extends BaseGameScene {
       playFrames(this, this.player.x, this.player.y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
     }
     this.player.setVisible(false);
+    this.setDual(false);
     this.destroyAll(this.enemyBullets);
     this.recallDivers();
     this.clearActiveCapture();
@@ -197,15 +205,57 @@ export class GalagaScene extends BaseGameScene {
     const dir = this.controls.direction().x;
     if (dir !== 0) {
       const step = (PLAYER_SPEED * delta) / 1000;
-      this.player.x = Phaser.Math.Clamp(this.player.x + dir * step, PLAYER_MARGIN, WIDTH - PLAYER_MARGIN);
+      const maxX = WIDTH - PLAYER_MARGIN - (this.dual ? DUAL_OFFSET : 0);
+      this.player.x = Phaser.Math.Clamp(this.player.x + dir * step, PLAYER_MARGIN, maxX);
+    }
+    if (this.wingman) {
+      this.wingman.setPosition(this.player.x + DUAL_OFFSET, PLAYER_Y);
     }
   }
 
   private handleFire(): void {
-    if (this.controls.justPressed('fire') && this.bullets.length < MAX_BULLETS) {
-      this.bullets.push(this.add.image(this.player.x, PLAYER_Y - 8, TX.bullet).setDepth(9));
+    if (!this.controls.justPressed('fire')) {
+      return;
+    }
+    const shipXs = this.dual && this.wingman ? [this.player.x, this.wingman.x] : [this.player.x];
+    const cap = this.dual ? MAX_BULLETS * 2 : MAX_BULLETS;
+    let fired = false;
+    for (const x of shipXs) {
+      if (this.bullets.length >= cap) {
+        break;
+      }
+      this.bullets.push(this.add.image(x, PLAYER_Y - 8, TX.bullet).setDepth(9));
+      fired = true;
+    }
+    if (fired) {
       this.audio.play('shoot');
     }
+  }
+
+  private setDual(on: boolean): void {
+    this.dual = on;
+    if (on) {
+      if (!this.wingman) {
+        this.wingman = this.add.image(this.player.x + DUAL_OFFSET, PLAYER_Y, TX.ship).setDepth(10);
+      }
+      this.wingman.setVisible(true);
+    } else if (this.wingman) {
+      this.wingman.destroy();
+      this.wingman = undefined;
+    }
+  }
+
+  /** Route a lethal event: a dual fighter sacrifices its wingman; a single ship dies. */
+  private lethalHit(captured: boolean): boolean {
+    if (this.dual && this.wingman) {
+      playFrames(this, this.wingman.x, this.wingman.y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
+      this.audio.play('explosion');
+      this.setDual(false);
+      return false; // keep playing as a single ship, no life lost
+    }
+    this.lostToCapture = captured;
+    this.flow.transition('dying');
+    return true;
   }
 
   private updateBullets(delta: number): void {
@@ -371,6 +421,15 @@ export class GalagaScene extends BaseGameScene {
   private doCapture(boss: Enemy): void {
     this.beamGfx.clear();
     this.captor = undefined;
+
+    // A dual fighter just loses its wingman to the beam — no capture, no life.
+    if (this.dual) {
+      this.setDual(false);
+      this.audio.play('captured');
+      this.recycleToFormation(boss);
+      return;
+    }
+
     boss.hasCaptive = true;
 
     // The pulled-in ship rides above its captor.
@@ -465,6 +524,22 @@ export class GalagaScene extends BaseGameScene {
     for (let b = this.bullets.length - 1; b >= 0; b--) {
       const bullet = this.bullets[b];
       const bounds = bullet.getBounds();
+
+      // Shooting the captive ship itself loses it (the rescue risk).
+      if (
+        this.captiveSprite &&
+        Phaser.Geom.Intersects.RectangleToRectangle(bounds, this.captiveSprite.getBounds())
+      ) {
+        playFrames(this, this.captiveSprite.x, this.captiveSprite.y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
+        this.audio.play('explosion');
+        this.captiveSprite.destroy();
+        this.captiveSprite = undefined;
+        this.enemies.forEach((e) => (e.hasCaptive = false));
+        bullet.destroy();
+        this.bullets.splice(b, 1);
+        continue;
+      }
+
       for (let e = this.enemies.length - 1; e >= 0; e--) {
         const enemy = this.enemies[e];
         if (!Phaser.Geom.Intersects.RectangleToRectangle(bounds, enemy.sprite.getBounds())) {
@@ -476,15 +551,13 @@ export class GalagaScene extends BaseGameScene {
         this.addScore(enemy.points);
         this.audio.play('explosion');
 
-        // Shooting the active captor cancels the beam; shooting a boss that
-        // holds a captive loses the captive (rescue comes in the next slice).
         if (enemy === this.captor) {
           this.captor = undefined;
           this.beamGfx.clear();
         }
-        if (enemy.hasCaptive && this.captiveSprite) {
-          this.captiveSprite.destroy();
-          this.captiveSprite = undefined;
+        // Destroying the captor frees the captive -> rescue into a dual fighter.
+        if (enemy.hasCaptive) {
+          this.rescueCaptive();
         }
 
         enemy.sprite.destroy();
@@ -496,18 +569,42 @@ export class GalagaScene extends BaseGameScene {
     }
   }
 
+  /** Free the captured ship: fly it down to the player and form a dual fighter. */
+  private rescueCaptive(): void {
+    if (!this.captiveSprite) {
+      this.setDual(true);
+      return;
+    }
+    const captive = this.captiveSprite;
+    this.captiveSprite = undefined;
+    this.audio.play('rescue');
+    this.tweens.add({
+      targets: captive,
+      x: this.player.x + DUAL_OFFSET,
+      y: PLAYER_Y,
+      duration: RESCUE_FLY_MS,
+      onComplete: () => {
+        captive.destroy();
+        this.setDual(true);
+      },
+    });
+  }
+
   private playerWasHit(): boolean {
-    const pb = this.player.getBounds();
+    const hitboxes = [this.player.getBounds()];
+    if (this.dual && this.wingman) {
+      hitboxes.push(this.wingman.getBounds());
+    }
+    const overlaps = (r: Phaser.Geom.Rectangle): boolean =>
+      hitboxes.some((h) => Phaser.Geom.Intersects.RectangleToRectangle(h, r));
+
     for (const bullet of this.enemyBullets) {
-      if (Phaser.Geom.Intersects.RectangleToRectangle(pb, bullet.getBounds())) {
+      if (overlaps(bullet.getBounds())) {
         return true;
       }
     }
     for (const enemy of this.enemies) {
-      if (
-        enemy.state === 'diving' &&
-        Phaser.Geom.Intersects.RectangleToRectangle(pb, enemy.sprite.getBounds())
-      ) {
+      if (enemy.state === 'diving' && overlaps(enemy.sprite.getBounds())) {
         return true;
       }
     }

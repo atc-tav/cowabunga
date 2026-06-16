@@ -46,23 +46,26 @@ export const WAVE_RESPAWN_MS = 1200;
 
 // --- formation fly-in ---------------------------------------------------
 
-export const ENTRY_SPEED = 120; // px/sec along the entry path
-export const ENTRY_STAGGER_MS = 150; // delay between successive enemies launching
+export const ENTRY_SPEED = 95; // px/sec along the entry path
+export const ENTRY_STAGGER_MS = 160; // delay between successive enemies launching
 export const ENTRY_STEPS = 20; // points sampled along each entry curve
 export const SWAY_AMP = 6; // formation "breathing" horizontal amplitude (px)
-export const SWAY_FREQ = 1.8; // breathing speed (rad/sec)
+export const SWAY_FREQ = 1.6; // breathing speed (rad/sec)
 
 // --- dives, enemy fire, lives -------------------------------------------
-
-export const DIVE_SPEED = 140; // px/sec along a dive path
+// Keep DIVE_SPEED < ENEMY_BULLET_SPEED so ships never outrun their own bolts.
+export const DIVE_SPEED = 105; // px/sec along a dive path
 export const DIVE_STEPS = 24; // points sampled along each dive curve
-export const DIVE_INTERVAL_MS = 2000; // gap between launching dives
+export const DIVE_INTERVAL_MS = 2200; // gap between launching dives
 export const MAX_DIVERS = 2; // simultaneous divers
 
-export const ENEMY_BULLET_SPEED = 130;
-export const ENEMY_FIRE_MS = 750; // per-diver fire cadence
+export const ENEMY_BULLET_SPEED = 175;
+export const ENEMY_FIRE_MS = 800; // per-diver fire cadence
 
 export const LIVES_START = 3;
 export const READY_MS = 1500;
 export const DEATH_PAUSE_MS = 1100;
 export const GAMEOVER_MS = 2500;
+
+export const DUAL_OFFSET = 14; // gap between the two ships of a dual fighter
+export const RESCUE_FLY_MS = 450; // captive's fly-down-to-player animation
