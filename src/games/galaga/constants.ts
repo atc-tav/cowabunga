@@ -19,11 +19,12 @@ export const STAR_ALPHA = 0.5; // dimmed so enemy bolts stay readable
 
 export const BEAM_HOVER_Y = 118; // where the capturing boss hovers
 export const APPROACH_SPEED = 110;
-export const BEAM_GROW_MS = 450;
-export const BEAM_HOLD_MS = 1500;
-export const BEAM_RETRACT_MS = 400;
+export const BEAM_GROW_MS = 600;
+export const BEAM_HOLD_MS = 1900;
+export const BEAM_RETRACT_MS = 450;
 export const BEAM_HALF_WIDTH = 24; // capture window at the bottom of the cone
-export const CAPTURE_CHANCE = 0.5; // chance a boss dive becomes a capture run
+export const PULL_MS = 1000; // caught ship spins/rises into the boss
+export const CAPTURE_INTERVAL_MS = 5000; // how often a boss attempts a capture run
 
 // --- enemy formation ----------------------------------------------------
 
@@ -61,6 +62,7 @@ export const MAX_DIVERS = 2; // simultaneous divers
 
 export const ENEMY_BULLET_SPEED = 175;
 export const ENEMY_FIRE_MS = 800; // per-diver fire cadence
+export const ENEMY_FIRE_MIN_MS = 440; // floor at high waves
 
 export const LIVES_START = 3;
 export const READY_MS = 1500;
@@ -68,4 +70,18 @@ export const DEATH_PAUSE_MS = 1100;
 export const GAMEOVER_MS = 2500;
 
 export const DUAL_OFFSET = 14; // gap between the two ships of a dual fighter
-export const RESCUE_FLY_MS = 450; // captive's fly-down-to-player animation
+export const RESCUE_FLY_MS = 550; // captive's fly-down-to-player animation
+
+// --- waves & difficulty ramp --------------------------------------------
+
+export const WAVE_SPEED_RAMP = 8; // px/sec added to entry+dive per wave
+export const MAX_WAVE_RAMP = 6; // cap the ramp
+export const DIVE_INTERVAL_MIN_MS = 1000;
+export const STAGE_BANNER_MS = 1400;
+
+// --- challenge (bonus) stage --------------------------------------------
+
+export const CHALLENGE_EVERY = 4; // every Nth wave is a no-fire bonus stage
+export const CHALLENGE_DURATION_MS = 9000;
+export const CHALLENGE_BONUS_PER = 100; // per enemy shot
+export const CHALLENGE_PERFECT_BONUS = 1000; // clearing the whole stage

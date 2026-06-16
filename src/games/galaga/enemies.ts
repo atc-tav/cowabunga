@@ -8,7 +8,6 @@ import {
   FORM_ROW_GAP,
   FORM_TOP,
   ENEMY_SCORE,
-  ENTRY_SPEED,
   ENTRY_STAGGER_MS,
 } from './constants';
 import { enemyFrame } from './sprites';
@@ -37,7 +36,7 @@ const BOSS_COLUMNS = [2, 3, 4, 5];
  * scripted curve to its slot on a stagger. Once arrived, the scene takes over
  * the breathing sway.
  */
-export function buildFormation(scene: Phaser.Scene): Enemy[] {
+export function buildFormation(scene: Phaser.Scene, entrySpeed: number): Enemy[] {
   const enemies: Enemy[] = [];
   const startX = WIDTH / 2 - ((FORM_COLS - 1) * FORM_COL_GAP) / 2;
   let index = 0;
@@ -57,7 +56,7 @@ export function buildFormation(scene: Phaser.Scene): Enemy[] {
         type,
         points: ENEMY_SCORE[type],
         home,
-        follower: new PathFollower(points, ENTRY_SPEED),
+        follower: new PathFollower(points, entrySpeed),
         startDelay: index * ENTRY_STAGGER_MS,
         elapsed: 0,
         state: 'entering',
