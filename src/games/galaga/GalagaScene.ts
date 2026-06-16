@@ -28,11 +28,21 @@ import {
   READY_MS,
   DEATH_PAUSE_MS,
   GAMEOVER_MS,
+  BEAM_HOVER_Y,
+  APPROACH_SPEED,
+  BEAM_GROW_MS,
+  BEAM_HOLD_MS,
+  BEAM_RETRACT_MS,
+  BEAM_HALF_WIDTH,
+  CAPTURE_CHANCE,
 } from './constants';
+import { COLORS } from './palette';
 import { buildGalagaTextures, enemyFrame, EXPLOSION_KEYS, TX } from './sprites';
 import { Starfield } from './starfield';
 import { buildFormation, Enemy } from './enemies';
-import { makeEntryPath, makeDivePath } from './entryPaths';
+import { makeEntryPath, makeDivePath, makeApproachPath } from './entryPaths';
+
+type CapturePhase = 'approach' | 'grow' | 'hold' | 'retract';
 
 /**
  * Galaga — slice 4: dives, enemy fire, and player death. Enemies peel off the
@@ -58,6 +68,13 @@ export class GalagaScene extends BaseGameScene {
   private readyTimer = 0;
   private respawning = false;
 
+  private beamGfx!: Phaser.GameObjects.Graphics;
+  private captor?: Enemy;
+  private capturePhase: CapturePhase = 'approach';
+  private captureTimer = 0;
+  private captiveSprite?: Phaser.GameObjects.Image;
+  private lostToCapture = false;
+
   private banner!: Phaser.GameObjects.Text;
 
   constructor() {
@@ -76,7 +93,13 @@ export class GalagaScene extends BaseGameScene {
     this.respawning = false;
     this.diveTimer = DIVE_INTERVAL_MS;
 
+    this.captor = undefined;
+    this.captiveSprite?.destroy();
+    this.captiveSprite = undefined;
+    this.lostToCapture = false;
+
     this.stars = new Starfield(this, WIDTH, HEIGHT);
+    this.beamGfx = this.add.graphics().setDepth(7);
     this.player = this.add.image(WIDTH / 2, PLAYER_Y, TX.ship).setDepth(10);
     this.enemies = buildFormation(this);
 
@@ -110,6 +133,7 @@ export class GalagaScene extends BaseGameScene {
     this.player.setPosition(WIDTH / 2, PLAYER_Y).setVisible(true);
     this.destroyAll(this.enemyBullets);
     this.recallDivers();
+    this.clearActiveCapture();
   }
 
   private updateReady(delta: number): void {
@@ -126,6 +150,8 @@ export class GalagaScene extends BaseGameScene {
     this.handleFire();
     this.updateBullets(delta);
     this.advanceFormation(delta, true);
+    this.updateCapture(delta);
+    this.updateCaptive();
     this.updateEnemyFire(delta);
     this.updateEnemyBullets(delta);
     this.checkHits();
@@ -137,11 +163,16 @@ export class GalagaScene extends BaseGameScene {
   }
 
   private enterDying(): void {
-    this.audio.play('explosion');
-    playFrames(this, this.player.x, this.player.y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
+    if (this.lostToCapture) {
+      this.lostToCapture = false; // ship was pulled away, not blown up
+    } else {
+      this.audio.play('explosion');
+      playFrames(this, this.player.x, this.player.y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
+    }
     this.player.setVisible(false);
     this.destroyAll(this.enemyBullets);
     this.recallDivers();
+    this.clearActiveCapture();
     this.time.delayedCall(DEATH_PAUSE_MS, () => this.afterDeath());
   }
 
@@ -196,6 +227,9 @@ export class GalagaScene extends BaseGameScene {
     const sway = Math.sin((this.swayClock / 1000) * SWAY_FREQ) * SWAY_AMP;
 
     for (const enemy of this.enemies) {
+      if (enemy.state === 'capturing') {
+        continue; // driven by updateCapture()
+      }
       if (enemy.state === 'entering') {
         enemy.elapsed += delta;
         if (enemy.elapsed < enemy.startDelay) {
@@ -249,10 +283,136 @@ export class GalagaScene extends BaseGameScene {
       return;
     }
     const enemy = Phaser.Utils.Array.GetRandom(formed);
+    // A boss with no active captive may attempt a tractor-beam capture instead.
+    if (
+      enemy.type === 'boss' &&
+      !this.captor &&
+      !this.captiveSprite &&
+      Math.random() < CAPTURE_CHANCE
+    ) {
+      this.startCapture(enemy);
+      return;
+    }
     enemy.state = 'diving';
     enemy.follower = new PathFollower(makeDivePath(enemy.home, this.player.x), DIVE_SPEED);
     enemy.fireTimer = ENEMY_FIRE_MS * 0.5;
     this.audio.play('dive');
+  }
+
+  // --- tractor beam (capture) ---------------------------------------------
+
+  private startCapture(boss: Enemy): void {
+    const hoverX = Phaser.Math.Clamp(this.player.x, PLAYER_MARGIN, WIDTH - PLAYER_MARGIN);
+    boss.state = 'capturing';
+    boss.follower = new PathFollower(makeApproachPath(boss.home, hoverX, BEAM_HOVER_Y), APPROACH_SPEED);
+    this.captor = boss;
+    this.capturePhase = 'approach';
+    this.audio.play('beam');
+  }
+
+  private updateCapture(delta: number): void {
+    const boss = this.captor;
+    if (!boss) {
+      return;
+    }
+    if (this.capturePhase === 'approach') {
+      const p = boss.follower.update(delta);
+      boss.sprite.setPosition(p.x, p.y);
+      if (boss.follower.done) {
+        this.capturePhase = 'grow';
+        this.captureTimer = BEAM_GROW_MS;
+      }
+      return;
+    }
+
+    this.captureTimer -= delta;
+    if (this.capturePhase === 'grow') {
+      this.drawBeam(boss, 1 - this.captureTimer / BEAM_GROW_MS);
+      if (this.captureTimer <= 0) {
+        this.capturePhase = 'hold';
+        this.captureTimer = BEAM_HOLD_MS;
+      }
+    } else if (this.capturePhase === 'hold') {
+      this.drawBeam(boss, 1);
+      if (this.player.visible && Math.abs(this.player.x - boss.sprite.x) < BEAM_HALF_WIDTH) {
+        this.doCapture(boss);
+        return;
+      }
+      if (this.captureTimer <= 0) {
+        this.capturePhase = 'retract';
+        this.captureTimer = BEAM_RETRACT_MS;
+      }
+    } else if (this.capturePhase === 'retract') {
+      this.drawBeam(boss, this.captureTimer / BEAM_RETRACT_MS);
+      if (this.captureTimer <= 0) {
+        this.endCapture(boss);
+      }
+    }
+  }
+
+  /** Draw the cone from the boss to the bottom; `scale` in 0..1 sets opacity. */
+  private drawBeam(boss: Enemy, scale: number): void {
+    const s = Phaser.Math.Clamp(scale, 0, 1);
+    const bx = boss.sprite.x;
+    const by = boss.sprite.y + 6;
+    this.beamGfx.clear();
+    this.beamGfx.fillStyle(COLORS.beam, 0.28 * s);
+    this.beamGfx.fillPoints(
+      [
+        new Phaser.Geom.Point(bx - 3, by),
+        new Phaser.Geom.Point(bx + 3, by),
+        new Phaser.Geom.Point(bx + BEAM_HALF_WIDTH, HEIGHT),
+        new Phaser.Geom.Point(bx - BEAM_HALF_WIDTH, HEIGHT),
+      ],
+      true,
+    );
+  }
+
+  private doCapture(boss: Enemy): void {
+    this.beamGfx.clear();
+    this.captor = undefined;
+    boss.hasCaptive = true;
+
+    // The pulled-in ship rides above its captor.
+    this.captiveSprite = this.add
+      .image(boss.sprite.x, boss.sprite.y - 12, TX.ship)
+      .setTint(COLORS.captive)
+      .setDepth(9);
+
+    this.recycleToFormation(boss);
+
+    this.lostToCapture = true;
+    this.audio.play('captured');
+    this.flow.transition('dying');
+  }
+
+  private endCapture(boss: Enemy): void {
+    this.beamGfx.clear();
+    this.captor = undefined;
+    this.recycleToFormation(boss);
+  }
+
+  private clearActiveCapture(): void {
+    if (this.captor) {
+      const boss = this.captor;
+      this.captor = undefined;
+      this.beamGfx.clear();
+      this.recycleToFormation(boss);
+    }
+  }
+
+  /** Keep a captured ship glued above its captor. */
+  private updateCaptive(): void {
+    if (!this.captiveSprite) {
+      return;
+    }
+    const captor = this.enemies.find((e) => e.hasCaptive);
+    if (!captor) {
+      this.captiveSprite.destroy();
+      this.captiveSprite = undefined;
+      return;
+    }
+    this.captiveSprite.setPosition(captor.sprite.x, captor.sprite.y - 12);
   }
 
   private recycleToFormation(enemy: Enemy): void {
@@ -315,6 +475,18 @@ export class GalagaScene extends BaseGameScene {
         floatingText(this, x, y, String(enemy.points), { color: '#ffffff', fontSize: '8px' });
         this.addScore(enemy.points);
         this.audio.play('explosion');
+
+        // Shooting the active captor cancels the beam; shooting a boss that
+        // holds a captive loses the captive (rescue comes in the next slice).
+        if (enemy === this.captor) {
+          this.captor = undefined;
+          this.beamGfx.clear();
+        }
+        if (enemy.hasCaptive && this.captiveSprite) {
+          this.captiveSprite.destroy();
+          this.captiveSprite = undefined;
+        }
+
         enemy.sprite.destroy();
         this.enemies.splice(e, 1);
         bullet.destroy();
@@ -347,6 +519,10 @@ export class GalagaScene extends BaseGameScene {
       return;
     }
     this.respawning = true;
+    this.captor = undefined;
+    this.beamGfx.clear();
+    this.captiveSprite?.destroy();
+    this.captiveSprite = undefined;
     this.time.delayedCall(WAVE_RESPAWN_MS, () => {
       this.enemies = buildFormation(this);
       this.respawning = false;

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { STAR_COUNT, STAR_SPEEDS } from './constants';
+import { STAR_COUNT, STAR_SPEEDS, STAR_ALPHA } from './constants';
 import { COLORS } from './palette';
 import { TX } from './sprites';
 
@@ -28,6 +28,7 @@ export class Starfield {
       const img = scene.add
         .image(Phaser.Math.Between(0, width), Phaser.Math.Between(0, height), TX.star)
         .setDepth(0)
+        .setAlpha(STAR_ALPHA)
         .setTint(STAR_TINTS[tier]);
       this.stars.push({ img, speed: STAR_SPEEDS[tier] });
     }

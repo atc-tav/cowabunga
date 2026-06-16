@@ -13,6 +13,17 @@ export const MAX_BULLETS = 2; // classic Galaga only allows two shots in flight
 // Scrolling starfield (parallax tiers).
 export const STAR_COUNT = 60;
 export const STAR_SPEEDS = [16, 30, 48];
+export const STAR_ALPHA = 0.5; // dimmed so enemy bolts stay readable
+
+// --- tractor beam (capture) ---------------------------------------------
+
+export const BEAM_HOVER_Y = 118; // where the capturing boss hovers
+export const APPROACH_SPEED = 110;
+export const BEAM_GROW_MS = 450;
+export const BEAM_HOLD_MS = 1500;
+export const BEAM_RETRACT_MS = 400;
+export const BEAM_HALF_WIDTH = 24; // capture window at the bottom of the cone
+export const CAPTURE_CHANCE = 0.5; // chance a boss dive becomes a capture run
 
 // --- enemy formation ----------------------------------------------------
 
@@ -35,21 +46,21 @@ export const WAVE_RESPAWN_MS = 1200;
 
 // --- formation fly-in ---------------------------------------------------
 
-export const ENTRY_SPEED = 150; // px/sec along the entry path
-export const ENTRY_STAGGER_MS = 130; // delay between successive enemies launching
+export const ENTRY_SPEED = 120; // px/sec along the entry path
+export const ENTRY_STAGGER_MS = 150; // delay between successive enemies launching
 export const ENTRY_STEPS = 20; // points sampled along each entry curve
 export const SWAY_AMP = 6; // formation "breathing" horizontal amplitude (px)
-export const SWAY_FREQ = 2.2; // breathing speed (rad/sec)
+export const SWAY_FREQ = 1.8; // breathing speed (rad/sec)
 
 // --- dives, enemy fire, lives -------------------------------------------
 
-export const DIVE_SPEED = 175; // px/sec along a dive path
+export const DIVE_SPEED = 140; // px/sec along a dive path
 export const DIVE_STEPS = 24; // points sampled along each dive curve
-export const DIVE_INTERVAL_MS = 1700; // gap between launching dives
+export const DIVE_INTERVAL_MS = 2000; // gap between launching dives
 export const MAX_DIVERS = 2; // simultaneous divers
 
-export const ENEMY_BULLET_SPEED = 165;
-export const ENEMY_FIRE_MS = 650; // per-diver fire cadence
+export const ENEMY_BULLET_SPEED = 130;
+export const ENEMY_FIRE_MS = 750; // per-diver fire cadence
 
 export const LIVES_START = 3;
 export const READY_MS = 1500;
