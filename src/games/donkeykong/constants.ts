@@ -26,5 +26,4 @@ export const BARREL_RIDE = 5; // how far the barrel centre sits above a girder t
 export const BARREL_HIT_DIST = 10; // collision radius vs Mario
 export const BARREL_FRAMES = 4;
 
-export const DK_POS = { x: 42, y: 64 } as const; // sits on the top girder
 export const DEATH_PAUSE_MS = 900;
