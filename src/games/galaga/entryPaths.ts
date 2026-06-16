@@ -36,8 +36,8 @@ export function makeEntryPath(home: Pt, fromLeft: boolean): Pt[] {
  * into a formation). Several variants give the "flowing chains" look.
  */
 export function makeChallengePath(variant: number): Pt[] {
-  switch (variant % 3) {
-    case 0:
+  switch (variant % 6) {
+    case 0: // diagonal swoop, left -> right
       return cubic(
         { x: -20, y: 30 },
         { x: WIDTH * 0.4, y: HEIGHT * 0.75 },
@@ -45,7 +45,7 @@ export function makeChallengePath(variant: number): Pt[] {
         { x: WIDTH + 20, y: HEIGHT * 0.85 },
         30,
       );
-    case 1:
+    case 1: // diagonal swoop, right -> left
       return cubic(
         { x: WIDTH + 20, y: 30 },
         { x: WIDTH * 0.6, y: HEIGHT * 0.75 },
@@ -53,7 +53,7 @@ export function makeChallengePath(variant: number): Pt[] {
         { x: -20, y: HEIGHT * 0.85 },
         30,
       );
-    default:
+    case 2: // big S down the middle
       return cubic(
         { x: WIDTH / 2, y: -20 },
         { x: -10, y: HEIGHT * 0.55 },
@@ -61,7 +61,37 @@ export function makeChallengePath(variant: number): Pt[] {
         { x: WIDTH / 2, y: HEIGHT + 20 },
         30,
       );
+    case 3: // loop on the left
+      return loop({ x: -20, y: 60 }, { x: WIDTH * 0.32, y: HEIGHT * 0.42 }, 40, { x: WIDTH + 20, y: HEIGHT * 0.6 });
+    case 4: // loop on the right
+      return loop({ x: WIDTH + 20, y: 60 }, { x: WIDTH * 0.68, y: HEIGHT * 0.42 }, 40, { x: -20, y: HEIGHT * 0.6 });
+    default: // side-to-side zig-zag descending
+      return zigzag();
   }
+}
+
+/** A descending loop: enter, circle around a centre, then exit across. */
+function loop(enter: Pt, centre: Pt, radius: number, exit: Pt): Pt[] {
+  const pts: Pt[] = [enter];
+  const steps = 24;
+  for (let i = 0; i <= steps; i++) {
+    const a = -Math.PI / 2 + (i / steps) * Math.PI * 2;
+    pts.push({ x: centre.x + Math.cos(a) * radius, y: centre.y + Math.sin(a) * radius });
+  }
+  pts.push(exit);
+  return pts;
+}
+
+/** A side-to-side zig-zag from the top to the bottom. */
+function zigzag(): Pt[] {
+  const pts: Pt[] = [];
+  const rows = 5;
+  for (let i = 0; i <= rows; i++) {
+    const y = -20 + ((HEIGHT + 40) * i) / rows;
+    const x = i % 2 === 0 ? WIDTH * 0.15 : WIDTH * 0.85;
+    pts.push({ x, y });
+  }
+  return pts;
 }
 export function makeApproachPath(home: Pt, hoverX: number, hoverY: number): Pt[] {
   const p1 = { x: home.x, y: home.y + 40 };

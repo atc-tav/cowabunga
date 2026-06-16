@@ -72,7 +72,9 @@ export const DEATH_PAUSE_MS = 1100;
 export const GAMEOVER_MS = 2500;
 
 export const DUAL_OFFSET = 14; // gap between the two ships of a dual fighter
-export const RESCUE_FLY_MS = 550; // captive's fly-down-to-player animation
+export const RESCUE_FLY_MS = 1000; // captive's fly-down (match the capture length)
+export const INVULN_MS = 1000; // brief i-frames after losing a wingman
+export const DIVE_GRACE_MS = 800; // breathing space before diving starts each stage
 
 // --- waves & difficulty ramp --------------------------------------------
 
@@ -88,4 +90,9 @@ export const CHALLENGE_BONUS_PER = 100; // per enemy shot
 export const CHALLENGE_PERFECT_BONUS = 1000; // shooting the whole stage
 export const CHALLENGE_SPEED = 125; // px/sec along a flythrough chain
 export const CHAIN_STAGGER_MS = 130; // gap between enemies in a chain
-export const CHALLENGE_SAFETY_MS = 16000; // hard cap on a challenge stage
+export const CHALLENGE_SAFETY_MS = 30000; // hard cap on a challenge stage
+export const CHALLENGE_PATTERN_COUNT = 6; // number of distinct chain patterns
+export const CHAIN_FIRST_AT_MS = 700; // breathing space before the first chain
+export const CHAIN_GAP_MS = 1200; // empty-screen gap between chains (>=1s)
+export const CHALLENGE_BASE_CHAINS = 4; // chains in the first challenge stage
+export const CHALLENGE_CHAIN_COUNT = 6; // enemies per chain

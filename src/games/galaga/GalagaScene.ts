@@ -52,6 +52,13 @@ import {
   CHALLENGE_SPEED,
   CHAIN_STAGGER_MS,
   CHALLENGE_SAFETY_MS,
+  CHALLENGE_PATTERN_COUNT,
+  CHAIN_FIRST_AT_MS,
+  CHAIN_GAP_MS,
+  CHALLENGE_BASE_CHAINS,
+  CHALLENGE_CHAIN_COUNT,
+  INVULN_MS,
+  DIVE_GRACE_MS,
   ENEMY_SCORE,
   EnemyType,
 } from './constants';
@@ -62,7 +69,6 @@ import { buildFormation, Enemy } from './enemies';
 import { makeEntryPath, makeDivePath, makeApproachPath, makeChallengePath } from './entryPaths';
 
 interface ChainSpec {
-  at: number;
   type: EnemyType;
   variant: number;
   count: number;
@@ -99,6 +105,7 @@ export class GalagaScene extends BaseGameScene {
   private isChallenge = false;
   private challengeChains: ChainSpec[] = [];
   private challengeClock = 0;
+  private challengeGap = 0;
   private challengeHits = 0;
   private challengeTotal = 0;
   private entrySpeed = ENTRY_SPEED;
@@ -121,6 +128,8 @@ export class GalagaScene extends BaseGameScene {
   // dual fighter
   private dual = false;
   private wingman?: Phaser.GameObjects.Image;
+  private invuln = 0; // i-frames after a wingman loss
+  private diveGrace = 0; // breathing space before diving starts a stage
 
   private banner!: Phaser.GameObjects.Text;
   private stageBanner!: Phaser.GameObjects.Text;
@@ -146,6 +155,8 @@ export class GalagaScene extends BaseGameScene {
     this.dual = false;
     this.lostToCapture = false;
     this.respawning = false;
+    this.invuln = 0;
+    this.diveGrace = 0;
     this.wave = 1;
 
     this.stars = new Starfield(this, WIDTH, HEIGHT);
@@ -188,6 +199,7 @@ export class GalagaScene extends BaseGameScene {
     this.applyWaveDifficulty();
     this.isChallenge = this.wave % CHALLENGE_EVERY === 0;
 
+    this.diveGrace = DIVE_GRACE_MS;
     if (this.isChallenge) {
       this.startChallenge();
     } else {
@@ -205,14 +217,21 @@ export class GalagaScene extends BaseGameScene {
     this.enemies = [];
     this.challengeClock = 0;
     this.challengeHits = 0;
-    // A sequence of flowing chains in different patterns/types.
-    this.challengeChains = [
-      { at: 400, type: 'bee', variant: 0, count: 6 },
-      { at: 1600, type: 'bee', variant: 1, count: 6 },
-      { at: 3000, type: 'butterfly', variant: 2, count: 6 },
-      { at: 4400, type: 'butterfly', variant: 0, count: 6 },
-      { at: 5800, type: 'boss', variant: 1, count: 4 },
-    ];
+    this.challengeGap = CHAIN_FIRST_AT_MS; // breathing space before the first chain
+
+    // Progressively longer stages: +1 chain per challenge stage reached.
+    const stageIndex = Math.floor(this.wave / CHALLENGE_EVERY); // 1, 2, 3, ...
+    const numChains = CHALLENGE_BASE_CHAINS + (stageIndex - 1);
+    const types: EnemyType[] = ['bee', 'butterfly', 'bee', 'butterfly', 'boss'];
+
+    this.challengeChains = [];
+    for (let k = 0; k < numChains; k++) {
+      this.challengeChains.push({
+        type: types[k % types.length],
+        variant: k % CHALLENGE_PATTERN_COUNT, // cycle loops / zig-zags / swoops
+        count: CHALLENGE_CHAIN_COUNT,
+      });
+    }
     this.challengeTotal = this.challengeChains.reduce((n, c) => n + c.count, 0);
   }
 
@@ -241,8 +260,10 @@ export class GalagaScene extends BaseGameScene {
 
   private enterReady(): void {
     this.readyTimer = READY_MS;
+    this.diveGrace = DIVE_GRACE_MS;
+    this.invuln = 0;
     this.banner.setText('READY!').setColor('#fcfc00').setVisible(true);
-    this.player.setPosition(WIDTH / 2, PLAYER_Y).setAngle(0).setVisible(true);
+    this.player.setPosition(WIDTH / 2, PLAYER_Y).setAngle(0).setAlpha(1).setVisible(true);
     this.destroyAll(this.enemyBullets);
     this.recallDivers();
     this.clearActiveCapture();
@@ -267,20 +288,30 @@ export class GalagaScene extends BaseGameScene {
       this.updateChallenge(delta);
       this.checkHits();
       // Dying in a challenge stage costs no life — it just ends the stage.
-      if (this.playerWasHit()) {
+      if (this.playerOverlapped()) {
         this.endChallenge();
       }
       return;
     }
 
-    this.advanceFormation(delta, true);
+    if (this.diveGrace > 0) {
+      this.diveGrace -= delta;
+    }
+    if (this.invuln > 0) {
+      this.invuln -= delta;
+      this.player.setAlpha(Math.floor(this.invuln / 80) % 2 === 0 ? 1 : 0.4);
+      if (this.invuln <= 0) {
+        this.player.setAlpha(1);
+      }
+    }
+
+    this.advanceFormation(delta, this.diveGrace <= 0);
     this.updateCapture(delta);
     this.scheduleCapture(delta);
     this.updateEnemyFire(delta);
-    this.updateCaptive();
     this.updateEnemyBullets(delta);
     this.checkHits();
-    if (this.playerWasHit() && this.lethalHit(false)) {
+    if (this.resolvePlayerHit()) {
       return;
     }
     this.checkWaveCleared();
@@ -290,10 +321,8 @@ export class GalagaScene extends BaseGameScene {
 
   private updateChallenge(delta: number): void {
     this.challengeClock += delta;
-    while (this.challengeChains.length > 0 && this.challengeChains[0].at <= this.challengeClock) {
-      this.spawnChain(this.challengeChains.shift() as ChainSpec);
-    }
 
+    // Move chain enemies; remove those that have flown off the screen.
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       enemy.elapsed += delta;
@@ -308,9 +337,28 @@ export class GalagaScene extends BaseGameScene {
       }
     }
 
-    const allSpawned = this.challengeChains.length === 0;
-    const timedOut = this.challengeClock >= CHALLENGE_SAFETY_MS;
-    if (!this.respawning && ((allSpawned && this.enemies.length === 0) || timedOut)) {
+    if (this.respawning) {
+      return;
+    }
+    if (this.challengeClock >= CHALLENGE_SAFETY_MS) {
+      this.endChallenge();
+      return;
+    }
+
+    // Event-driven spacing: only launch the next chain once the screen is clear
+    // for a gap, guaranteeing >=1s of empty space between chains.
+    if (this.enemies.length > 0) {
+      this.challengeGap = CHAIN_GAP_MS;
+      return;
+    }
+    this.challengeGap -= delta;
+    if (this.challengeGap > 0) {
+      return;
+    }
+    if (this.challengeChains.length > 0) {
+      this.spawnChain(this.challengeChains.shift() as ChainSpec);
+      this.challengeGap = CHAIN_GAP_MS;
+    } else {
       this.endChallenge();
     }
   }
@@ -360,6 +408,11 @@ export class GalagaScene extends BaseGameScene {
       return;
     }
     this.audio.play('captured');
+    this.cameras.main.flash(160, 255, 80, 80);
+    floatingText(this, this.player.x, this.player.y - 14, 'CAPTURED!', {
+      color: '#ff5555',
+      fontSize: '8px',
+    });
     // Phase 1: the caught ship spins and rises into the boss.
     this.tweens.add({
       targets: this.player,
@@ -427,9 +480,11 @@ export class GalagaScene extends BaseGameScene {
     }
     this.player.setVisible(false);
     this.setDual(false);
+    this.destroyAll(this.bullets); // your shots die with you
     this.destroyAll(this.enemyBullets);
     this.recallDivers();
     this.clearActiveCapture();
+    this.invuln = 0;
     this.time.delayedCall(DEATH_PAUSE_MS, () => this.afterDeath());
   }
 
@@ -468,17 +523,15 @@ export class GalagaScene extends BaseGameScene {
     }
     const shipXs = this.dual && this.wingman ? [this.player.x, this.wingman.x] : [this.player.x];
     const cap = this.dual ? MAX_BULLETS * 2 : MAX_BULLETS;
-    let fired = false;
+    // Fire the whole volley atomically so both ships always shoot together
+    // (never a lone shot when rapid-firing).
+    if (this.bullets.length + shipXs.length > cap) {
+      return;
+    }
     for (const x of shipXs) {
-      if (this.bullets.length >= cap) {
-        break;
-      }
       this.bullets.push(this.add.image(x, PLAYER_Y - 8, TX.bullet).setDepth(9));
-      fired = true;
     }
-    if (fired) {
-      this.audio.play('shoot');
-    }
+    this.audio.play('shoot');
   }
 
   private setDual(on: boolean): void {
@@ -494,14 +547,61 @@ export class GalagaScene extends BaseGameScene {
     }
   }
 
-  private lethalHit(captured: boolean): boolean {
+  private shipBounds(): Phaser.Geom.Rectangle[] {
+    const list = [this.player.getBounds()];
+    if (this.dual && this.wingman) {
+      list.push(this.wingman.getBounds());
+    }
+    return list;
+  }
+
+  /** No-side-effect overlap test (used by the challenge stage). */
+  private playerOverlapped(): boolean {
+    const ships = this.shipBounds();
+    const hit = (r: Phaser.Geom.Rectangle): boolean =>
+      ships.some((s) => Phaser.Geom.Intersects.RectangleToRectangle(s, r));
+    if (this.enemyBullets.some((eb) => hit(eb.getBounds()))) {
+      return true;
+    }
+    return this.enemies.some(
+      (e) => (e.state === 'diving' || e.state === 'challenge') && hit(e.sprite.getBounds()),
+    );
+  }
+
+  /** Resolve a hit in normal play: consume the offending bolt, lose one ship. */
+  private resolvePlayerHit(): boolean {
+    if (this.invuln > 0) {
+      return false;
+    }
+    const ships = this.shipBounds();
+    const hit = (r: Phaser.Geom.Rectangle): boolean =>
+      ships.some((s) => Phaser.Geom.Intersects.RectangleToRectangle(s, r));
+
+    for (let i = this.enemyBullets.length - 1; i >= 0; i--) {
+      if (hit(this.enemyBullets[i].getBounds())) {
+        this.enemyBullets[i].destroy();
+        this.enemyBullets.splice(i, 1);
+        return this.applyPlayerHit();
+      }
+    }
+    for (const enemy of this.enemies) {
+      if (enemy.state === 'diving' && hit(enemy.sprite.getBounds())) {
+        return this.applyPlayerHit();
+      }
+    }
+    return false;
+  }
+
+  /** Lose one ship: a dual fighter drops its wingman (i-frames), a single ship dies. */
+  private applyPlayerHit(): boolean {
     if (this.dual && this.wingman) {
       playFrames(this, this.wingman.x, this.wingman.y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
       this.audio.play('explosion');
       this.setDual(false);
+      this.invuln = INVULN_MS; // so the same bolt/diver can't kill the survivor
       return false;
     }
-    this.lostToCapture = captured;
+    this.lostToCapture = false;
     this.flow.transition('dying');
     return true;
   }
@@ -553,6 +653,9 @@ export class GalagaScene extends BaseGameScene {
     if (allowDive) {
       this.scheduleDives(delta);
     }
+    // Keep the captive glued to its captor here so it stays visible through
+    // the boss's re-entry fly-in during READY, not just during PLAYING.
+    this.updateCaptive();
   }
 
   private flapEnemies(delta: number): void {
@@ -866,30 +969,6 @@ export class GalagaScene extends BaseGameScene {
         this.bullets.splice(b, 1);
       }
     }
-  }
-
-  private playerWasHit(): boolean {
-    const hitboxes = [this.player.getBounds()];
-    if (this.dual && this.wingman) {
-      hitboxes.push(this.wingman.getBounds());
-    }
-    const overlaps = (r: Phaser.Geom.Rectangle): boolean =>
-      hitboxes.some((h) => Phaser.Geom.Intersects.RectangleToRectangle(h, r));
-
-    for (const bullet of this.enemyBullets) {
-      if (overlaps(bullet.getBounds())) {
-        return true;
-      }
-    }
-    for (const enemy of this.enemies) {
-      if (
-        (enemy.state === 'diving' || enemy.state === 'challenge') &&
-        overlaps(enemy.sprite.getBounds())
-      ) {
-        return true;
-      }
-    }
-    return false;
   }
 
   private checkWaveCleared(): void {
