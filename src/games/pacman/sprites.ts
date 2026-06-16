@@ -54,6 +54,43 @@ const GHOST_TOP: string[] = [
 const GHOST_FEET_A: string[] = [...GHOST_TOP, 'RR  RR  RR  RR'];
 const GHOST_FEET_B: string[] = [...GHOST_TOP, '  RR  RR  RR  '];
 
+// Frightened ghost: small eyes + a wavy mouth. F = body, W = face.
+const FRIGHT_TOP: string[] = [
+  '    FFFFFF    ',
+  '  FFFFFFFFFF  ',
+  ' FFFFFFFFFFFF ',
+  'FFFFFFFFFFFFFF',
+  'FFFWWFFFFWWFFF',
+  'FFFWWFFFFWWFFF',
+  'FFFFFFFFFFFFFF',
+  'FFWWFFWWFFWWFF',
+  'FWFFWWFFWWFFWF',
+  'FFFFFFFFFFFFFF',
+  'FFFFFFFFFFFFFF',
+  'FFFFFFFFFFFFFF',
+  'FFFFFFFFFFFFFF',
+];
+const FRIGHT_FEET_A: string[] = [...FRIGHT_TOP, 'FF  FF  FF  FF'];
+const FRIGHT_FEET_B: string[] = [...FRIGHT_TOP, '  FF  FF  FF  '];
+
+// Just the eyes — what an eaten ghost becomes while returning home.
+const EYES_ART: string[] = [
+  '              ',
+  '              ',
+  '              ',
+  '              ',
+  '   WW    WW   ',
+  '  WWWW  WWWW  ',
+  '  WbWW  WbWW  ',
+  '  WWWW  WWWW  ',
+  '   WW    WW   ',
+  '              ',
+  '              ',
+  '              ',
+  '              ',
+  '              ',
+];
+
 const DOT_ART: string[] = ['DD', 'DD'];
 
 const ENERGIZER_ART: string[] = [
@@ -87,6 +124,15 @@ export function ghostFrames(name: GhostName): [string, string] {
   return [`ghost-${name}-0`, `ghost-${name}-1`];
 }
 
+/** Shared frightened / blink / eyes texture keys (not per-ghost). */
+export const FRIGHT_TX = {
+  body0: 'ghost-fright-0',
+  body1: 'ghost-fright-1',
+  blink0: 'ghost-fright-blink-0',
+  blink1: 'ghost-fright-blink-1',
+  eyes: 'ghost-eyes',
+} as const;
+
 export function buildPacmanTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, TX.pacOpen, PAC_OPEN, { Y: COLORS.pacman });
   drawPixelArt(scene, TX.pacClosed, PAC_CLOSED, { Y: COLORS.pacman });
@@ -99,4 +145,12 @@ export function buildPacmanTextures(scene: Phaser.Scene): void {
     drawPixelArt(scene, frame0, GHOST_FEET_A, palette);
     drawPixelArt(scene, frame1, GHOST_FEET_B, palette);
   });
+
+  const fright = { F: COLORS.frightBody, W: COLORS.frightFace };
+  const blink = { F: COLORS.frightBlinkBody, W: COLORS.frightBlinkFace };
+  drawPixelArt(scene, FRIGHT_TX.body0, FRIGHT_FEET_A, fright);
+  drawPixelArt(scene, FRIGHT_TX.body1, FRIGHT_FEET_B, fright);
+  drawPixelArt(scene, FRIGHT_TX.blink0, FRIGHT_FEET_A, blink);
+  drawPixelArt(scene, FRIGHT_TX.blink1, FRIGHT_FEET_B, blink);
+  drawPixelArt(scene, FRIGHT_TX.eyes, EYES_ART, { W: COLORS.ghostEye, b: COLORS.ghostPupil });
 }

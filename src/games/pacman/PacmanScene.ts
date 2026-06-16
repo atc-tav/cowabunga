@@ -12,10 +12,16 @@ import {
   MAZE_OFFSET_Y,
   PLAYER_SPEED,
   GHOST_SPEED,
+  FRIGHT_SPEED,
+  EYES_SPEED,
   CHOMP_INTERVAL,
   TUNNEL_ROW,
   SCORE_DOT,
   SCORE_ENERGIZER,
+  GHOST_EAT_BASE,
+  GHOST_EAT_MAX_CHAIN,
+  FRIGHT_MS,
+  FRIGHT_BLINK_MS,
   LIVES_START,
   READY_MS,
   DEATH_SPIN_MS,
@@ -28,6 +34,8 @@ import {
   SCATTER_CORNERS,
   GHOST_EXIT_TARGET,
   GHOST_EXIT_ROW,
+  GHOST_HOME_TARGET,
+  GHOST_HOME_ROW,
   PINKY_LEAD,
   INKY_LEAD,
   CLYDE_SCATTER_DIST,
@@ -66,6 +74,9 @@ export class PacmanScene extends BaseGameScene {
   private phaseMode: 'scatter' | 'chase' = 'scatter';
   private phaseIndex = 0;
   private phaseTimer = 0;
+
+  private frightTimer = 0; // >0 while ghosts are frightened
+  private eatChain = 0; // consecutive ghosts eaten on the current energizer
 
   private readonly pellets = new Map<string, Pellet>();
   private readonly lifeIcons: Phaser.GameObjects.Image[] = [];
@@ -151,9 +162,24 @@ export class PacmanScene extends BaseGameScene {
     this.animateChomp(delta);
     this.eatPellet();
 
+    this.tickFrightened(delta);
     this.updateGhosts(delta);
-    if (this.ghostCaughtPac()) {
-      this.die();
+    this.resolveGhostContact();
+  }
+
+  private tickFrightened(delta: number): void {
+    if (this.frightTimer <= 0) {
+      return;
+    }
+    this.frightTimer -= delta;
+    const blinking = this.frightTimer <= FRIGHT_BLINK_MS;
+    for (const ghost of this.ghostList()) {
+      if (ghost.mode === 'frightened') {
+        ghost.blinking = blinking;
+      }
+    }
+    if (this.frightTimer <= 0) {
+      this.endFrightened();
     }
   }
 
@@ -217,15 +243,30 @@ export class PacmanScene extends BaseGameScene {
         continue;
       }
       if (ghost.mode === 'leaving') {
-        ghost.update(delta, GHOST_EXIT_TARGET.col, GHOST_EXIT_TARGET.row);
+        ghost.update(delta, GHOST_EXIT_TARGET);
         this.wrap(ghost.mover);
         if (ghost.tile().row <= GHOST_EXIT_ROW) {
           ghost.mode = this.phaseMode;
         }
         continue;
       }
-      const target = this.ghostTarget(ghost.name, pac, pacDir, blinkyTile);
-      ghost.update(delta, target.col, target.row);
+      if (ghost.mode === 'eyes') {
+        ghost.update(delta, GHOST_HOME_TARGET);
+        this.wrap(ghost.mover);
+        if (ghost.tile().row >= GHOST_HOME_ROW) {
+          // Back home — revive and head out again.
+          ghost.mode = 'leaving';
+          ghost.setSpeed(GHOST_SPEED);
+        }
+        continue;
+      }
+      if (ghost.mode === 'frightened') {
+        ghost.update(delta, null);
+        this.wrap(ghost.mover);
+        continue;
+      }
+      // scatter / chase
+      ghost.update(delta, this.ghostTarget(ghost.name, pac, pacDir, blinkyTile));
       this.wrap(ghost.mover);
     }
   }
@@ -279,10 +320,11 @@ export class PacmanScene extends BaseGameScene {
     return [this.ghosts.blinky, this.ghosts.pinky, this.ghosts.inky, this.ghosts.clyde];
   }
 
-  private ghostCaughtPac(): boolean {
+  /** On contact: eat a frightened ghost, otherwise Pac-Man dies. */
+  private resolveGhostContact(): void {
     for (const ghost of this.ghostList()) {
-      if (ghost.mode === 'house' || ghost.mode === 'leaving') {
-        continue;
+      if (ghost.mode !== 'scatter' && ghost.mode !== 'chase' && ghost.mode !== 'frightened') {
+        continue; // house / leaving / eyes can't collide
       }
       const dist = Phaser.Math.Distance.Between(
         this.mover.x,
@@ -290,11 +332,50 @@ export class PacmanScene extends BaseGameScene {
         ghost.mover.x,
         ghost.mover.y,
       );
-      if (dist < CATCH_DISTANCE) {
-        return true;
+      if (dist >= CATCH_DISTANCE) {
+        continue;
+      }
+      if (ghost.mode === 'frightened') {
+        this.eatGhost(ghost);
+      } else {
+        this.die();
+        return;
       }
     }
-    return false;
+  }
+
+  private frightenGhosts(): void {
+    this.frightTimer = FRIGHT_MS;
+    this.eatChain = 0;
+    for (const ghost of this.ghostList()) {
+      if (ghost.mode === 'scatter' || ghost.mode === 'chase') {
+        ghost.mode = 'frightened';
+        ghost.setSpeed(FRIGHT_SPEED);
+        ghost.blinking = false;
+        ghost.reverse();
+      }
+    }
+  }
+
+  private endFrightened(): void {
+    this.frightTimer = 0;
+    for (const ghost of this.ghostList()) {
+      if (ghost.mode === 'frightened') {
+        ghost.mode = this.phaseMode;
+        ghost.setSpeed(GHOST_SPEED);
+        ghost.blinking = false;
+      }
+    }
+  }
+
+  private eatGhost(ghost: Ghost): void {
+    const points = GHOST_EAT_BASE * 2 ** this.eatChain;
+    this.eatChain = Math.min(this.eatChain + 1, GHOST_EAT_MAX_CHAIN - 1);
+    this.addScore(points);
+    this.audio.play('eatghost');
+    ghost.mode = 'eyes';
+    ghost.blinking = false;
+    ghost.setSpeed(EYES_SPEED);
   }
 
   // --- shared helpers -----------------------------------------------------
@@ -311,6 +392,8 @@ export class PacmanScene extends BaseGameScene {
     this.phaseIndex = 0;
     this.phaseMode = PHASE_SCHEDULE[0].mode;
     this.phaseTimer = PHASE_SCHEDULE[0].ms;
+    this.frightTimer = 0;
+    this.eatChain = 0;
   }
 
   private readInput(): void {
@@ -400,6 +483,9 @@ export class PacmanScene extends BaseGameScene {
     this.grid.set(col, row, ' ');
     this.addScore(pellet.energizer ? SCORE_ENERGIZER : SCORE_DOT);
     this.audio.play(pellet.energizer ? 'energizer' : 'chomp');
+    if (pellet.energizer) {
+      this.frightenGhosts();
+    }
 
     if (this.pellets.size === 0) {
       this.time.delayedCall(400, () => this.buildPellets());

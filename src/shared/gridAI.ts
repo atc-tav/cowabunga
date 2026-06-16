@@ -55,3 +55,26 @@ export function chooseDirectionToward(
   // Dead end: turn around if we can, otherwise stay put.
   return canEnter(col + reverse.x, row + reverse.y) ? reverse : { x: 0, y: 0 };
 }
+
+/**
+ * Pick a pseudo-random walkable, non-reversing direction — the movement model
+ * for frightened ghosts (and any "wandering" grid enemy). Falls back to a
+ * U-turn at dead ends. `rng` is injectable for deterministic testing.
+ */
+export function chooseRandomDirection(
+  col: number,
+  row: number,
+  currentDir: Vec2,
+  canEnter: (col: number, row: number) => boolean,
+  rng: () => number = Math.random,
+): Vec2 {
+  const reverse = { x: -currentDir.x, y: -currentDir.y };
+  const options = PREFERRED_DIRECTIONS.filter(
+    (dir) =>
+      !(dir.x === reverse.x && dir.y === reverse.y) && canEnter(col + dir.x, row + dir.y),
+  );
+  if (options.length > 0) {
+    return options[Math.floor(rng() * options.length)];
+  }
+  return canEnter(col + reverse.x, row + reverse.y) ? reverse : { x: 0, y: 0 };
+}
