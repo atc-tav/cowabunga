@@ -20,8 +20,14 @@ const SHIP_ART: string[] = [
 // Player bolt (2x4).
 const BULLET_ART: string[] = ['YY', 'YY', 'YY', 'YY'];
 
-// Enemy bolt (3x3 plus-sign).
-const ENEMY_BULLET_ART: string[] = [' M ', 'MMM', ' M '];
+// Enemy bolt (5x5 diamond with a bright white core, for visibility).
+const ENEMY_BULLET_ART: string[] = [
+  '  M  ',
+  ' MMM ',
+  'MMWMM',
+  ' MMM ',
+  '  M  ',
+];
 
 // A single star — a short vertical streak, tinted per parallax tier.
 const STAR_ART: string[] = ['W', 'W'];
@@ -118,7 +124,7 @@ export const TX = {
 export function buildGalagaTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, TX.ship, SHIP_ART, { W: COLORS.ship, R: COLORS.cockpit });
   drawPixelArt(scene, TX.bullet, BULLET_ART, { Y: COLORS.bullet });
-  drawPixelArt(scene, TX.enemyBullet, ENEMY_BULLET_ART, { M: COLORS.enemyBullet });
+  drawPixelArt(scene, TX.enemyBullet, ENEMY_BULLET_ART, { M: COLORS.enemyBullet, W: 0xffffff });
   drawPixelArt(scene, TX.star, STAR_ART, { W: 0xffffff });
 
   const beePal = { Y: COLORS.beeBody, B: COLORS.beeWing, W: COLORS.eye };
