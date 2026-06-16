@@ -8,9 +8,11 @@ export const COLORS = {
   shipTrim: 0x3cbcfc,
   bullet: 0xfcff5e,
   enemyBullet: 0xff66ff,
-  star1: 0x8888ff,
-  star2: 0xffffff,
-  star3: 0xff8888,
+  beam: 0x9cf0ff, // tractor-beam cone
+  captive: 0x88aaff, // captured ship tint
+  star1: 0x5566aa,
+  star2: 0xaaaaaa,
+  star3: 0xaa5566,
   eye: 0xffffff,
   beeBody: 0xffd000,
   beeWing: 0x2038ec,

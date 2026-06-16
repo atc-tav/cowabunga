@@ -31,6 +31,16 @@ export function makeEntryPath(home: Pt, fromLeft: boolean): Pt[] {
 }
 
 /**
+ * A short approach curve for a capturing boss: drop from its slot to a hover
+ * point above the player, where it will deploy the tractor beam.
+ */
+export function makeApproachPath(home: Pt, hoverX: number, hoverY: number): Pt[] {
+  const p1 = { x: home.x, y: home.y + 40 };
+  const p2 = { x: hoverX, y: hoverY - 40 };
+  return cubic(home, p1, p2, { x: hoverX, y: hoverY }, ENTRY_STEPS);
+}
+
+/**
  * A dive curve: peel out of the formation, swoop down toward the player's
  * column (aimX), and exit off the bottom of the screen.
  */

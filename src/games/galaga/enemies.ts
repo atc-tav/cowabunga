@@ -14,7 +14,7 @@ import {
 import { enemyFrame } from './sprites';
 import { makeEntryPath } from './entryPaths';
 
-export type EnemyState = 'entering' | 'formed' | 'diving';
+export type EnemyState = 'entering' | 'formed' | 'diving' | 'capturing';
 
 export interface Enemy {
   sprite: Phaser.GameObjects.Image;
@@ -26,6 +26,7 @@ export interface Enemy {
   elapsed: number;
   state: EnemyState;
   fireTimer: number;
+  hasCaptive: boolean;
 }
 
 const ROW_TYPES: EnemyType[] = ['boss', 'butterfly', 'butterfly', 'bee', 'bee'];
@@ -61,6 +62,7 @@ export function buildFormation(scene: Phaser.Scene): Enemy[] {
         elapsed: 0,
         state: 'entering',
         fireTimer: 0,
+        hasCaptive: false,
       });
       index++;
     }
