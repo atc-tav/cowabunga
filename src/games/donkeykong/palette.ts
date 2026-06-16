@@ -8,4 +8,10 @@ export const COLORS = {
   hair: 0x6a3000,
   overalls: 0x2038ec, // blue overalls
   boots: 0x6a3000,
+  dkBody: 0x6a3000,
+  dkFace: 0xd0a070,
+  dkEye: 0xffffff,
+  barrelBody: 0xd0a050,
+  barrelRim: 0x5a2c00,
+  barrelStave: 0x8a5a18,
 } as const;
