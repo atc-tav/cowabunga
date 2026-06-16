@@ -28,7 +28,7 @@ export class Ghost {
   private readonly grid: Grid;
   private readonly frames: [string, string];
   private readonly canEnter: (col: number, row: number) => boolean;
-  private readonly baseSpeed: number;
+  private baseSpeed: number;
   private homeY: number;
   private footTimer = 0;
   private footFrame = 0;
@@ -100,6 +100,11 @@ export class Ghost {
 
   setSpeed(speed: number): void {
     this.mover.setSpeed(speed);
+  }
+
+  /** Set the per-level baseline speed restored on reset. */
+  setBaseSpeed(speed: number): void {
+    this.baseSpeed = speed;
   }
 
   /** Reset to a fresh in-house state. */
