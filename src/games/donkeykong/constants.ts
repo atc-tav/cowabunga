@@ -35,3 +35,18 @@ export const HELP_PERIOD_MAX_MS = 15000;
 export const DEATH_PAUSE_MS = 900;
 export const WIN_MS = 2600;
 export const GAMEOVER_MS = 2600;
+
+// --- hammer power-up ----------------------------------------------------
+
+export const HAMMER_DURATION_MS = 6500;
+export const HAMMER_BLINK_MS = 2000; // flash near the end
+export const HAMMER_SWING_MS = 170; // up/down swing beat
+export const HAMMER_SMASH_DIST = 13; // hammer-head reach
+export const HAMMER_PICKUP_DIST = 11;
+export const SCORE_SMASH = 300; // points per smashed barrel
+
+// Hammer pickups by girder index + x (float just above the girder).
+export const HAMMER_SPOTS: { g: number; x: number }[] = [
+  { g: 4, x: 90 },
+  { g: 2, x: 132 },
+];

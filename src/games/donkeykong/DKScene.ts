@@ -33,8 +33,16 @@ import {
   DEATH_PAUSE_MS,
   WIN_MS,
   GAMEOVER_MS,
+  HAMMER_DURATION_MS,
+  HAMMER_BLINK_MS,
+  HAMMER_SWING_MS,
+  HAMMER_SMASH_DIST,
+  HAMMER_PICKUP_DIST,
+  SCORE_SMASH,
+  HAMMER_SPOTS,
 } from './constants';
 import { COLORS } from './palette';
+import { floatingText } from '../../shared/popups';
 import { buildDKTextures, BARREL_KEYS, TX } from './sprites';
 import { LEVEL1_GIRDERS, buildLadders, DK_X, PAULINE_X, Ladder } from './levels';
 
@@ -87,6 +95,13 @@ export class DKScene extends BaseGameScene {
   private readonly barrels: Barrel[] = [];
   private barrelTimer = 0;
 
+  private hammerMode = false;
+  private hammerTimer = 0;
+  private hammerSwingTimer = 0;
+  private hammerUp = false;
+  private hammerSprite!: Phaser.GameObjects.Image;
+  private readonly hammerItems: { sprite: Phaser.GameObjects.Image; x: number; y: number; taken: boolean }[] = [];
+
   constructor() {
     super({ key: 'game-dk', gameId: 'donkeykong', width: WIDTH, height: HEIGHT });
   }
@@ -98,6 +113,15 @@ export class DKScene extends BaseGameScene {
 
     this.barrels.length = 0;
     this.lifeIcons.length = 0;
+
+    this.hammerItems.length = 0;
+    for (const spot of HAMMER_SPOTS) {
+      const x = spot.x;
+      const y = this.surfaceAt(spot.g, x) - 16;
+      this.hammerItems.push({ sprite: this.add.image(x, y, TX.hammer).setDepth(7), x, y, taken: false });
+    }
+    this.hammerSprite = this.add.image(0, 0, TX.hammer).setDepth(11).setVisible(false);
+    this.hammerMode = false;
 
     this.kong = this.add.image(DK_X, this.surfaceAt(0, DK_X) - 14, TX.kong).setDepth(9);
     this.add.image(PAULINE_X, this.surfaceAt(0, PAULINE_X) - 7, TX.pauline).setDepth(9);
@@ -215,6 +239,11 @@ export class DKScene extends BaseGameScene {
     this.spawnBarrels(delta);
     this.updateBarrels(delta);
     this.tickHelp(delta);
+    if (this.hammerMode) {
+      this.tickHammer(delta);
+    } else {
+      this.checkHammerPickup();
+    }
 
     if (this.reachedPauline()) {
       this.flow.transition('won');
@@ -269,11 +298,12 @@ export class DKScene extends BaseGameScene {
       );
       this.facing = dir > 0 ? 1 : -1;
     }
-    if (this.controls.justPressed('fire')) {
+    // While wielding the hammer you can't jump or climb (classic restriction).
+    if (!this.hammerMode && this.controls.justPressed('fire')) {
       this.mario.jump(JUMP_SPEED);
     }
     this.mario.update(delta, GRAVITY, this.girders);
-    if (this.mario.onGround && this.tryMountLadder()) {
+    if (!this.hammerMode && this.mario.onGround && this.tryMountLadder()) {
       return;
     }
     this.sprite.setFlipX(this.facing < 0);
@@ -352,6 +382,11 @@ export class DKScene extends BaseGameScene {
   private placeMarioAtStart(): void {
     this.climbing = false;
     this.ladder = undefined;
+    this.endHammer();
+    for (const item of this.hammerItems) {
+      item.taken = false;
+      item.sprite.setVisible(true);
+    }
     const sx = this.startX();
     this.mario.x = sx;
     this.mario.setFeet(this.surfaceAt(this.startGirder, sx));
@@ -363,6 +398,74 @@ export class DKScene extends BaseGameScene {
       .setFlipX(this.facing < 0)
       .setTexture(TX.marioWalk0)
       .setPosition(this.mario.x, this.mario.y);
+  }
+
+  // --- hammer -------------------------------------------------------------
+
+  private checkHammerPickup(): void {
+    for (const item of this.hammerItems) {
+      if (item.taken) {
+        continue;
+      }
+      if (Phaser.Math.Distance.Between(item.x, item.y, this.mario.x, this.mario.y) < HAMMER_PICKUP_DIST) {
+        item.taken = true;
+        item.sprite.setVisible(false);
+        this.hammerMode = true;
+        this.hammerTimer = HAMMER_DURATION_MS;
+        this.hammerSwingTimer = HAMMER_SWING_MS;
+        this.hammerUp = true;
+        this.audio.play('hammer');
+        return;
+      }
+    }
+  }
+
+  private tickHammer(delta: number): void {
+    this.hammerTimer -= delta;
+    if (this.hammerTimer <= 0) {
+      this.endHammer();
+      return;
+    }
+
+    this.hammerSwingTimer -= delta;
+    if (this.hammerSwingTimer <= 0) {
+      this.hammerSwingTimer = HAMMER_SWING_MS;
+      this.hammerUp = !this.hammerUp;
+    }
+
+    const head = this.hammerHead();
+    this.hammerSprite
+      .setVisible(this.hammerTimer > HAMMER_BLINK_MS || Math.floor(this.hammerTimer / 120) % 2 === 0)
+      .setPosition(head.x, head.y)
+      .setAngle(this.hammerUp ? 0 : this.facing > 0 ? 90 : -90)
+      .setFlipX(this.facing < 0);
+
+    this.smashWithHammer(head);
+  }
+
+  private hammerHead(): { x: number; y: number } {
+    if (this.hammerUp) {
+      return { x: this.mario.x, y: this.mario.y - MARIO_H / 2 - 4 };
+    }
+    return { x: this.mario.x + this.facing * 9, y: this.mario.y + 2 };
+  }
+
+  private smashWithHammer(head: { x: number; y: number }): void {
+    for (let i = this.barrels.length - 1; i >= 0; i--) {
+      const b = this.barrels[i];
+      if (Phaser.Math.Distance.Between(head.x, head.y, b.x, b.y) < HAMMER_SMASH_DIST) {
+        b.sprite.destroy();
+        this.barrels.splice(i, 1);
+        this.addScore(SCORE_SMASH);
+        floatingText(this, b.x, b.y, String(SCORE_SMASH), { color: '#ffffff', fontSize: '8px' });
+        this.audio.play('smash');
+      }
+    }
+  }
+
+  private endHammer(): void {
+    this.hammerMode = false;
+    this.hammerSprite.setVisible(false);
   }
 
   // --- win condition ------------------------------------------------------

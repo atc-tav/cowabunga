@@ -107,6 +107,20 @@ const PAULINE_ART: string[] = [
   '          ',
 ];
 
+// Hammer (8x10): H=head, h=handle.
+const HAMMER_ART: string[] = [
+  'HHHHHH  ',
+  'HHHHHH  ',
+  'HHHHHH  ',
+  '   hh   ',
+  '   hh   ',
+  '   hh   ',
+  '   hh   ',
+  '   hh   ',
+  '   hh   ',
+  '   hh   ',
+];
+
 export const TX = {
   marioWalk0: 'dk-mario-0',
   marioWalk1: 'dk-mario-1',
@@ -115,6 +129,7 @@ export const TX = {
   marioClimb1: 'dk-mario-climb-1',
   kong: 'dk-kong',
   pauline: 'dk-pauline',
+  hammer: 'dk-hammer',
 } as const;
 
 export const BARREL_KEYS = ['dk-barrel-0', 'dk-barrel-1', 'dk-barrel-2', 'dk-barrel-3'];
@@ -138,6 +153,8 @@ export function buildDKTextures(scene: Phaser.Scene): void {
     S: COLORS.skin,
     D: COLORS.paulineDress,
   });
+
+  drawPixelArt(scene, TX.hammer, HAMMER_ART, { H: COLORS.hammerHead, h: COLORS.hammerHandle });
 
   makeKong(scene);
   makeBarrels(scene);
