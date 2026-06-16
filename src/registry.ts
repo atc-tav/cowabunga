@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { PacmanScene } from './games/pacman/PacmanScene';
 import { GalagaScene } from './games/galaga/GalagaScene';
+import { DKScene } from './games/donkeykong/DKScene';
 import { SandboxScene } from './games/sandbox/SandboxScene';
 
 export interface GameResolution {
@@ -37,11 +38,18 @@ export const GAMES: GameEntry[] = [
     SceneClass: GalagaScene,
   },
   {
+    id: 'donkeykong',
+    title: 'DONKEY KONG',
+    key: 'game-dk',
+    resolution: { width: 224, height: 240 },
+    SceneClass: DKScene,
+  },
+  {
     id: 'sandbox',
     title: 'TEST',
     key: 'game-sandbox',
     resolution: { width: 224, height: 288 },
     SceneClass: SandboxScene,
   },
-  // More games land here one at a time: Donkey Kong -> Mario Bros. -> Dig Dug.
+  // More games land here one at a time: Mario Bros. -> Dig Dug.
 ];
