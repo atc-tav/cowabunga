@@ -32,3 +32,11 @@ export const ENEMY_SCORE: Record<EnemyType, number> = {
 
 export const EXPLOSION_FRAME_MS = 55;
 export const WAVE_RESPAWN_MS = 1200;
+
+// --- formation fly-in ---------------------------------------------------
+
+export const ENTRY_SPEED = 150; // px/sec along the entry path
+export const ENTRY_STAGGER_MS = 130; // delay between successive enemies launching
+export const ENTRY_STEPS = 20; // points sampled along each entry curve
+export const SWAY_AMP = 6; // formation "breathing" horizontal amplitude (px)
+export const SWAY_FREQ = 2.2; // breathing speed (rad/sec)

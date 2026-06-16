@@ -13,6 +13,8 @@ import {
   FLAP_MS,
   EXPLOSION_FRAME_MS,
   WAVE_RESPAWN_MS,
+  SWAY_AMP,
+  SWAY_FREQ,
 } from './constants';
 import { buildGalagaTextures, enemyFrame, EXPLOSION_KEYS, TX } from './sprites';
 import { Starfield } from './starfield';
@@ -30,6 +32,7 @@ export class GalagaScene extends BaseGameScene {
   private enemies: Enemy[] = [];
   private flapTimer = 0;
   private flapFrame: 0 | 1 = 0;
+  private swayClock = 0;
   private respawning = false;
 
   constructor() {
@@ -52,9 +55,31 @@ export class GalagaScene extends BaseGameScene {
     this.movePlayer(delta);
     this.handleFire();
     this.updateBullets(delta);
+    this.updateEnemies(delta);
     this.flapEnemies(delta);
     this.checkHits();
     this.checkWaveCleared();
+  }
+
+  /** Advance entering enemies along their paths; sway the ones that have arrived. */
+  private updateEnemies(delta: number): void {
+    this.swayClock += delta;
+    const sway = Math.sin((this.swayClock / 1000) * SWAY_FREQ) * SWAY_AMP;
+    for (const enemy of this.enemies) {
+      if (enemy.state === 'entering') {
+        enemy.elapsed += delta;
+        if (enemy.elapsed < enemy.startDelay) {
+          continue; // still queued off-screen
+        }
+        const p = enemy.follower.update(delta);
+        enemy.sprite.setPosition(p.x, p.y);
+        if (enemy.follower.done) {
+          enemy.state = 'formed';
+        }
+      } else {
+        enemy.sprite.setPosition(enemy.home.x + sway, enemy.home.y);
+      }
+    }
   }
 
   private movePlayer(delta: number): void {
