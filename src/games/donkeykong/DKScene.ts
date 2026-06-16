@@ -3,7 +3,7 @@ import { BaseGameScene } from '../../shared/BaseGameScene';
 import { PlatformerBody, PlatformSegment, surfaceY } from '../../shared/Platformer';
 import { StateMachine } from '../../shared/StateMachine';
 import { LivesManager } from '../../shared/LivesManager';
-import { LABEL_STYLE } from '../../shared/ui';
+import { LABEL_STYLE, HINT_STYLE } from '../../shared/ui';
 import {
   WIDTH,
   HEIGHT,
@@ -26,13 +26,14 @@ import {
   BARREL_HIT_DIST,
   LIVES_START,
   READY_MS,
+  COUNTDOWN_STEP_MS,
   DEATH_PAUSE_MS,
   WIN_MS,
   GAMEOVER_MS,
 } from './constants';
 import { COLORS } from './palette';
 import { buildDKTextures, BARREL_KEYS, TX } from './sprites';
-import { LEVEL1_GIRDERS, buildLadders, MARIO_START_X, DK_X, PAULINE_X, Ladder } from './levels';
+import { LEVEL1_GIRDERS, buildLadders, DK_X, PAULINE_X, Ladder } from './levels';
 
 interface Barrel {
   sprite: Phaser.GameObjects.Image;
@@ -64,7 +65,10 @@ export class DKScene extends BaseGameScene {
   private lives!: LivesManager;
   private readonly lifeIcons: Phaser.GameObjects.Image[] = [];
   private banner!: Phaser.GameObjects.Text;
+  private helpText!: Phaser.GameObjects.Text;
   private readyTimer = 0;
+  private countdownTimer = 0;
+  private countdownNum = 0;
 
   private facing: 1 | -1 = 1;
   private walkTimer = 0;
@@ -93,8 +97,14 @@ export class DKScene extends BaseGameScene {
 
     this.kong = this.add.image(DK_X, this.surfaceAt(0, DK_X) - 14, TX.kong).setDepth(9);
     this.add.image(PAULINE_X, this.surfaceAt(0, PAULINE_X) - 7, TX.pauline).setDepth(9);
+    this.helpText = this.add
+      .text(PAULINE_X, this.surfaceAt(0, PAULINE_X) - 18, 'HELP!', HINT_STYLE)
+      .setOrigin(0.5, 1)
+      .setColor('#ff66c4')
+      .setDepth(1000)
+      .setVisible(false);
 
-    this.mario = new PlatformerBody(MARIO_START_X, 0, MARIO_W, MARIO_H);
+    this.mario = new PlatformerBody(this.startX(), 0, MARIO_W, MARIO_H);
     this.sprite = this.add.image(0, 0, TX.marioWalk0).setDepth(10);
 
     this.lives = new LivesManager(LIVES_START);
@@ -107,12 +117,20 @@ export class DKScene extends BaseGameScene {
       .setDepth(1000);
 
     this.flow = new StateMachine<DKScene>(this)
+      .add('intro', { enter: () => this.enterIntro(), update: (_c, dt) => this.updateIntro(dt) })
       .add('ready', { enter: () => this.enterReady(), update: (_c, dt) => this.updateReady(dt) })
       .add('playing', { update: (_c, dt) => this.updatePlaying(dt) })
       .add('dying', { enter: () => this.enterDying() })
       .add('won', { enter: () => this.enterWon() })
       .add('gameover', { enter: () => this.enterGameOver() });
-    this.flow.transition('ready');
+    this.flow.transition('intro');
+  }
+
+  /** Start opposite the lowest ladder, so you must traverse to reach it. */
+  private startX(): number {
+    const lowest = this.ladders.find((l) => l.fromGirder === this.startGirder - 1);
+    const ladderX = lowest ? lowest.x : 30;
+    return ladderX < WIDTH / 2 ? WIDTH - 30 : 30;
   }
 
   protected updateGame(_time: number, delta: number): void {
@@ -120,6 +138,39 @@ export class DKScene extends BaseGameScene {
   }
 
   // --- flow ---------------------------------------------------------------
+
+  /** Level-start sequence: Pauline cries HELP, DK immediately rolls barrels,
+   *  and a 3-2-1-GO! countdown lets the barrels pre-roll down the screen. */
+  private enterIntro(): void {
+    this.placeMarioAtStart();
+    this.clearBarrels();
+    this.barrelTimer = 0; // DK throws immediately
+    this.helpText.setVisible(true);
+    this.countdownNum = 3;
+    this.countdownTimer = COUNTDOWN_STEP_MS;
+    this.banner.setText('3').setColor('#fcfc00').setVisible(true);
+  }
+
+  private updateIntro(delta: number): void {
+    // Barrels roll during the countdown; the player can't move or be hit yet.
+    this.spawnBarrels(delta);
+    this.updateBarrels(delta);
+
+    this.countdownTimer -= delta;
+    if (this.countdownTimer > 0) {
+      return;
+    }
+    this.countdownTimer = COUNTDOWN_STEP_MS;
+    this.countdownNum -= 1;
+    if (this.countdownNum > 0) {
+      this.banner.setText(String(this.countdownNum));
+    } else if (this.countdownNum === 0) {
+      this.banner.setText('GO!');
+    } else {
+      this.banner.setVisible(false);
+      this.flow.transition('playing');
+    }
+  }
 
   private enterReady(): void {
     this.readyTimer = READY_MS;
@@ -177,6 +228,7 @@ export class DKScene extends BaseGameScene {
 
   private enterWon(): void {
     this.banner.setText('YOU WIN!').setColor('#fcfc00').setVisible(true);
+    this.helpText.setVisible(false);
     this.clearBarrels();
     this.audio.play('win');
     this.addScore(5000);
@@ -283,12 +335,17 @@ export class DKScene extends BaseGameScene {
   private placeMarioAtStart(): void {
     this.climbing = false;
     this.ladder = undefined;
-    this.mario.x = MARIO_START_X;
-    this.mario.setFeet(this.surfaceAt(this.startGirder, MARIO_START_X));
+    const sx = this.startX();
+    this.mario.x = sx;
+    this.mario.setFeet(this.surfaceAt(this.startGirder, sx));
     this.mario.vy = 0;
     this.mario.onGround = true;
-    this.facing = 1;
-    this.sprite.setAngle(0).setFlipX(false).setTexture(TX.marioWalk0).setPosition(this.mario.x, this.mario.y);
+    this.facing = sx > WIDTH / 2 ? -1 : 1; // face inward from the start side
+    this.sprite
+      .setAngle(0)
+      .setFlipX(this.facing < 0)
+      .setTexture(TX.marioWalk0)
+      .setPosition(this.mario.x, this.mario.y);
   }
 
   // --- win condition ------------------------------------------------------
