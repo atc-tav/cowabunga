@@ -14,10 +14,32 @@ import {
   MARIO_W,
   MARIO_H,
   GIRDER_THICKNESS,
+  BARREL_SPEED,
+  BARREL_FALL_SPEED,
+  BARREL_INTERVAL_MS,
+  BARREL_FRAME_MS,
+  BARREL_DESCEND_CHANCE,
+  BARREL_RIDE,
+  BARREL_HIT_DIST,
+  DK_POS,
+  DEATH_PAUSE_MS,
 } from './constants';
 import { COLORS } from './palette';
-import { buildDKTextures, TX } from './sprites';
+import { buildDKTextures, BARREL_KEYS, TX } from './sprites';
 import { LEVEL1_GIRDERS, LEVEL1_LADDERS, MARIO_START, Ladder } from './levels';
+
+interface Barrel {
+  sprite: Phaser.GameObjects.Image;
+  x: number;
+  y: number; // sprite centre
+  dir: 1 | -1;
+  mode: 'roll' | 'fall';
+  girderY: number;
+  targetY: number;
+  usedLadder: boolean;
+  frameTimer: number;
+  frame: number;
+}
 
 /**
  * Donkey Kong — slice 2: ladders. Mario can now climb between girders. Walking
@@ -39,6 +61,12 @@ export class DKScene extends BaseGameScene {
   private climbTimer = 0;
   private climbFrame: 0 | 1 = 0;
 
+  private kong!: Phaser.GameObjects.Image;
+  private readonly barrels: Barrel[] = [];
+  private barrelTimer = 0;
+  private dead = false;
+  private deadTimer = 0;
+
   constructor() {
     super({ key: 'game-dk', gameId: 'donkeykong', width: WIDTH, height: HEIGHT });
   }
@@ -50,17 +78,34 @@ export class DKScene extends BaseGameScene {
 
     this.climbing = false;
     this.ladder = undefined;
+    this.dead = false;
+    this.barrels.length = 0;
+    this.barrelTimer = BARREL_INTERVAL_MS;
+
+    this.kong = this.add.image(DK_POS.x, DK_POS.y - 14, TX.kong).setDepth(9);
     this.mario = new PlatformerBody(MARIO_START.x, MARIO_START.y - MARIO_H / 2, MARIO_W, MARIO_H);
     this.sprite = this.add.image(this.mario.x, this.mario.y, TX.marioWalk0).setDepth(10);
   }
 
   protected updateGame(_time: number, delta: number): void {
+    if (this.dead) {
+      this.deadTimer -= delta;
+      if (this.deadTimer <= 0) {
+        this.respawn();
+      }
+      return;
+    }
+
     if (this.climbing) {
       this.climb(delta);
     } else {
       this.walk(delta);
     }
     this.sprite.setPosition(this.mario.x, this.mario.y);
+
+    this.spawnBarrels(delta);
+    this.updateBarrels(delta);
+    this.checkBarrelHit();
   }
 
   // --- walking ------------------------------------------------------------
@@ -199,6 +244,150 @@ export class DKScene extends BaseGameScene {
       }
     }
     this.sprite.setTexture(this.climbFrame === 0 ? TX.marioClimb0 : TX.marioClimb1);
+  }
+
+  // --- barrels ------------------------------------------------------------
+
+  private spawnBarrels(delta: number): void {
+    this.barrelTimer -= delta;
+    if (this.barrelTimer > 0) {
+      return;
+    }
+    this.barrelTimer = BARREL_INTERVAL_MS;
+    const topGirderY = LEVEL1_GIRDERS[LEVEL1_GIRDERS.length - 1].y; // y=64 (DK's girder)
+    const barrel: Barrel = {
+      sprite: this.add.image(DK_POS.x + 16, topGirderY - BARREL_RIDE, BARREL_KEYS[0]).setDepth(8),
+      x: DK_POS.x + 16,
+      y: topGirderY - BARREL_RIDE,
+      dir: 1,
+      mode: 'roll',
+      girderY: topGirderY,
+      targetY: topGirderY,
+      usedLadder: false,
+      frameTimer: 0,
+      frame: 0,
+    };
+    this.barrels.push(barrel);
+    // "throw" tell
+    this.tweens.add({ targets: this.kong, scaleX: 1.15, duration: 90, yoyo: true });
+  }
+
+  private updateBarrels(delta: number): void {
+    const dt = delta / 1000;
+    for (let i = this.barrels.length - 1; i >= 0; i--) {
+      const b = this.barrels[i];
+      if (b.mode === 'roll') {
+        b.x += b.dir * BARREL_SPEED * dt;
+        b.y = b.girderY - BARREL_RIDE;
+        this.rollDecisions(b);
+        if (b.x < -8 || b.x > WIDTH + 8) {
+          b.sprite.destroy();
+          this.barrels.splice(i, 1);
+          continue;
+        }
+      } else {
+        b.y += BARREL_FALL_SPEED * dt;
+        if (b.y >= b.targetY - BARREL_RIDE) {
+          b.y = b.targetY - BARREL_RIDE;
+          b.girderY = b.targetY;
+          b.mode = 'roll';
+          b.usedLadder = false;
+          const down = this.downLadderFrom(b.girderY);
+          if (down) {
+            b.dir = b.x <= down.x ? 1 : -1; // head toward the next ladder down
+          }
+        }
+      }
+      this.animateBarrel(b, delta);
+      b.sprite.setPosition(b.x, b.y);
+    }
+  }
+
+  /** Decide whether a rolling barrel descends a ladder or drops off an edge. */
+  private rollDecisions(b: Barrel): void {
+    const down = this.downLadderFrom(b.girderY);
+    if (down && !b.usedLadder && Math.abs(b.x - down.x) < 3 && Math.random() < BARREL_DESCEND_CHANCE) {
+      b.x = down.x;
+      b.targetY = down.bottomY;
+      b.mode = 'fall';
+      b.usedLadder = true;
+      return;
+    }
+    const girder = this.girderAt(b.girderY);
+    if (!girder) {
+      return;
+    }
+    if ((b.dir > 0 && b.x >= girder.x2 - 2) || (b.dir < 0 && b.x <= girder.x1 + 2)) {
+      const below = this.girderBelow(b.girderY);
+      if (below) {
+        b.targetY = below.y;
+        b.mode = 'fall';
+        b.x = Phaser.Math.Clamp(b.x, below.x1 + 4, below.x2 - 4);
+      }
+    }
+  }
+
+  private animateBarrel(b: Barrel, delta: number): void {
+    b.frameTimer += delta;
+    if (b.frameTimer >= BARREL_FRAME_MS) {
+      b.frameTimer = 0;
+      b.frame = (b.frame + 1) % BARREL_KEYS.length;
+      b.sprite.setTexture(BARREL_KEYS[b.frame]);
+    }
+  }
+
+  private checkBarrelHit(): void {
+    for (const b of this.barrels) {
+      if (Phaser.Math.Distance.Between(b.x, b.y, this.mario.x, this.mario.y) < BARREL_HIT_DIST) {
+        this.hit();
+        return;
+      }
+    }
+  }
+
+  private hit(): void {
+    this.dead = true;
+    this.deadTimer = DEATH_PAUSE_MS;
+    this.audio.play('death');
+    this.cameras.main.flash(160, 255, 80, 80);
+    // Mario death spin in place.
+    this.tweens.add({ targets: this.sprite, angle: 360, duration: DEATH_PAUSE_MS });
+    for (const b of this.barrels) {
+      b.sprite.destroy();
+    }
+    this.barrels.length = 0;
+  }
+
+  private respawn(): void {
+    this.dead = false;
+    this.climbing = false;
+    this.ladder = undefined;
+    this.barrelTimer = BARREL_INTERVAL_MS;
+    this.mario.x = MARIO_START.x;
+    this.setFeet(MARIO_START.y);
+    this.mario.vy = 0;
+    this.facing = 1;
+    this.sprite.setAngle(0).setVisible(true).setFlipX(false).setTexture(TX.marioWalk0);
+  }
+
+  // --- girder/ladder lookups ---------------------------------------------
+
+  private girderAt(y: number): PlatformSegment | undefined {
+    return this.segments.find((s) => s.y === y);
+  }
+
+  private girderBelow(y: number): PlatformSegment | undefined {
+    let best: PlatformSegment | undefined;
+    for (const s of this.segments) {
+      if (s.y > y && (!best || s.y < best.y)) {
+        best = s;
+      }
+    }
+    return best;
+  }
+
+  private downLadderFrom(girderY: number): Ladder | undefined {
+    return this.ladders.find((l) => l.topY === girderY);
   }
 
   // --- world --------------------------------------------------------------
