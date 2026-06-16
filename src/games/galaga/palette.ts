@@ -7,6 +7,7 @@ export const COLORS = {
   cockpit: 0xff0000,
   shipTrim: 0x3cbcfc,
   bullet: 0xfcff5e,
+  enemyBullet: 0xff66ff,
   star1: 0x8888ff,
   star2: 0xffffff,
   star3: 0xff8888,

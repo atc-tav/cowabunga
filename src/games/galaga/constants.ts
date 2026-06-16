@@ -40,3 +40,18 @@ export const ENTRY_STAGGER_MS = 130; // delay between successive enemies launchi
 export const ENTRY_STEPS = 20; // points sampled along each entry curve
 export const SWAY_AMP = 6; // formation "breathing" horizontal amplitude (px)
 export const SWAY_FREQ = 2.2; // breathing speed (rad/sec)
+
+// --- dives, enemy fire, lives -------------------------------------------
+
+export const DIVE_SPEED = 175; // px/sec along a dive path
+export const DIVE_STEPS = 24; // points sampled along each dive curve
+export const DIVE_INTERVAL_MS = 1700; // gap between launching dives
+export const MAX_DIVERS = 2; // simultaneous divers
+
+export const ENEMY_BULLET_SPEED = 165;
+export const ENEMY_FIRE_MS = 650; // per-diver fire cadence
+
+export const LIVES_START = 3;
+export const READY_MS = 1500;
+export const DEATH_PAUSE_MS = 1100;
+export const GAMEOVER_MS = 2500;
