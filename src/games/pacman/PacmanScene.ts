@@ -4,6 +4,7 @@ import { Grid } from '../../shared/Grid';
 import { GridMover } from '../../shared/GridMover';
 import { LivesManager } from '../../shared/LivesManager';
 import { StateMachine } from '../../shared/StateMachine';
+import { floatingText } from '../../shared/popups';
 import { LABEL_STYLE, HINT_STYLE } from '../../shared/ui';
 import {
   TILE,
@@ -21,8 +22,13 @@ import {
   SCORE_ENERGIZER,
   GHOST_EAT_BASE,
   GHOST_EAT_MAX_CHAIN,
+  GHOST_EAT_PAUSE_MS,
   FRIGHT_MS,
   FRIGHT_BLINK_MS,
+  FRUIT_THRESHOLDS,
+  FRUIT_VISIBLE_MS,
+  FRUIT_TILE,
+  fruitForLevel,
   LIVES_START,
   READY_MS,
   DEATH_SPIN_MS,
@@ -47,7 +53,7 @@ import {
 } from './constants';
 import { toCells, WALL, DOOR, DOT, ENERGIZER } from './maze';
 import { COLORS } from './palette';
-import { buildPacmanTextures, TX } from './sprites';
+import { buildPacmanTextures, fruitTexture, TX } from './sprites';
 import { Ghost } from './ghosts';
 
 interface Pellet {
@@ -83,6 +89,12 @@ export class PacmanScene extends BaseGameScene {
   private phaseTimer = 0;
   private frightTimer = 0;
   private eatChain = 0;
+  private eatPauseTimer = 0; // brief gameplay freeze after eating a ghost
+
+  private fruit?: Phaser.GameObjects.Image;
+  private fruitTimer = 0;
+  private dotsEaten = 0;
+  private fruitsSpawned = 0;
 
   private readonly pellets = new Map<string, Pellet>();
   private readonly lifeIcons: Phaser.GameObjects.Image[] = [];
@@ -174,6 +186,11 @@ export class PacmanScene extends BaseGameScene {
   }
 
   private updatePlaying(delta: number): void {
+    if (this.eatPauseTimer > 0) {
+      this.eatPauseTimer -= delta; // hit-stop: everything freezes on a ghost eat
+      return;
+    }
+
     this.readInput();
     this.mover.update(delta);
     this.wrap(this.mover);
@@ -188,6 +205,7 @@ export class PacmanScene extends BaseGameScene {
 
     this.tickFrightened(delta);
     this.updateGhosts(delta);
+    this.updateFruit(delta);
     if (this.checkGhostContact()) {
       this.flow.transition('dying');
     }
@@ -414,9 +432,71 @@ export class PacmanScene extends BaseGameScene {
     this.eatChain = Math.min(this.eatChain + 1, GHOST_EAT_MAX_CHAIN - 1);
     this.addScore(points);
     this.audio.play('eatghost');
+
+    // Feedback: float the points from where the ghost was, and briefly freeze
+    // the action with the ghost hidden (classic Pac-Man hit-stop).
+    floatingText(this, ghost.mover.x, ghost.mover.y, String(points), {
+      color: '#33ffff',
+      fontSize: '10px',
+    });
+    ghost.sprite.setVisible(false);
+    this.eatPauseTimer = GHOST_EAT_PAUSE_MS;
+    this.time.delayedCall(GHOST_EAT_PAUSE_MS, () => ghost.sprite.setVisible(true));
+
     ghost.mode = 'eyes';
     ghost.blinking = false;
     ghost.setSpeed(EYES_SPEED);
+  }
+
+  // --- fruit --------------------------------------------------------------
+
+  private maybeSpawnFruit(): void {
+    if (
+      this.fruitsSpawned < FRUIT_THRESHOLDS.length &&
+      this.dotsEaten === FRUIT_THRESHOLDS[this.fruitsSpawned]
+    ) {
+      this.fruitsSpawned++;
+      this.spawnFruit();
+    }
+  }
+
+  private spawnFruit(): void {
+    this.removeFruit();
+    const def = fruitForLevel(this.level);
+    const x = this.grid.tileToWorldX(FRUIT_TILE.col) + TILE / 2;
+    const y = this.grid.tileToWorldY(FRUIT_TILE.row);
+    this.fruit = this.add.image(x, y, fruitTexture(def.key)).setDepth(6);
+    this.fruitTimer = FRUIT_VISIBLE_MS;
+  }
+
+  private updateFruit(delta: number): void {
+    if (!this.fruit) {
+      return;
+    }
+    this.fruitTimer -= delta;
+    if (this.fruitTimer <= 0) {
+      this.removeFruit();
+      return;
+    }
+    const { col, row } = this.mover.currentTile();
+    if (row === FRUIT_TILE.row && (col === FRUIT_TILE.col || col === FRUIT_TILE.col + 1)) {
+      const def = fruitForLevel(this.level);
+      this.addScore(def.points);
+      this.audio.play('fruit');
+      floatingText(this, this.fruit.x, this.fruit.y, String(def.points), {
+        color: '#ffffff',
+        fontSize: '10px',
+      });
+      this.removeFruit();
+    }
+  }
+
+  private removeFruit(): void {
+    if (this.fruit) {
+      this.fruit.destroy();
+      this.fruit = undefined;
+    }
+    this.fruitTimer = 0;
   }
 
   // --- helpers ------------------------------------------------------------
@@ -438,6 +518,7 @@ export class PacmanScene extends BaseGameScene {
     this.phaseTimer = PHASE_SCHEDULE[0].ms;
     this.frightTimer = 0;
     this.eatChain = 0;
+    this.eatPauseTimer = 0;
   }
 
   private ghostSpeed(): number {
@@ -546,6 +627,9 @@ export class PacmanScene extends BaseGameScene {
     this.audio.play(pellet.energizer ? 'energizer' : 'chomp');
     if (pellet.energizer) {
       this.frightenGhosts();
+    } else {
+      this.dotsEaten++;
+      this.maybeSpawnFruit();
     }
     if (this.pellets.size === 0) {
       this.flow.transition('levelclear');
@@ -559,9 +643,12 @@ export class PacmanScene extends BaseGameScene {
     this.pellets.clear();
   }
 
-  /** Rebuild the full pellet field from the source maze layout. */
+  /** Rebuild the full pellet field from the source maze layout (fresh board). */
   private buildPellets(): void {
     this.clearPellets();
+    this.removeFruit();
+    this.dotsEaten = 0;
+    this.fruitsSpawned = 0;
     const cells = toCells();
     for (let row = 0; row < cells.length; row++) {
       for (let col = 0; col < cells[row].length; col++) {
