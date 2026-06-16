@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import { BaseGameScene } from '../../shared/BaseGameScene';
 import { PlatformerBody, PlatformSegment, surfaceY } from '../../shared/Platformer';
+import { StateMachine } from '../../shared/StateMachine';
+import { LivesManager } from '../../shared/LivesManager';
+import { LABEL_STYLE } from '../../shared/ui';
 import {
   WIDTH,
   HEIGHT,
@@ -21,11 +24,15 @@ import {
   BARREL_DESCEND_CHANCE,
   BARREL_RIDE,
   BARREL_HIT_DIST,
+  LIVES_START,
+  READY_MS,
   DEATH_PAUSE_MS,
+  WIN_MS,
+  GAMEOVER_MS,
 } from './constants';
 import { COLORS } from './palette';
 import { buildDKTextures, BARREL_KEYS, TX } from './sprites';
-import { LEVEL1_GIRDERS, buildLadders, MARIO_START_X, DK_X, Ladder } from './levels';
+import { LEVEL1_GIRDERS, buildLadders, MARIO_START_X, DK_X, PAULINE_X, Ladder } from './levels';
 
 interface Barrel {
   sprite: Phaser.GameObjects.Image;
@@ -33,7 +40,7 @@ interface Barrel {
   y: number;
   dir: 1 | -1;
   mode: 'roll' | 'fall';
-  girder: number; // index into girders
+  girder: number;
   targetGirder: number;
   targetY: number;
   usedLadder: boolean;
@@ -42,15 +49,22 @@ interface Barrel {
 }
 
 /**
- * Donkey Kong — slope slice: girders are angled, so Mario walks up/down them
- * and barrels roll downhill toward the next ladder (the slope tells you which
- * way they'll go). Built on the slope-aware shared PlatformerBody.
+ * Donkey Kong — Level 1 core: Mario starts bottom-left and must climb to
+ * Pauline at the top while dodging DK's barrels. Adds lives + a round state
+ * machine (ready/playing/dying/won/gameover). Hammer + fireball come next.
  */
 export class DKScene extends BaseGameScene {
   private mario!: PlatformerBody;
   private sprite!: Phaser.GameObjects.Image;
   private readonly girders: PlatformSegment[] = LEVEL1_GIRDERS;
   private readonly ladders: Ladder[] = buildLadders();
+  private readonly startGirder = LEVEL1_GIRDERS.length - 1;
+
+  private flow!: StateMachine<DKScene>;
+  private lives!: LivesManager;
+  private readonly lifeIcons: Phaser.GameObjects.Image[] = [];
+  private banner!: Phaser.GameObjects.Text;
+  private readyTimer = 0;
 
   private facing: 1 | -1 = 1;
   private walkTimer = 0;
@@ -64,8 +78,6 @@ export class DKScene extends BaseGameScene {
   private kong!: Phaser.GameObjects.Image;
   private readonly barrels: Barrel[] = [];
   private barrelTimer = 0;
-  private dead = false;
-  private deadTimer = 0;
 
   constructor() {
     super({ key: 'game-dk', gameId: 'donkeykong', width: WIDTH, height: HEIGHT });
@@ -76,28 +88,56 @@ export class DKScene extends BaseGameScene {
     this.drawLadders();
     this.drawGirders();
 
-    this.climbing = false;
-    this.ladder = undefined;
-    this.dead = false;
     this.barrels.length = 0;
-    this.barrelTimer = BARREL_INTERVAL_MS;
+    this.lifeIcons.length = 0;
 
     this.kong = this.add.image(DK_X, this.surfaceAt(0, DK_X) - 14, TX.kong).setDepth(9);
+    this.add.image(PAULINE_X, this.surfaceAt(0, PAULINE_X) - 7, TX.pauline).setDepth(9);
+
     this.mario = new PlatformerBody(MARIO_START_X, 0, MARIO_W, MARIO_H);
-    this.mario.setFeet(this.surfaceAt(0, MARIO_START_X));
-    this.mario.onGround = true;
-    this.sprite = this.add.image(this.mario.x, this.mario.y, TX.marioWalk0).setDepth(10);
+    this.sprite = this.add.image(0, 0, TX.marioWalk0).setDepth(10);
+
+    this.lives = new LivesManager(LIVES_START);
+    this.refreshLives();
+
+    this.banner = this.add
+      .text(WIDTH / 2, HEIGHT / 2, '', LABEL_STYLE)
+      .setOrigin(0.5)
+      .setColor('#fcfc00')
+      .setDepth(1000);
+
+    this.flow = new StateMachine<DKScene>(this)
+      .add('ready', { enter: () => this.enterReady(), update: (_c, dt) => this.updateReady(dt) })
+      .add('playing', { update: (_c, dt) => this.updatePlaying(dt) })
+      .add('dying', { enter: () => this.enterDying() })
+      .add('won', { enter: () => this.enterWon() })
+      .add('gameover', { enter: () => this.enterGameOver() });
+    this.flow.transition('ready');
   }
 
   protected updateGame(_time: number, delta: number): void {
-    if (this.dead) {
-      this.deadTimer -= delta;
-      if (this.deadTimer <= 0) {
-        this.respawn();
-      }
-      return;
-    }
+    this.flow.update(delta);
+  }
 
+  // --- flow ---------------------------------------------------------------
+
+  private enterReady(): void {
+    this.readyTimer = READY_MS;
+    this.banner.setText('READY!').setColor('#fcfc00').setVisible(true);
+    this.placeMarioAtStart();
+    this.clearBarrels();
+    this.barrelTimer = BARREL_INTERVAL_MS;
+  }
+
+  private updateReady(delta: number): void {
+    this.readyTimer -= delta;
+    if (this.readyTimer <= 0) {
+      this.banner.setVisible(false);
+      this.flow.transition('playing');
+    }
+  }
+
+  private updatePlaying(delta: number): void {
     if (this.climbing) {
       this.climb(delta);
     } else {
@@ -107,10 +147,48 @@ export class DKScene extends BaseGameScene {
 
     this.spawnBarrels(delta);
     this.updateBarrels(delta);
-    this.checkBarrelHit();
+
+    if (this.reachedPauline()) {
+      this.flow.transition('won');
+      return;
+    }
+    if (this.barrelHitMario()) {
+      this.flow.transition('dying');
+    }
   }
 
-  // --- walking ------------------------------------------------------------
+  private enterDying(): void {
+    this.audio.play('death');
+    this.cameras.main.flash(160, 255, 80, 80);
+    this.tweens.add({ targets: this.sprite, angle: 360, duration: DEATH_PAUSE_MS });
+    this.clearBarrels();
+    this.time.delayedCall(DEATH_PAUSE_MS, () => this.afterDeath());
+  }
+
+  private afterDeath(): void {
+    this.sprite.setAngle(0);
+    if (this.lives.lose() <= 0) {
+      this.flow.transition('gameover');
+      return;
+    }
+    this.refreshLives();
+    this.flow.transition('ready');
+  }
+
+  private enterWon(): void {
+    this.banner.setText('YOU WIN!').setColor('#fcfc00').setVisible(true);
+    this.clearBarrels();
+    this.audio.play('win');
+    this.addScore(5000);
+    this.time.delayedCall(WIN_MS, () => this.scene.restart());
+  }
+
+  private enterGameOver(): void {
+    this.banner.setText('GAME OVER').setColor('#ff0000').setVisible(true);
+    this.time.delayedCall(GAMEOVER_MS, () => this.scene.restart());
+  }
+
+  // --- walking / climbing -------------------------------------------------
 
   private walk(delta: number): void {
     const dir = this.controls.direction().x;
@@ -122,17 +200,13 @@ export class DKScene extends BaseGameScene {
       );
       this.facing = dir > 0 ? 1 : -1;
     }
-
     if (this.controls.justPressed('fire')) {
       this.mario.jump(JUMP_SPEED);
     }
-
     this.mario.update(delta, GRAVITY, this.girders);
-
     if (this.mario.onGround && this.tryMountLadder()) {
       return;
     }
-
     this.sprite.setFlipX(this.facing < 0);
     this.animateWalk(delta, dir !== 0);
   }
@@ -160,8 +234,6 @@ export class DKScene extends BaseGameScene {
     return false;
   }
 
-  // --- climbing -----------------------------------------------------------
-
   private startClimb(ladder: Ladder, descending: boolean): void {
     this.climbing = true;
     this.ladder = ladder;
@@ -179,7 +251,6 @@ export class DKScene extends BaseGameScene {
       return;
     }
     this.mario.x = ladder.x;
-
     let moved = false;
     const step = (CLIMB_SPEED * delta) / 1000;
     if (this.controls.isDown('up')) {
@@ -189,7 +260,6 @@ export class DKScene extends BaseGameScene {
       this.mario.setFeet(this.mario.feet + step);
       moved = true;
     }
-
     if (this.mario.feet <= ladder.topY) {
       this.mario.setFeet(ladder.topY);
       this.exitClimb();
@@ -208,6 +278,27 @@ export class DKScene extends BaseGameScene {
     this.ladder = undefined;
     this.mario.vy = 0;
     this.mario.onGround = true;
+  }
+
+  private placeMarioAtStart(): void {
+    this.climbing = false;
+    this.ladder = undefined;
+    this.mario.x = MARIO_START_X;
+    this.mario.setFeet(this.surfaceAt(this.startGirder, MARIO_START_X));
+    this.mario.vy = 0;
+    this.mario.onGround = true;
+    this.facing = 1;
+    this.sprite.setAngle(0).setFlipX(false).setTexture(TX.marioWalk0).setPosition(this.mario.x, this.mario.y);
+  }
+
+  // --- win condition ------------------------------------------------------
+
+  private reachedPauline(): boolean {
+    return (
+      !this.climbing &&
+      Math.abs(this.mario.feet - this.surfaceAt(0, this.mario.x)) < 4 &&
+      Math.abs(this.mario.x - PAULINE_X) < 12
+    );
   }
 
   // --- barrels ------------------------------------------------------------
@@ -255,7 +346,7 @@ export class DKScene extends BaseGameScene {
           b.y = this.surfaceAt(b.girder, b.x) - BARREL_RIDE;
           b.mode = 'roll';
           b.usedLadder = false;
-          b.dir = this.downhill(b.girder); // roll downhill on the new girder
+          b.dir = this.downhill(b.girder);
         }
       }
       this.animateBarrel(b, delta);
@@ -294,38 +385,20 @@ export class DKScene extends BaseGameScene {
     }
   }
 
-  private checkBarrelHit(): void {
+  private barrelHitMario(): boolean {
     for (const b of this.barrels) {
       if (Phaser.Math.Distance.Between(b.x, b.y, this.mario.x, this.mario.y) < BARREL_HIT_DIST) {
-        this.hit();
-        return;
+        return true;
       }
     }
+    return false;
   }
 
-  private hit(): void {
-    this.dead = true;
-    this.deadTimer = DEATH_PAUSE_MS;
-    this.audio.play('death');
-    this.cameras.main.flash(160, 255, 80, 80);
-    this.tweens.add({ targets: this.sprite, angle: 360, duration: DEATH_PAUSE_MS });
+  private clearBarrels(): void {
     for (const b of this.barrels) {
       b.sprite.destroy();
     }
     this.barrels.length = 0;
-  }
-
-  private respawn(): void {
-    this.dead = false;
-    this.climbing = false;
-    this.ladder = undefined;
-    this.barrelTimer = BARREL_INTERVAL_MS;
-    this.mario.x = MARIO_START_X;
-    this.mario.setFeet(this.surfaceAt(0, MARIO_START_X));
-    this.mario.vy = 0;
-    this.mario.onGround = true;
-    this.facing = 1;
-    this.sprite.setAngle(0).setVisible(true).setFlipX(false).setTexture(TX.marioWalk0);
   }
 
   // --- helpers ------------------------------------------------------------
@@ -334,7 +407,6 @@ export class DKScene extends BaseGameScene {
     return surfaceY(this.girders[girderIndex], x);
   }
 
-  /** Downhill direction of a girder: +1 down-to-the-right, -1 down-to-the-left (flat -> right). */
   private downhill(girderIndex: number): 1 | -1 {
     const g = this.girders[girderIndex];
     return g.y2 >= g.y1 ? 1 : -1;
@@ -342,6 +414,16 @@ export class DKScene extends BaseGameScene {
 
   private downLadderFrom(girderIndex: number): Ladder | undefined {
     return this.ladders.find((l) => l.fromGirder === girderIndex);
+  }
+
+  private refreshLives(): void {
+    for (const icon of this.lifeIcons) {
+      icon.destroy();
+    }
+    this.lifeIcons.length = 0;
+    for (let i = 0; i < this.lives.count; i++) {
+      this.lifeIcons.push(this.add.image(8 + i * 11, 24, TX.marioWalk0).setScale(0.7).setDepth(1000));
+    }
   }
 
   // --- animation ----------------------------------------------------------

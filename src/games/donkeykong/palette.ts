@@ -14,4 +14,6 @@ export const COLORS = {
   barrelBody: 0xd0a050,
   barrelRim: 0x5a2c00,
   barrelStave: 0x8a5a18,
+  paulineHair: 0x8a2c00,
+  paulineDress: 0xff66c4,
 } as const;

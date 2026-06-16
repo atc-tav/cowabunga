@@ -4,30 +4,31 @@ export const SPAN_X1 = 12;
 export const SPAN_X2 = 212;
 
 /**
- * Level-1 girders, top -> bottom, sloped so barrels visibly roll downhill
- * toward the next ladder (alternating left/right like the original). The
- * bottom girder is flat.
+ * Level-1 girders, top -> bottom: 7 platforms, sloped (alternating) so barrels
+ * roll downhill. Spacing (~30px centres, ±5 slope) keeps every gap > the jump
+ * height, so ladders can't be bypassed and each renders 2+ rungs. Bottom is
+ * flat — Mario starts there, bottom-left; DK + Pauline are at the top.
  */
 export const LEVEL1_GIRDERS: PlatformSegment[] = [
-  { x1: SPAN_X1, x2: SPAN_X2, y1: 55, y2: 69 }, // 0 top — down-right (DK + Mario start at the high left)
-  { x1: SPAN_X1, x2: SPAN_X2, y1: 107, y2: 93 }, // 1 down-left
-  { x1: SPAN_X1, x2: SPAN_X2, y1: 131, y2: 145 }, // 2 down-right
-  { x1: SPAN_X1, x2: SPAN_X2, y1: 183, y2: 169 }, // 3 down-left
-  { x1: SPAN_X1, x2: SPAN_X2, y1: 207, y2: 221 }, // 4 down-right
-  { x1: SPAN_X1, x2: SPAN_X2, y1: 234, y2: 234 }, // 5 ground (flat)
+  { x1: SPAN_X1, x2: SPAN_X2, y1: 45, y2: 55 }, // 0 top — DK + Pauline
+  { x1: SPAN_X1, x2: SPAN_X2, y1: 85, y2: 75 }, // 1
+  { x1: SPAN_X1, x2: SPAN_X2, y1: 105, y2: 115 }, // 2
+  { x1: SPAN_X1, x2: SPAN_X2, y1: 145, y2: 135 }, // 3
+  { x1: SPAN_X1, x2: SPAN_X2, y1: 165, y2: 175 }, // 4
+  { x1: SPAN_X1, x2: SPAN_X2, y1: 205, y2: 195 }, // 5
+  { x1: SPAN_X1, x2: SPAN_X2, y1: 230, y2: 230 }, // 6 ground (flat) — Mario start
 ];
 
 export interface Ladder {
   x: number;
   topY: number;
   bottomY: number;
-  fromGirder: number; // index of the girder this ladder descends from
+  fromGirder: number;
 }
 
-// Ladder x at each girder's LOW end (alternating right/left).
-const LADDER_X = [196, 28, 196, 28, 196];
+// Ladder x at each girder's LOW end (alternating right/left), one per gap.
+const LADDER_X = [196, 28, 196, 28, 196, 28];
 
-/** Ladders connecting each girder to the one below, anchored to the slopes. */
 export function buildLadders(): Ladder[] {
   return LADDER_X.map((x, i) => ({
     x,
@@ -37,5 +38,6 @@ export function buildLadders(): Ladder[] {
   }));
 }
 
-export const MARIO_START_X = 30;
-export const DK_X = 52;
+export const MARIO_START_X = 30; // bottom-left
+export const DK_X = 52; // top girder
+export const PAULINE_X = 100; // top girder, right of DK (rescue target)
