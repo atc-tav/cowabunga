@@ -89,6 +89,24 @@ const MARIO_CLIMB_B: string[] = [
   '          ',
 ];
 
+// Pauline (10x14): H=hair, S=skin, D=dress.
+const PAULINE_ART: string[] = [
+  '   HHHH   ',
+  '  HHHHHH  ',
+  '  HSSSSH  ',
+  '  SSSSSS  ',
+  '   SSSS   ',
+  '   DDDD   ',
+  '  DDDDDD  ',
+  ' DDDDDDDD ',
+  ' DDDDDDDD ',
+  ' DDDDDDDD ',
+  '  DDDDDD  ',
+  '  S    S  ',
+  '  S    S  ',
+  '          ',
+];
+
 export const TX = {
   marioWalk0: 'dk-mario-0',
   marioWalk1: 'dk-mario-1',
@@ -96,6 +114,7 @@ export const TX = {
   marioClimb0: 'dk-mario-climb-0',
   marioClimb1: 'dk-mario-climb-1',
   kong: 'dk-kong',
+  pauline: 'dk-pauline',
 } as const;
 
 export const BARREL_KEYS = ['dk-barrel-0', 'dk-barrel-1', 'dk-barrel-2', 'dk-barrel-3'];
@@ -113,6 +132,12 @@ export function buildDKTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, TX.marioJump, MARIO_JUMP, pal);
   drawPixelArt(scene, TX.marioClimb0, MARIO_CLIMB_A, pal);
   drawPixelArt(scene, TX.marioClimb1, MARIO_CLIMB_B, pal);
+
+  drawPixelArt(scene, TX.pauline, PAULINE_ART, {
+    H: COLORS.paulineHair,
+    S: COLORS.skin,
+    D: COLORS.paulineDress,
+  });
 
   makeKong(scene);
   makeBarrels(scene);
