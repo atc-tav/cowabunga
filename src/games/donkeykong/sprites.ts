@@ -107,6 +107,34 @@ const PAULINE_ART: string[] = [
   '          ',
 ];
 
+// Fireball (10x10): O=outer flame, Y=inner core. Two flicker frames.
+const FIRE_A: string[] = [
+  '    OO    ',
+  '   OOOO   ',
+  '  OOYYOO  ',
+  '  OYYYYO  ',
+  ' OOYYYYOO ',
+  ' OYYYYYYO ',
+  ' OOYYYYOO ',
+  '  OOOOOO  ',
+  '   OOOO   ',
+  '          ',
+];
+const FIRE_B: string[] = [
+  '    OO    ',
+  '   OOOO   ',
+  '  OYYOO   ',
+  ' OOYYYYO  ',
+  ' OYYYYYYO ',
+  'OOYYYYYYOO',
+  ' OYYYYYYO ',
+  '  OOOOOO  ',
+  '   OOOO   ',
+  '          ',
+];
+
+export const FIRE_KEYS = ['dk-fire-0', 'dk-fire-1'];
+
 // Hammer (8x10): H=head, h=handle.
 const HAMMER_ART: string[] = [
   'HHHHHH  ',
@@ -155,6 +183,8 @@ export function buildDKTextures(scene: Phaser.Scene): void {
   });
 
   drawPixelArt(scene, TX.hammer, HAMMER_ART, { H: COLORS.hammerHead, h: COLORS.hammerHandle });
+  drawPixelArt(scene, FIRE_KEYS[0], FIRE_A, { O: COLORS.fireOuter, Y: COLORS.fireInner });
+  drawPixelArt(scene, FIRE_KEYS[1], FIRE_B, { O: COLORS.fireOuter, Y: COLORS.fireInner });
 
   makeKong(scene);
   makeBarrels(scene);

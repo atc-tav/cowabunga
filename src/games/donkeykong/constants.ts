@@ -50,3 +50,18 @@ export const HAMMER_SPOTS: { g: number; x: number }[] = [
   { g: 4, x: 90 },
   { g: 2, x: 132 },
 ];
+
+// --- fireball enemy -----------------------------------------------------
+
+export const FIRE_SPEED = 40; // px/sec roaming
+export const FIRE_CLIMB_SPEED = 40;
+export const FIRE_RIDE = 5; // centre above the girder
+export const FIRE_HIT_DIST = 10;
+export const FIRE_FRAME_MS = 130;
+export const FIRE_LADDER_CHANCE = 0.5; // chance to switch platform at the ladder
+export const FIRE_RESPAWN_MS = 3500; // after being smashed
+export const SCORE_SMASH_FIRE = 500;
+// Keep the fireball patrolling the 2nd & 3rd platforms (girder indices 1-2)
+// so it's always a mid-level threat that lets barrels catch up.
+export const FIRE_BAND_TOP = 1;
+export const FIRE_BAND_BOTTOM = 2;
