@@ -3,7 +3,8 @@ import { BaseGameScene } from '../../shared/BaseGameScene';
 import { Grid } from '../../shared/Grid';
 import { GridMover } from '../../shared/GridMover';
 import { LivesManager } from '../../shared/LivesManager';
-import { LABEL_STYLE } from '../../shared/ui';
+import { StateMachine } from '../../shared/StateMachine';
+import { LABEL_STYLE, HINT_STYLE } from '../../shared/ui';
 import {
   TILE,
   COLS,
@@ -26,7 +27,10 @@ import {
   READY_MS,
   DEATH_SPIN_MS,
   GAMEOVER_MS,
+  LEVELCLEAR_MS,
   CATCH_DISTANCE,
+  SPEED_RAMP_PER_LEVEL,
+  MAX_SPEED_LEVELS,
   PLAYER_START,
   GhostName,
   GHOST_STARTS,
@@ -35,7 +39,7 @@ import {
   GHOST_EXIT_TARGET,
   GHOST_EXIT_ROW,
   GHOST_HOME_TARGET,
-  GHOST_HOME_ROW,
+  isInsideHouse,
   PINKY_LEAD,
   INKY_LEAD,
   CLYDE_SCATTER_DIST,
@@ -56,37 +60,39 @@ interface Tile {
   row: number;
 }
 
-type Phase = 'ready' | 'playing' | 'dying' | 'over';
-
 /**
- * Pac-Man — slice 4: the full ghost quartet. Adds Pinky/Inky/Clyde with their
- * distinct targeting, a global scatter<->chase phase timer (with the classic
- * reversal), and a working ghost house with staggered exits. All four ghosts
- * share one Ghost class + the shared grid-AI; only the target tile differs.
+ * Pac-Man — slice 6: game flow & levels. The round is now driven by the shared
+ * StateMachine (ready -> playing -> dying / levelclear -> gameover), levels
+ * advance with a maze flash + speed ramp, and ALL state is rebuilt in
+ * createGame() so re-entering from the menu or restarting after game over
+ * always gives a clean board.
  */
 export class PacmanScene extends BaseGameScene {
   private grid!: Grid;
+  private maze!: Phaser.GameObjects.Graphics;
   private mover!: GridMover;
   private pac!: Phaser.GameObjects.Image;
   private lives!: LivesManager;
-
   private ghosts!: Record<GhostName, Ghost>;
+
+  private flow!: StateMachine<PacmanScene>;
+  private level = 1;
+
   private phaseMode: 'scatter' | 'chase' = 'scatter';
   private phaseIndex = 0;
   private phaseTimer = 0;
-
-  private frightTimer = 0; // >0 while ghosts are frightened
-  private eatChain = 0; // consecutive ghosts eaten on the current energizer
+  private frightTimer = 0;
+  private eatChain = 0;
 
   private readonly pellets = new Map<string, Pellet>();
   private readonly lifeIcons: Phaser.GameObjects.Image[] = [];
 
-  private phase: Phase = 'ready';
   private readyTimer = 0;
   private chompTimer = 0;
   private chompOpen = true;
 
   private banner!: Phaser.GameObjects.Text;
+  private levelText!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'game-pacman', gameId: 'pacman', width: 224, height: 288 });
@@ -94,8 +100,18 @@ export class PacmanScene extends BaseGameScene {
 
   protected createGame(): void {
     buildPacmanTextures(this);
-    this.grid = new Grid(toCells(), TILE, MAZE_OFFSET_X, MAZE_OFFSET_Y);
 
+    // Full reset — createGame runs on every (re)entry but the constructor does
+    // not, so clear any state carried over from a previous play.
+    this.clearPellets();
+    this.lifeIcons.length = 0;
+    this.level = 1;
+    this.frightTimer = 0;
+    this.eatChain = 0;
+    this.chompTimer = 0;
+    this.chompOpen = true;
+
+    this.grid = new Grid(toCells(), TILE, MAZE_OFFSET_X, MAZE_OFFSET_Y);
     this.drawMaze();
     this.buildPellets();
 
@@ -123,68 +139,61 @@ export class PacmanScene extends BaseGameScene {
       .setOrigin(0.5)
       .setColor('#fcfc00')
       .setDepth(1000);
+    this.levelText = this.add
+      .text(this.nativeWidth - 4, this.nativeHeight - 8, '', HINT_STYLE)
+      .setOrigin(1, 1)
+      .setDepth(1000);
+    this.refreshLevel();
 
-    this.startReady();
+    this.flow = new StateMachine<PacmanScene>(this)
+      .add('ready', { enter: () => this.enterReady(), update: (_c, dt) => this.updateReady(dt) })
+      .add('playing', { update: (_c, dt) => this.updatePlaying(dt) })
+      .add('dying', { enter: () => this.enterDying() })
+      .add('levelclear', { enter: () => this.enterLevelClear() })
+      .add('gameover', { enter: () => this.enterGameOver() });
+    this.flow.transition('ready');
   }
 
   protected updateGame(_time: number, delta: number): void {
-    if (this.phase === 'ready') {
-      this.tickReady(delta);
-    } else if (this.phase === 'playing') {
-      this.tickPlaying(delta);
-    }
-    // 'dying' / 'over' progress via tweens + delayedCall.
+    this.flow.update(delta);
   }
 
-  // --- phases -------------------------------------------------------------
+  // --- flow states --------------------------------------------------------
 
-  private startReady(): void {
-    this.phase = 'ready';
-    this.readyTimer = READY_MS;
+  private enterReady(): void {
     this.banner.setText('READY!').setColor('#fcfc00').setVisible(true);
     this.resetActors();
   }
 
-  private tickReady(delta: number): void {
+  private updateReady(delta: number): void {
     this.readyTimer -= delta;
     if (this.readyTimer <= 0) {
       this.banner.setVisible(false);
-      this.phase = 'playing';
+      this.flow.transition('playing');
     }
   }
 
-  private tickPlaying(delta: number): void {
+  private updatePlaying(delta: number): void {
     this.readInput();
     this.mover.update(delta);
     this.wrap(this.mover);
     this.pac.setPosition(this.mover.x, this.mover.y);
     this.updateFacing();
     this.animateChomp(delta);
+
     this.eatPellet();
+    if (this.flow.state !== 'playing') {
+      return; // board cleared -> levelclear
+    }
 
     this.tickFrightened(delta);
     this.updateGhosts(delta);
-    this.resolveGhostContact();
-  }
-
-  private tickFrightened(delta: number): void {
-    if (this.frightTimer <= 0) {
-      return;
-    }
-    this.frightTimer -= delta;
-    const blinking = this.frightTimer <= FRIGHT_BLINK_MS;
-    for (const ghost of this.ghostList()) {
-      if (ghost.mode === 'frightened') {
-        ghost.blinking = blinking;
-      }
-    }
-    if (this.frightTimer <= 0) {
-      this.endFrightened();
+    if (this.checkGhostContact()) {
+      this.flow.transition('dying');
     }
   }
 
-  private die(): void {
-    this.phase = 'dying';
+  private enterDying(): void {
     this.audio.play('death');
     this.tweens.add({
       targets: this.pac,
@@ -198,15 +207,32 @@ export class PacmanScene extends BaseGameScene {
   private afterDeath(): void {
     this.pac.setScale(1);
     if (this.lives.lose() <= 0) {
-      this.gameOver();
+      this.flow.transition('gameover');
       return;
     }
     this.refreshLives();
-    this.startReady();
+    this.flow.transition('ready');
   }
 
-  private gameOver(): void {
-    this.phase = 'over';
+  private enterLevelClear(): void {
+    this.banner.setVisible(false);
+    this.tweens.add({
+      targets: this.maze,
+      alpha: 0.2,
+      duration: 180,
+      yoyo: true,
+      repeat: Math.max(1, Math.floor(LEVELCLEAR_MS / 360) - 1),
+      onComplete: () => {
+        this.maze.setAlpha(1);
+        this.level++;
+        this.refreshLevel();
+        this.buildPellets();
+        this.flow.transition('ready');
+      },
+    });
+  }
+
+  private enterGameOver(): void {
     this.refreshLives();
     this.banner.setText('GAME OVER').setColor('#ff0000').setVisible(true);
     this.time.delayedCall(GAMEOVER_MS, () => this.scene.restart());
@@ -253,8 +279,9 @@ export class PacmanScene extends BaseGameScene {
       if (ghost.mode === 'eyes') {
         ghost.update(delta, GHOST_HOME_TARGET);
         this.wrap(ghost.mover);
-        if (ghost.tile().row >= GHOST_HOME_ROW) {
-          // Back home — revive and head out again.
+        const t = ghost.tile();
+        if (isInsideHouse(t.col, t.row)) {
+          // Actually home now — revive and head back out.
           ghost.mode = 'leaving';
           ghost.setSpeed(GHOST_SPEED);
         }
@@ -265,7 +292,6 @@ export class PacmanScene extends BaseGameScene {
         this.wrap(ghost.mover);
         continue;
       }
-      // scatter / chase
       ghost.update(delta, this.ghostTarget(ghost.name, pac, pacDir, blinkyTile));
       this.wrap(ghost.mover);
     }
@@ -283,7 +309,6 @@ export class PacmanScene extends BaseGameScene {
     const next = PHASE_SCHEDULE[this.phaseIndex];
     this.phaseMode = next.mode;
     this.phaseTimer = next.ms;
-    // Classic: active ghosts reverse on every scatter/chase switch.
     for (const ghost of this.ghostList()) {
       if (ghost.mode === 'scatter' || ghost.mode === 'chase') {
         ghost.mode = this.phaseMode;
@@ -320,11 +345,11 @@ export class PacmanScene extends BaseGameScene {
     return [this.ghosts.blinky, this.ghosts.pinky, this.ghosts.inky, this.ghosts.clyde];
   }
 
-  /** On contact: eat a frightened ghost, otherwise Pac-Man dies. */
-  private resolveGhostContact(): void {
+  /** Returns true if a lethal ghost caught Pac-Man (eats frightened ghosts as a side effect). */
+  private checkGhostContact(): boolean {
     for (const ghost of this.ghostList()) {
       if (ghost.mode !== 'scatter' && ghost.mode !== 'chase' && ghost.mode !== 'frightened') {
-        continue; // house / leaving / eyes can't collide
+        continue;
       }
       const dist = Phaser.Math.Distance.Between(
         this.mover.x,
@@ -338,9 +363,25 @@ export class PacmanScene extends BaseGameScene {
       if (ghost.mode === 'frightened') {
         this.eatGhost(ghost);
       } else {
-        this.die();
-        return;
+        return true;
       }
+    }
+    return false;
+  }
+
+  private tickFrightened(delta: number): void {
+    if (this.frightTimer <= 0) {
+      return;
+    }
+    this.frightTimer -= delta;
+    const blinking = this.frightTimer <= FRIGHT_BLINK_MS;
+    for (const ghost of this.ghostList()) {
+      if (ghost.mode === 'frightened') {
+        ghost.blinking = blinking;
+      }
+    }
+    if (this.frightTimer <= 0) {
+      this.endFrightened();
     }
   }
 
@@ -362,7 +403,7 @@ export class PacmanScene extends BaseGameScene {
     for (const ghost of this.ghostList()) {
       if (ghost.mode === 'frightened') {
         ghost.mode = this.phaseMode;
-        ghost.setSpeed(GHOST_SPEED);
+        ghost.setSpeed(this.ghostSpeed());
         ghost.blinking = false;
       }
     }
@@ -378,9 +419,12 @@ export class PacmanScene extends BaseGameScene {
     ghost.setSpeed(EYES_SPEED);
   }
 
-  // --- shared helpers -----------------------------------------------------
+  // --- helpers ------------------------------------------------------------
 
   private resetActors(): void {
+    this.readyTimer = READY_MS;
+    this.applyLevelSpeeds();
+
     this.mover.teleport(this.grid.tileToWorldX(PLAYER_START.col), this.grid.tileToWorldY(PLAYER_START.row));
     this.mover.stop();
     this.pac.setPosition(this.mover.x, this.mover.y).setAngle(180).setScale(1).setTexture(TX.pacOpen);
@@ -394,6 +438,23 @@ export class PacmanScene extends BaseGameScene {
     this.phaseTimer = PHASE_SCHEDULE[0].ms;
     this.frightTimer = 0;
     this.eatChain = 0;
+  }
+
+  private ghostSpeed(): number {
+    const lv = Math.min(this.level - 1, MAX_SPEED_LEVELS);
+    return Math.min(GHOST_SPEED + lv * SPEED_RAMP_PER_LEVEL, this.playerSpeed() - 4);
+  }
+
+  private playerSpeed(): number {
+    const lv = Math.min(this.level - 1, MAX_SPEED_LEVELS);
+    return PLAYER_SPEED + lv * SPEED_RAMP_PER_LEVEL;
+  }
+
+  private applyLevelSpeeds(): void {
+    this.mover.setSpeed(this.playerSpeed());
+    for (const ghost of this.ghostList()) {
+      ghost.setBaseSpeed(this.ghostSpeed());
+    }
   }
 
   private readInput(): void {
@@ -486,13 +547,21 @@ export class PacmanScene extends BaseGameScene {
     if (pellet.energizer) {
       this.frightenGhosts();
     }
-
     if (this.pellets.size === 0) {
-      this.time.delayedCall(400, () => this.buildPellets());
+      this.flow.transition('levelclear');
     }
   }
 
+  private clearPellets(): void {
+    for (const pellet of this.pellets.values()) {
+      pellet.img.destroy();
+    }
+    this.pellets.clear();
+  }
+
+  /** Rebuild the full pellet field from the source maze layout. */
   private buildPellets(): void {
+    this.clearPellets();
     const cells = toCells();
     for (let row = 0; row < cells.length; row++) {
       for (let col = 0; col < cells[row].length; col++) {
@@ -501,10 +570,6 @@ export class PacmanScene extends BaseGameScene {
           continue;
         }
         this.grid.set(col, row, ch);
-        const key = `${col},${row}`;
-        if (this.pellets.has(key)) {
-          continue;
-        }
         const energizer = ch === ENERGIZER;
         const img = this.add
           .image(this.grid.tileToWorldX(col), this.grid.tileToWorldY(row), energizer ? TX.energizer : TX.dot)
@@ -518,7 +583,7 @@ export class PacmanScene extends BaseGameScene {
             repeat: -1,
           });
         }
-        this.pellets.set(key, { img, energizer });
+        this.pellets.set(`${col},${row}`, { img, energizer });
       }
     }
   }
@@ -539,8 +604,13 @@ export class PacmanScene extends BaseGameScene {
     }
   }
 
+  private refreshLevel(): void {
+    this.levelText.setText(`L${this.level}`);
+  }
+
   private drawMaze(): void {
     const g = this.add.graphics().setDepth(1);
+    this.maze = g;
     g.lineStyle(1, COLORS.wall, 1);
 
     this.grid.forEach((value, col, row) => {

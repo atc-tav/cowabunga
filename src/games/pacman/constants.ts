@@ -29,7 +29,12 @@ export const LIVES_START = 3;
 export const READY_MS = 1500; // pause on "READY!" before a round
 export const DEATH_SPIN_MS = 900; // Pac-Man death animation
 export const GAMEOVER_MS = 2500; // "GAME OVER" hold before restart
+export const LEVELCLEAR_MS = 1600; // maze-flash celebration before next level
 export const CATCH_DISTANCE = TILE * 0.6; // overlap that counts as caught
+
+// Per-level speed ramp (capped so Pac-Man stays ahead of the ghosts).
+export const SPEED_RAMP_PER_LEVEL = 3;
+export const MAX_SPEED_LEVELS = 5;
 
 // Pac-Man's starting tile (bottom-centre of the maze).
 export const PLAYER_START = { col: 13, row: 23 } as const;
@@ -66,9 +71,20 @@ export const SCATTER_CORNERS: Record<GhostName, { col: number; row: number }> = 
 // While leaving the house, ghosts aim up-and-out; they're "out" at this row.
 export const GHOST_EXIT_TARGET = { col: 13, row: 8 } as const;
 export const GHOST_EXIT_ROW = 10;
-// Eaten ghosts (eyes) head back here; they revive once inside the house.
+// Eaten ghosts (eyes) head back here; they revive once inside the house box.
 export const GHOST_HOME_TARGET = { col: 13, row: 14 } as const;
-export const GHOST_HOME_ROW = 13;
+// The house interior (where eyes revive) — must be the actual box, not just
+// "the bottom half of the maze".
+export const HOUSE_BOX = { colMin: 11, colMax: 16, rowMin: 13, rowMax: 15 } as const;
+
+export function isInsideHouse(col: number, row: number): boolean {
+  return (
+    col >= HOUSE_BOX.colMin &&
+    col <= HOUSE_BOX.colMax &&
+    row >= HOUSE_BOX.rowMin &&
+    row <= HOUSE_BOX.rowMax
+  );
+}
 
 export const PINKY_LEAD = 4; // tiles ahead of Pac-Man Pinky targets
 export const INKY_LEAD = 2; // tiles ahead used in Inky's vector
