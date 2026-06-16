@@ -14,3 +14,19 @@ export const LEVEL1_GIRDERS: PlatformSegment[] = [
 ];
 
 export const MARIO_START = { x: 28, y: 228 } as const;
+
+/** A ladder rung from the lower girder (bottomY) up to the upper girder (topY). */
+export interface Ladder {
+  x: number;
+  topY: number;
+  bottomY: number;
+}
+
+// Zig-zag climb path up toward DK, like the original.
+export const LEVEL1_LADDERS: Ladder[] = [
+  { x: 180, topY: 196, bottomY: 228 },
+  { x: 60, topY: 164, bottomY: 196 },
+  { x: 180, topY: 132, bottomY: 164 },
+  { x: 60, topY: 100, bottomY: 132 },
+  { x: 110, topY: 64, bottomY: 100 },
+];
