@@ -20,6 +20,11 @@ export const COLORS = {
   frightFace: 0xffffff, // frightened eyes/mouth
   frightBlinkBody: 0xffffff, // blink-warning body
   frightBlinkFace: 0xff0000, // blink-warning face
+  fruitRed: 0xff0000, // cherry
+  fruitStraw: 0xff4444, // strawberry
+  fruitOrange: 0xffa020, // orange
+  fruitGreen: 0x33cc33, // stems / leaves
+  fruitSeed: 0xffe060, // strawberry seeds
 } as const;
 
 export const PAC_PALETTE: PixelPalette = {

@@ -24,6 +24,29 @@ export const GHOST_EAT_MAX_CHAIN = 4;
 
 export const FRIGHT_MS = 6000; // how long an energizer keeps ghosts frightened
 export const FRIGHT_BLINK_MS = 2000; // final stretch where they flash a warning
+export const GHOST_EAT_PAUSE_MS = 450; // brief freeze when a ghost is eaten (juice)
+
+// --- fruit --------------------------------------------------------------
+
+export interface FruitDef {
+  key: 'cherry' | 'strawberry' | 'orange';
+  points: number;
+}
+
+// Fruit appears when this many dots have been eaten this level.
+export const FRUIT_THRESHOLDS = [70, 170];
+export const FRUIT_VISIBLE_MS = 9000;
+export const FRUIT_TILE = { col: 13, row: 17 } as const; // below the ghost house
+
+export const FRUIT_BY_LEVEL: FruitDef[] = [
+  { key: 'cherry', points: 100 },
+  { key: 'strawberry', points: 300 },
+  { key: 'orange', points: 500 },
+];
+
+export function fruitForLevel(level: number): FruitDef {
+  return FRUIT_BY_LEVEL[Math.min(level - 1, FRUIT_BY_LEVEL.length - 1)];
+}
 
 export const LIVES_START = 3;
 export const READY_MS = 1500; // pause on "READY!" before a round

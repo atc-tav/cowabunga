@@ -91,6 +91,46 @@ const EYES_ART: string[] = [
   '              ',
 ];
 
+// Fruit (10x10). R/O = body, G = stem/leaf, Y = seeds.
+const CHERRY_ART: string[] = [
+  '        G ',
+  '       G  ',
+  '   RR G   ',
+  '  RRRRRR  ',
+  ' RRRRRRRR ',
+  ' RRRRRRRR ',
+  ' RRRRRRRR ',
+  '  RRRRRR  ',
+  '   RRRR   ',
+  '          ',
+];
+
+const STRAWBERRY_ART: string[] = [
+  '   GGGG   ',
+  '  GRRRRG  ',
+  ' RRRRRRRR ',
+  ' RYRRRRYR ',
+  ' RRRRRRRR ',
+  '  RRRRRR  ',
+  '  RYRRYR  ',
+  '   RRRR   ',
+  '    RR    ',
+  '          ',
+];
+
+const ORANGE_ART: string[] = [
+  '      G   ',
+  '     GG   ',
+  '  OOOOOO  ',
+  ' OOOOOOOO ',
+  ' OOOOOOOO ',
+  ' OOOOOOOO ',
+  ' OOOOOOOO ',
+  '  OOOOOO  ',
+  '   OOOO   ',
+  '          ',
+];
+
 const DOT_ART: string[] = ['DD', 'DD'];
 
 const ENERGIZER_ART: string[] = [
@@ -153,4 +193,17 @@ export function buildPacmanTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, FRIGHT_TX.blink0, FRIGHT_FEET_A, blink);
   drawPixelArt(scene, FRIGHT_TX.blink1, FRIGHT_FEET_B, blink);
   drawPixelArt(scene, FRIGHT_TX.eyes, EYES_ART, { W: COLORS.ghostEye, b: COLORS.ghostPupil });
+
+  drawPixelArt(scene, fruitTexture('cherry'), CHERRY_ART, { R: COLORS.fruitRed, G: COLORS.fruitGreen });
+  drawPixelArt(scene, fruitTexture('strawberry'), STRAWBERRY_ART, {
+    R: COLORS.fruitStraw,
+    G: COLORS.fruitGreen,
+    Y: COLORS.fruitSeed,
+  });
+  drawPixelArt(scene, fruitTexture('orange'), ORANGE_ART, { O: COLORS.fruitOrange, G: COLORS.fruitGreen });
+}
+
+/** Texture key for a fruit by its def key. */
+export function fruitTexture(key: 'cherry' | 'strawberry' | 'orange'): string {
+  return `fruit-${key}`;
 }
