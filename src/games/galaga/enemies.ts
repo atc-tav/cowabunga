@@ -13,7 +13,7 @@ import {
 import { enemyFrame } from './sprites';
 import { makeEntryPath } from './entryPaths';
 
-export type EnemyState = 'entering' | 'formed' | 'diving' | 'capturing';
+export type EnemyState = 'entering' | 'formed' | 'diving' | 'capturing' | 'challenge';
 
 export interface Enemy {
   sprite: Phaser.GameObjects.Image;

@@ -31,9 +31,38 @@ export function makeEntryPath(home: Pt, fromLeft: boolean): Pt[] {
 }
 
 /**
- * A short approach curve for a capturing boss: drop from its slot to a hover
- * point above the player, where it will deploy the tractor beam.
+ * A flowing flythrough path for a challenge-stage chain: sweeps across the
+ * screen toward the player and exits off the far side (the enemy never settles
+ * into a formation). Several variants give the "flowing chains" look.
  */
+export function makeChallengePath(variant: number): Pt[] {
+  switch (variant % 3) {
+    case 0:
+      return cubic(
+        { x: -20, y: 30 },
+        { x: WIDTH * 0.4, y: HEIGHT * 0.75 },
+        { x: WIDTH * 0.7, y: HEIGHT * 0.12 },
+        { x: WIDTH + 20, y: HEIGHT * 0.85 },
+        30,
+      );
+    case 1:
+      return cubic(
+        { x: WIDTH + 20, y: 30 },
+        { x: WIDTH * 0.6, y: HEIGHT * 0.75 },
+        { x: WIDTH * 0.3, y: HEIGHT * 0.12 },
+        { x: -20, y: HEIGHT * 0.85 },
+        30,
+      );
+    default:
+      return cubic(
+        { x: WIDTH / 2, y: -20 },
+        { x: -10, y: HEIGHT * 0.55 },
+        { x: WIDTH + 10, y: HEIGHT * 0.55 },
+        { x: WIDTH / 2, y: HEIGHT + 20 },
+        30,
+      );
+  }
+}
 export function makeApproachPath(home: Pt, hoverX: number, hoverY: number): Pt[] {
   const p1 = { x: home.x, y: home.y + 40 };
   const p2 = { x: hoverX, y: hoverY - 40 };

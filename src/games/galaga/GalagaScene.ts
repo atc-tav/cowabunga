@@ -37,7 +37,9 @@ import {
   BEAM_HOLD_MS,
   BEAM_RETRACT_MS,
   BEAM_HALF_WIDTH,
+  BEAM_LOCK_MS,
   PULL_MS,
+  TOW_MS,
   CAPTURE_INTERVAL_MS,
   DUAL_OFFSET,
   RESCUE_FLY_MS,
@@ -45,15 +47,26 @@ import {
   MAX_WAVE_RAMP,
   STAGE_BANNER_MS,
   CHALLENGE_EVERY,
-  CHALLENGE_DURATION_MS,
   CHALLENGE_BONUS_PER,
   CHALLENGE_PERFECT_BONUS,
+  CHALLENGE_SPEED,
+  CHAIN_STAGGER_MS,
+  CHALLENGE_SAFETY_MS,
+  ENEMY_SCORE,
+  EnemyType,
 } from './constants';
 import { COLORS } from './palette';
 import { buildGalagaTextures, enemyFrame, EXPLOSION_KEYS, TX } from './sprites';
 import { Starfield } from './starfield';
 import { buildFormation, Enemy } from './enemies';
-import { makeEntryPath, makeDivePath, makeApproachPath } from './entryPaths';
+import { makeEntryPath, makeDivePath, makeApproachPath, makeChallengePath } from './entryPaths';
+
+interface ChainSpec {
+  at: number;
+  type: EnemyType;
+  variant: number;
+  count: number;
+}
 
 type CapturePhase = 'approach' | 'grow' | 'hold' | 'retract';
 
@@ -84,8 +97,10 @@ export class GalagaScene extends BaseGameScene {
   // wave / difficulty
   private wave = 1;
   private isChallenge = false;
-  private challengeTimer = 0;
-  private challengeStartCount = 0;
+  private challengeChains: ChainSpec[] = [];
+  private challengeClock = 0;
+  private challengeHits = 0;
+  private challengeTotal = 0;
   private entrySpeed = ENTRY_SPEED;
   private diveSpeed = DIVE_SPEED;
   private fireMs = ENEMY_FIRE_MS;
@@ -97,6 +112,7 @@ export class GalagaScene extends BaseGameScene {
   private capturePhase: CapturePhase = 'approach';
   private captureTimer = 0;
   private captureCooldown = 0;
+  private lockTimer = 0;
   private beamClock = 0;
   private captureBoss?: Enemy;
   private captiveSprite?: Phaser.GameObjects.Image;
@@ -171,15 +187,33 @@ export class GalagaScene extends BaseGameScene {
   private startWave(): void {
     this.applyWaveDifficulty();
     this.isChallenge = this.wave % CHALLENGE_EVERY === 0;
-    this.enemies = buildFormation(this, this.entrySpeed);
-    this.diveTimer = this.diveIntervalMs;
-    this.captureCooldown = CAPTURE_INTERVAL_MS;
-    this.challengeTimer = CHALLENGE_DURATION_MS;
-    this.challengeStartCount = this.enemies.length;
+
+    if (this.isChallenge) {
+      this.startChallenge();
+    } else {
+      this.enemies = buildFormation(this, this.entrySpeed);
+      this.diveTimer = this.diveIntervalMs;
+      this.captureCooldown = CAPTURE_INTERVAL_MS;
+    }
 
     const text = this.isChallenge ? 'CHALLENGING STAGE' : `STAGE ${this.wave}`;
     this.stageBanner.setText(text).setVisible(true);
     this.time.delayedCall(STAGE_BANNER_MS, () => this.stageBanner.setVisible(false));
+  }
+
+  private startChallenge(): void {
+    this.enemies = [];
+    this.challengeClock = 0;
+    this.challengeHits = 0;
+    // A sequence of flowing chains in different patterns/types.
+    this.challengeChains = [
+      { at: 400, type: 'bee', variant: 0, count: 6 },
+      { at: 1600, type: 'bee', variant: 1, count: 6 },
+      { at: 3000, type: 'butterfly', variant: 2, count: 6 },
+      { at: 4400, type: 'butterfly', variant: 0, count: 6 },
+      { at: 5800, type: 'boss', variant: 1, count: 4 },
+    ];
+    this.challengeTotal = this.challengeChains.reduce((n, c) => n + c.count, 0);
   }
 
   private applyWaveDifficulty(): void {
@@ -227,23 +261,96 @@ export class GalagaScene extends BaseGameScene {
     this.movePlayer(delta);
     this.handleFire();
     this.updateBullets(delta);
-    this.advanceFormation(delta, !this.isChallenge);
-    if (!this.isChallenge) {
-      this.updateCapture(delta);
-      this.scheduleCapture(delta);
-      this.updateEnemyFire(delta);
+
+    if (this.isChallenge) {
+      this.flapEnemies(delta);
+      this.updateChallenge(delta);
+      this.checkHits();
+      // Dying in a challenge stage costs no life — it just ends the stage.
+      if (this.playerWasHit()) {
+        this.endChallenge();
+      }
+      return;
     }
+
+    this.advanceFormation(delta, true);
+    this.updateCapture(delta);
+    this.scheduleCapture(delta);
+    this.updateEnemyFire(delta);
     this.updateCaptive();
     this.updateEnemyBullets(delta);
     this.checkHits();
     if (this.playerWasHit() && this.lethalHit(false)) {
       return;
     }
-    if (this.isChallenge) {
-      this.tickChallenge(delta);
-    } else {
-      this.checkWaveCleared();
+    this.checkWaveCleared();
+  }
+
+  // --- challenge stage ----------------------------------------------------
+
+  private updateChallenge(delta: number): void {
+    this.challengeClock += delta;
+    while (this.challengeChains.length > 0 && this.challengeChains[0].at <= this.challengeClock) {
+      this.spawnChain(this.challengeChains.shift() as ChainSpec);
     }
+
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const enemy = this.enemies[i];
+      enemy.elapsed += delta;
+      if (enemy.elapsed < enemy.startDelay) {
+        continue;
+      }
+      const p = enemy.follower.update(delta);
+      enemy.sprite.setPosition(p.x, p.y);
+      if (enemy.follower.done) {
+        enemy.sprite.destroy();
+        this.enemies.splice(i, 1);
+      }
+    }
+
+    const allSpawned = this.challengeChains.length === 0;
+    const timedOut = this.challengeClock >= CHALLENGE_SAFETY_MS;
+    if (!this.respawning && ((allSpawned && this.enemies.length === 0) || timedOut)) {
+      this.endChallenge();
+    }
+  }
+
+  private spawnChain(spec: ChainSpec): void {
+    const path = makeChallengePath(spec.variant);
+    for (let i = 0; i < spec.count; i++) {
+      const sprite = this.add.image(path[0].x, path[0].y, enemyFrame(spec.type, 0)).setDepth(8);
+      this.enemies.push({
+        sprite,
+        type: spec.type,
+        points: ENEMY_SCORE[spec.type],
+        home: { x: path[0].x, y: path[0].y },
+        follower: new PathFollower(path, CHALLENGE_SPEED),
+        startDelay: i * CHAIN_STAGGER_MS,
+        elapsed: 0,
+        state: 'challenge',
+        fireTimer: 0,
+        hasCaptive: false,
+      });
+    }
+  }
+
+  private endChallenge(): void {
+    if (this.respawning) {
+      return;
+    }
+    const perfect = this.challengeHits >= this.challengeTotal;
+    const bonus = this.challengeHits * CHALLENGE_BONUS_PER + (perfect ? CHALLENGE_PERFECT_BONUS : 0);
+    this.addScore(bonus);
+    this.audio.play('bonus');
+    floatingText(this, WIDTH / 2, HEIGHT / 2, perfect ? `PERFECT! ${bonus}` : `BONUS ${bonus}`, {
+      color: '#fcff5e',
+      fontSize: '10px',
+      durationMs: 1200,
+    });
+    this.enemies.forEach((e) => e.sprite.destroy());
+    this.enemies = [];
+    this.challengeChains = [];
+    this.advanceWave();
   }
 
   private enterCaptured(): void {
@@ -253,6 +360,7 @@ export class GalagaScene extends BaseGameScene {
       return;
     }
     this.audio.play('captured');
+    // Phase 1: the caught ship spins and rises into the boss.
     this.tweens.add({
       targets: this.player,
       x: boss.sprite.x,
@@ -260,36 +368,54 @@ export class GalagaScene extends BaseGameScene {
       angle: 720,
       duration: PULL_MS,
       ease: 'Sine.easeIn',
-      onComplete: () => this.finishCapture(),
+      onComplete: () => this.towCaptive(),
+    });
+  }
+
+  private towCaptive(): void {
+    const boss = this.captureBoss;
+    if (!boss) {
+      this.flow.transition('dying');
+      return;
+    }
+    this.player.setVisible(false).setAngle(0);
+    this.beamGfx.clear();
+    boss.hasCaptive = true;
+    // Docks BEHIND the boss (above it, drawn behind) so the boss shields it —
+    // you must destroy the boss to rescue, not the captive.
+    this.captiveSprite = this.add
+      .image(boss.sprite.x, boss.sprite.y - 11, TX.ship)
+      .setTint(COLORS.captive)
+      .setAngle(180)
+      .setDepth(7);
+    // Phase 2: the boss flies up and off the top towing the captive, then
+    // re-enters from the top when play resumes.
+    this.tweens.add({
+      targets: boss.sprite,
+      y: -24,
+      duration: TOW_MS,
+      ease: 'Sine.easeIn',
+      onComplete: () => {
+        this.recycleToFormation(boss);
+        this.captureBoss = undefined;
+        this.lostToCapture = true;
+        this.flow.transition('dying');
+      },
     });
   }
 
   private updateCaptured(delta: number): void {
-    // Hold the animated beam while the ship spins up into the boss.
     this.beamClock += delta;
-    if (this.captureBoss) {
-      this.drawBeam(this.captureBoss, 1);
+    if (!this.captureBoss) {
+      return;
     }
-  }
-
-  private finishCapture(): void {
-    const boss = this.captureBoss;
-    this.captureBoss = undefined;
-    this.player.setVisible(false).setAngle(0);
-    this.beamGfx.clear();
-
-    if (boss) {
-      boss.hasCaptive = true;
-      this.captiveSprite = this.add
-        .image(boss.sprite.x, boss.sprite.y + 12, TX.ship)
-        .setTint(COLORS.captive)
-        .setAngle(180) // captured ship hangs inverted below its captor
-        .setDepth(9);
-      this.recycleToFormation(boss); // boss escapes back to the top, carrying it
+    if (this.captiveSprite) {
+      // Tow phase: glue the captive behind the rising boss.
+      this.captiveSprite.setPosition(this.captureBoss.sprite.x, this.captureBoss.sprite.y - 11);
+    } else {
+      // Pull phase: keep the locked beam drawn while the ship spirals in.
+      this.drawBeam(this.captureBoss, 1, 1);
     }
-
-    this.lostToCapture = true;
-    this.flow.transition('dying');
   }
 
   private enterDying(): void {
@@ -546,6 +672,7 @@ export class GalagaScene extends BaseGameScene {
       if (boss.follower.done) {
         this.capturePhase = 'grow';
         this.captureTimer = BEAM_GROW_MS;
+        this.lockTimer = 0;
       }
       return;
     }
@@ -558,8 +685,11 @@ export class GalagaScene extends BaseGameScene {
         this.captureTimer = BEAM_HOLD_MS;
       }
     } else if (this.capturePhase === 'hold') {
-      this.drawBeam(boss, 1);
-      if (this.player.visible && Math.abs(this.player.x - boss.sprite.x) < BEAM_HALF_WIDTH) {
+      // Staying in the beam charges the lock (warning pulse); leaving resets it.
+      const inBeam = this.player.visible && Math.abs(this.player.x - boss.sprite.x) < BEAM_HALF_WIDTH;
+      this.lockTimer = inBeam ? this.lockTimer + delta : 0;
+      this.drawBeam(boss, 1, Math.min(this.lockTimer / BEAM_LOCK_MS, 1));
+      if (this.lockTimer >= BEAM_LOCK_MS) {
         this.beginCapture(boss);
         return;
       }
@@ -605,14 +735,23 @@ export class GalagaScene extends BaseGameScene {
     }
   }
 
-  /** Draw the cone with energy bands streaming UP toward the boss. */
-  private drawBeam(boss: Enemy, scale: number): void {
+  /**
+   * Draw the cone with energy bands streaming UP toward the boss. `warn` (0..1)
+   * pulses the beam blue while the lock charges, and goes solid once locked.
+   */
+  private drawBeam(boss: Enemy, scale: number, warn = 0): void {
     const s = Phaser.Math.Clamp(scale, 0, 1);
     const bx = boss.sprite.x;
     const by = boss.sprite.y + 6;
     const g = this.beamGfx;
+    let coneAlpha = 0.22 * s;
+    if (warn >= 1) {
+      coneAlpha = 0.6 * s; // locked: solid blue
+    } else if (warn > 0) {
+      coneAlpha = (0.28 + 0.32 * Math.abs(Math.sin(this.beamClock / 110))) * s; // warning pulse
+    }
     g.clear();
-    g.fillStyle(COLORS.beam, 0.22 * s);
+    g.fillStyle(COLORS.beam, coneAlpha);
     g.fillPoints(
       [
         new Phaser.Geom.Point(bx - 3, by),
@@ -644,7 +783,7 @@ export class GalagaScene extends BaseGameScene {
       this.captiveSprite = undefined;
       return;
     }
-    this.captiveSprite.setPosition(captor.sprite.x, captor.sprite.y + 12);
+    this.captiveSprite.setPosition(captor.sprite.x, captor.sprite.y - 11);
   }
 
   private rescueCaptive(): void {
@@ -677,20 +816,9 @@ export class GalagaScene extends BaseGameScene {
       const bullet = this.bullets[b];
       const bounds = bullet.getBounds();
 
-      if (
-        this.captiveSprite &&
-        Phaser.Geom.Intersects.RectangleToRectangle(bounds, this.captiveSprite.getBounds())
-      ) {
-        playFrames(this, this.captiveSprite.x, this.captiveSprite.y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
-        this.audio.play('explosion');
-        this.captiveSprite.destroy();
-        this.captiveSprite = undefined;
-        this.enemies.forEach((e) => (e.hasCaptive = false));
-        bullet.destroy();
-        this.bullets.splice(b, 1);
-        continue;
-      }
-
+      // Enemies first, so the boss (shielding a captive) is hit before the
+      // captive behind it — that's what makes a rescue possible.
+      let consumed = false;
       for (let e = this.enemies.length - 1; e >= 0; e--) {
         const enemy = this.enemies[e];
         if (!Phaser.Geom.Intersects.RectangleToRectangle(bounds, enemy.sprite.getBounds())) {
@@ -701,6 +829,9 @@ export class GalagaScene extends BaseGameScene {
         floatingText(this, x, y, String(enemy.points), { color: '#ffffff', fontSize: '8px' });
         this.addScore(enemy.points);
         this.audio.play('explosion');
+        if (this.isChallenge) {
+          this.challengeHits++;
+        }
 
         if (enemy === this.captor) {
           this.captor = undefined;
@@ -714,7 +845,25 @@ export class GalagaScene extends BaseGameScene {
         this.enemies.splice(e, 1);
         bullet.destroy();
         this.bullets.splice(b, 1);
+        consumed = true;
         break;
+      }
+      if (consumed) {
+        continue;
+      }
+
+      // Only an exposed captive (no shielding boss left) can be lost to fire.
+      if (
+        this.captiveSprite &&
+        Phaser.Geom.Intersects.RectangleToRectangle(bounds, this.captiveSprite.getBounds())
+      ) {
+        playFrames(this, this.captiveSprite.x, this.captiveSprite.y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
+        this.audio.play('explosion');
+        this.captiveSprite.destroy();
+        this.captiveSprite = undefined;
+        this.enemies.forEach((e) => (e.hasCaptive = false));
+        bullet.destroy();
+        this.bullets.splice(b, 1);
       }
     }
   }
@@ -733,7 +882,10 @@ export class GalagaScene extends BaseGameScene {
       }
     }
     for (const enemy of this.enemies) {
-      if (enemy.state === 'diving' && overlaps(enemy.sprite.getBounds())) {
+      if (
+        (enemy.state === 'diving' || enemy.state === 'challenge') &&
+        overlaps(enemy.sprite.getBounds())
+      ) {
         return true;
       }
     }
@@ -744,34 +896,6 @@ export class GalagaScene extends BaseGameScene {
     if (this.enemies.length > 0 || this.respawning) {
       return;
     }
-    this.advanceWave();
-  }
-
-  // --- challenge stage ----------------------------------------------------
-
-  private tickChallenge(delta: number): void {
-    if (this.respawning) {
-      return;
-    }
-    this.challengeTimer -= delta;
-    if (this.enemies.length === 0 || this.challengeTimer <= 0) {
-      this.endChallenge();
-    }
-  }
-
-  private endChallenge(): void {
-    const hits = this.challengeStartCount - this.enemies.length;
-    const perfect = this.enemies.length === 0;
-    const bonus = hits * CHALLENGE_BONUS_PER + (perfect ? CHALLENGE_PERFECT_BONUS : 0);
-    this.addScore(bonus);
-    this.audio.play('bonus');
-    floatingText(this, WIDTH / 2, HEIGHT / 2, perfect ? `PERFECT! ${bonus}` : `BONUS ${bonus}`, {
-      color: '#fcff5e',
-      fontSize: '10px',
-      durationMs: 1200,
-    });
-    this.enemies.forEach((e) => e.sprite.destroy());
-    this.enemies = [];
     this.advanceWave();
   }
 

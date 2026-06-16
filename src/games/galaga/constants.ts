@@ -23,7 +23,9 @@ export const BEAM_GROW_MS = 600;
 export const BEAM_HOLD_MS = 1900;
 export const BEAM_RETRACT_MS = 450;
 export const BEAM_HALF_WIDTH = 24; // capture window at the bottom of the cone
+export const BEAM_LOCK_MS = 850; // time in-beam before the beam locks and captures
 export const PULL_MS = 1000; // caught ship spins/rises into the boss
+export const TOW_MS = 750; // boss tows the captured ship up off the top
 export const CAPTURE_INTERVAL_MS = 5000; // how often a boss attempts a capture run
 
 // --- enemy formation ----------------------------------------------------
@@ -82,6 +84,8 @@ export const STAGE_BANNER_MS = 1400;
 // --- challenge (bonus) stage --------------------------------------------
 
 export const CHALLENGE_EVERY = 4; // every Nth wave is a no-fire bonus stage
-export const CHALLENGE_DURATION_MS = 9000;
 export const CHALLENGE_BONUS_PER = 100; // per enemy shot
-export const CHALLENGE_PERFECT_BONUS = 1000; // clearing the whole stage
+export const CHALLENGE_PERFECT_BONUS = 1000; // shooting the whole stage
+export const CHALLENGE_SPEED = 125; // px/sec along a flythrough chain
+export const CHAIN_STAGGER_MS = 130; // gap between enemies in a chain
+export const CHALLENGE_SAFETY_MS = 16000; // hard cap on a challenge stage
