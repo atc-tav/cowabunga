@@ -1,5 +1,5 @@
 import type { Pt } from '../../shared/PathFollower';
-import { WIDTH, ENTRY_STEPS } from './constants';
+import { WIDTH, HEIGHT, ENTRY_STEPS, DIVE_STEPS } from './constants';
 
 function cubic(p0: Pt, p1: Pt, p2: Pt, p3: Pt, steps: number): Pt[] {
   const pts: Pt[] = [];
@@ -28,4 +28,17 @@ export function makeEntryPath(home: Pt, fromLeft: boolean): Pt[] {
   const p1 = fromLeft ? { x: 60, y: -20 } : { x: WIDTH - 60, y: -20 };
   const p2 = { x: home.x + (fromLeft ? -40 : 40), y: home.y + 60 };
   return cubic(p0, p1, p2, home, ENTRY_STEPS);
+}
+
+/**
+ * A dive curve: peel out of the formation, swoop down toward the player's
+ * column (aimX), and exit off the bottom of the screen.
+ */
+export function makeDivePath(home: Pt, aimX: number): Pt[] {
+  const bias = aimX < WIDTH / 2 ? 40 : -40;
+  const p0 = home;
+  const p1 = { x: home.x, y: home.y + 50 };
+  const p2 = { x: aimX, y: HEIGHT - 60 };
+  const p3 = { x: aimX + bias, y: HEIGHT + 30 };
+  return cubic(p0, p1, p2, p3, DIVE_STEPS);
 }
