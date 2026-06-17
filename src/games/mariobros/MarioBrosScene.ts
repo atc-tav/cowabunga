@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { BaseGameScene } from '../../shared/BaseGameScene';
-import { PlatformerBody } from '../../shared/Platformer';
+import { PlatformerBody, PlatformSegment } from '../../shared/Platformer';
 import {
   WIDTH,
   HEIGHT,
@@ -15,16 +15,23 @@ import {
   MARIO_H,
   WALK_FRAME_MS,
   PLATFORM_THICKNESS,
+  BUMP_AMP,
+  BUMP_RECOVER,
 } from './constants';
 import { COLORS } from './palette';
 import { buildMarioBrosTextures, TX } from './sprites';
-import { FLOORS, PIPES, POW, MARIO_START } from './levels';
+import { FLOORS, PIPES, PIPE_WIDTH, POW, MARIO_START } from './levels';
+
+interface Floor {
+  seg: PlatformSegment;
+  nudge: number; // current vertical offset (<=0 = raised) from a bump
+}
 
 /**
- * Mario Bros. (original single-screen) — slice 1: the floor layout and Mario's
- * movement. Run has momentum/skid, jumps are floaty, and walking off a screen
- * edge wraps you to the other side. Built on the shared PlatformerBody.
- * (Bump-from-below, enemies, and the POW block come in later slices.)
+ * Mario Bros. — slice 2: bump-from-below. Platforms are solid; jumping into a
+ * platform's underside bonks Mario and pops that platform up (the core verb
+ * that will flip enemies standing on it once they arrive next slice). Also
+ * carries the standard-board layout fix forward.
  */
 export class MarioBrosScene extends BaseGameScene {
   private mario!: PlatformerBody;
@@ -34,13 +41,21 @@ export class MarioBrosScene extends BaseGameScene {
   private walkTimer = 0;
   private walkFrame: 0 | 1 = 0;
 
+  private floors: Floor[] = [];
+  private platformGfx!: Phaser.GameObjects.Graphics;
+
   constructor() {
     super({ key: 'game-mariobros', gameId: 'mariobros', width: WIDTH, height: HEIGHT });
   }
 
   protected createGame(): void {
     buildMarioBrosTextures(this);
-    this.drawLevel();
+
+    // Solid floors (thickness enables underside bonks).
+    this.floors = FLOORS.map((f) => ({ seg: { ...f, thickness: PLATFORM_THICKNESS }, nudge: 0 }));
+    this.drawStatics();
+    this.platformGfx = this.add.graphics().setDepth(1);
+    this.drawPlatforms();
 
     this.vx = 0;
     this.mario = new PlatformerBody(MARIO_START.x, 0, MARIO_W, MARIO_H);
@@ -53,7 +68,6 @@ export class MarioBrosScene extends BaseGameScene {
     const dt = delta / 1000;
     const dir = (this.controls.isDown('left') ? -1 : 0) + (this.controls.isDown('right') ? 1 : 0);
 
-    // Horizontal momentum: accelerate toward input, otherwise coast to a stop.
     const accel = this.mario.onGround ? RUN_ACCEL : AIR_ACCEL;
     if (dir !== 0) {
       this.vx += dir * accel * dt;
@@ -69,13 +83,44 @@ export class MarioBrosScene extends BaseGameScene {
     if (this.controls.justPressed('fire')) {
       this.mario.jump(JUMP_SPEED);
     }
-    this.mario.update(delta, GRAVITY, FLOORS);
+    this.mario.update(delta, GRAVITY, this.floorSegments());
+
+    if (this.mario.bumped) {
+      this.onBump(this.mario.bumped);
+    }
+    this.settleBumps(delta);
 
     this.sprite.setPosition(this.mario.x, this.mario.y).setFlipX(this.facing < 0);
     this.animate(delta, dir !== 0);
   }
 
-  /** Walk off one side of the screen, reappear on the other. */
+  private floorSegments(): PlatformSegment[] {
+    return this.floors.map((f) => f.seg);
+  }
+
+  /** A platform was bonked: pop it up and play the thud. */
+  private onBump(seg: PlatformSegment): void {
+    const floor = this.floors.find((f) => f.seg === seg);
+    if (floor) {
+      floor.nudge = -BUMP_AMP;
+      this.audio.play('bump');
+    }
+  }
+
+  private settleBumps(delta: number): void {
+    const step = (BUMP_RECOVER * delta) / 1000;
+    let dirty = false;
+    for (const f of this.floors) {
+      if (f.nudge < 0) {
+        f.nudge = Math.min(0, f.nudge + step);
+        dirty = true;
+      }
+    }
+    if (dirty) {
+      this.drawPlatforms();
+    }
+  }
+
   private wrap(): void {
     if (this.mario.x < 0) {
       this.mario.x += WIDTH;
@@ -101,22 +146,30 @@ export class MarioBrosScene extends BaseGameScene {
     this.sprite.setTexture(this.walkFrame === 0 ? TX.marioRun0 : TX.marioRun1);
   }
 
-  private drawLevel(): void {
-    const g = this.add.graphics().setDepth(1);
-    for (const f of FLOORS) {
-      g.fillStyle(COLORS.platform, 1);
-      g.fillRect(f.x1, f.y1, f.x2 - f.x1, PLATFORM_THICKNESS);
-      g.fillStyle(COLORS.platformTop, 1);
-      g.fillRect(f.x1, f.y1, f.x2 - f.x1, 2);
-    }
+  // --- rendering ----------------------------------------------------------
 
+  /** Platforms are redrawn each frame so a bumped one can ride its nudge. */
+  private drawPlatforms(): void {
+    const g = this.platformGfx;
+    g.clear();
+    for (const f of this.floors) {
+      const y = f.seg.y1 + f.nudge;
+      g.fillStyle(COLORS.platform, 1);
+      g.fillRect(f.seg.x1, y, f.seg.x2 - f.seg.x1, PLATFORM_THICKNESS);
+      g.fillStyle(COLORS.platformTop, 1);
+      g.fillRect(f.seg.x1, y, f.seg.x2 - f.seg.x1, 2);
+    }
+  }
+
+  private drawStatics(): void {
+    const g = this.add.graphics().setDepth(0);
     for (const pipe of PIPES) {
       g.fillStyle(COLORS.pipe, 1);
-      g.fillRect(pipe.x, pipe.y, 24, 18);
+      g.fillRect(pipe.x, pipe.y1, PIPE_WIDTH, pipe.y2 - pipe.y1);
       g.fillStyle(COLORS.pipeRim, 1);
-      g.fillRect(pipe.x - 2, pipe.y + 14, 28, 4);
+      const rimY = pipe.opening === 'down' ? pipe.y2 - 6 : pipe.y1;
+      g.fillRect(pipe.x - 3, rimY, PIPE_WIDTH + 6, 6);
     }
-
     g.fillStyle(COLORS.pow, 1);
     g.fillRect(POW.x - 12, POW.y - 8, 24, 14);
     this.add

@@ -4,7 +4,7 @@ export const WIDTH = 256;
 export const HEIGHT = 240;
 
 export const GRAVITY = 700; // px/sec^2
-export const JUMP_SPEED = 250; // px/sec — reaches the floor above to bump it
+export const JUMP_SPEED = 265; // px/sec — clears the 48px floor spacing to ascend/bump
 
 // Run with momentum/skid (the slippery Mario Bros feel).
 export const RUN_ACCEL = 650; // px/sec^2 on the ground
@@ -18,3 +18,7 @@ export const MARIO_H = 14;
 export const WALK_FRAME_MS = 100;
 
 export const PLATFORM_THICKNESS = 10;
+
+// Bump-from-below: how far the bonked platform pops up, and how fast it settles.
+export const BUMP_AMP = 4; // px the platform rises
+export const BUMP_RECOVER = 36; // px/sec settling back down
