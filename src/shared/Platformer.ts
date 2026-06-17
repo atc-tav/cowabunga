@@ -7,6 +7,8 @@ export interface PlatformSegment {
   x2: number;
   y1: number;
   y2: number;
+  /** If set, the platform is solid: a rising body bonks its underside (top + thickness). */
+  thickness?: number;
 }
 
 /** Height of a segment's top surface at world x (clamped to the segment). */
@@ -27,6 +29,8 @@ const STICK = 7; // max step the body snaps to when following a sloped surface
 export class PlatformerBody {
   vy = 0;
   onGround = false;
+  /** Segment whose underside we bonked this frame (Mario Bros. bump), else null. */
+  bumped: PlatformSegment | null = null;
 
   constructor(
     public x: number,
@@ -52,6 +56,7 @@ export class PlatformerBody {
 
   update(deltaMs: number, gravity: number, segments: PlatformSegment[]): void {
     const dt = deltaMs / 1000;
+    this.bumped = null;
 
     // Grounded: stick to the surface under us (follows slopes), unless we've
     // walked off its end — then start falling.
@@ -66,12 +71,14 @@ export class PlatformerBody {
       this.onGround = false;
     }
 
-    // Airborne: gravity + land on any surface crossed from above.
-    const prevFeet = this.feet;
+    const prevY = this.y;
     this.vy += gravity * dt;
     this.y += this.vy * dt;
     this.onGround = false;
+
     if (this.vy >= 0) {
+      // Falling: land on any surface crossed from above.
+      const prevFeet = prevY + this.height / 2;
       let landY: number | undefined;
       for (const s of segments) {
         if (this.x < s.x1 || this.x > s.x2) {
@@ -86,6 +93,22 @@ export class PlatformerBody {
         this.setFeet(landY);
         this.vy = 0;
         this.onGround = true;
+      }
+    } else {
+      // Rising: bonk the underside of a solid platform (thickness set).
+      const head = this.y - this.height / 2;
+      const prevHead = prevY - this.height / 2;
+      for (const s of segments) {
+        if (!s.thickness || this.x < s.x1 || this.x > s.x2) {
+          continue;
+        }
+        const bottom = surfaceY(s, this.x) + s.thickness;
+        if (prevHead >= bottom && head <= bottom) {
+          this.y = bottom + this.height / 2;
+          this.vy = 0;
+          this.bumped = s;
+          break;
+        }
       }
     }
   }

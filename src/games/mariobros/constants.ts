@@ -18,3 +18,7 @@ export const MARIO_H = 14;
 export const WALK_FRAME_MS = 100;
 
 export const PLATFORM_THICKNESS = 10;
+
+// Bump-from-below: how far the bonked platform pops up, and how fast it settles.
+export const BUMP_AMP = 4; // px the platform rises
+export const BUMP_RECOVER = 36; // px/sec settling back down
