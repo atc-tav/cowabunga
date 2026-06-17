@@ -37,10 +37,24 @@ const ALL_ACTIONS: InputAction[] = [
   'pause',
 ];
 
+// Standard-mapping gamepad button indices (Gamepad API "standard" / X-input).
+// Used for buttons Phaser doesn't expose by name (Start / Select).
+const PAD_START = 9;
+const PAD_SELECT = 8;
+
+// Analog-stick travel past which we treat it as a directional press.
+const STICK_DEADZONE = 0.5;
+
 export class InputManager {
   private readonly keys = new Map<InputAction, Phaser.Input.Keyboard.Key[]>();
   private firstInputFired = false;
   private firstInputCb?: () => void;
+
+  // Per-frame gamepad action snapshots, so justPressed() can detect the rising
+  // edge of a controller button the same way JustDown does for the keyboard.
+  private readonly padNow = new Map<InputAction, boolean>();
+  private readonly padPrev = new Map<InputAction, boolean>();
+  private padPrimed = false;
 
   constructor(private readonly scene: Phaser.Scene) {
     const kb = scene.input.keyboard;
@@ -51,6 +65,10 @@ export class InputManager {
           KEY_MAP[action].map((code) => kb.addKey(code, true, false)),
         );
       }
+    }
+    for (const action of ALL_ACTIONS) {
+      this.padNow.set(action, false);
+      this.padPrev.set(action, false);
     }
   }
 
@@ -63,10 +81,14 @@ export class InputManager {
     return this.padDown(action);
   }
 
-  /** True only on the frame the action was first pressed (keyboard). */
+  /** True only on the frame the action was first pressed (keyboard or gamepad). */
   justPressed(action: InputAction): boolean {
     const list = this.keys.get(action);
-    return Boolean(list && list.some((k) => Phaser.Input.Keyboard.JustDown(k)));
+    if (list && list.some((k) => Phaser.Input.Keyboard.JustDown(k))) {
+      return true;
+    }
+    // Gamepad rising edge: down this frame, up last frame.
+    return Boolean(this.padNow.get(action)) && !this.padPrev.get(action);
   }
 
   /** Normalized -1/0/1 movement vector. Useful for free movement games. */
@@ -90,6 +112,16 @@ export class InputManager {
 
   /** Pump once per frame from the owning scene's update(). */
   update(): void {
+    // Snapshot gamepad state so justPressed() can read this frame's rising
+    // edges. On the first pump we prime prev = now, so a button still held
+    // from the launching scene (e.g. A/Start) isn't read as a fresh press.
+    for (const action of ALL_ACTIONS) {
+      const now = this.padDown(action);
+      this.padPrev.set(action, this.padPrimed ? (this.padNow.get(action) ?? false) : now);
+      this.padNow.set(action, now);
+    }
+    this.padPrimed = true;
+
     if (this.firstInputFired || !this.firstInputCb) {
       return;
     }
@@ -99,30 +131,50 @@ export class InputManager {
     }
   }
 
-  private padDown(action: InputAction): boolean {
+  private activePad(): Phaser.Input.Gamepad.Gamepad | null {
     const gp = this.scene.input.gamepad;
     if (!gp || gp.total === 0) {
-      return false;
+      return null;
     }
-    const pad = gp.getPad(0);
+    return gp.getPad(0) ?? null;
+  }
+
+  /** True if a numbered standard-mapping button is currently pressed. */
+  private buttonDown(pad: Phaser.Input.Gamepad.Gamepad, index: number): boolean {
+    const button = pad.buttons[index];
+    return button ? button.pressed : false;
+  }
+
+  /**
+   * Current gamepad state for an action, mapped for a standard / X-input pad
+   * (e.g. an 8BitDo Ultimate 2C in X-input mode). Face buttons use Phaser's
+   * named accessors; Start/Select fall back to numbered indices.
+   */
+  private padDown(action: InputAction): boolean {
+    const pad = this.activePad();
     if (!pad) {
       return false;
     }
     switch (action) {
       case 'left':
-        return pad.left || pad.leftStick.x < -0.5;
+        return pad.left || pad.leftStick.x < -STICK_DEADZONE;
       case 'right':
-        return pad.right || pad.leftStick.x > 0.5;
+        return pad.right || pad.leftStick.x > STICK_DEADZONE;
       case 'up':
-        return pad.up || pad.leftStick.y < -0.5;
+        return pad.up || pad.leftStick.y < -STICK_DEADZONE;
       case 'down':
-        return pad.down || pad.leftStick.y > 0.5;
-      case 'confirm':
-        return pad.A;
-      case 'cancel':
-        return pad.B;
+        return pad.down || pad.leftStick.y > STICK_DEADZONE;
+      // Primary action (jump / shoot): the south or west face button.
       case 'fire':
-        return pad.A;
+        return pad.A || pad.X;
+      // Menu confirm / launch: south face or Start.
+      case 'confirm':
+        return pad.A || this.buttonDown(pad, PAD_START);
+      // Back out: east face or Select/Back.
+      case 'cancel':
+        return pad.B || this.buttonDown(pad, PAD_SELECT);
+      case 'pause':
+        return this.buttonDown(pad, PAD_START);
       default:
         return false;
     }
