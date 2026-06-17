@@ -477,6 +477,7 @@ export class GalagaScene extends BaseGameScene {
     } else {
       this.audio.play('explosion');
       playFrames(this, this.player.x, this.player.y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
+      this.impact('heavy'); // losing your ship should hit hard
     }
     this.player.setVisible(false);
     this.setDual(false);
@@ -929,8 +930,7 @@ export class GalagaScene extends BaseGameScene {
         }
         const { x, y } = enemy.sprite;
         playFrames(this, x, y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
-        floatingText(this, x, y, String(enemy.points), { color: '#ffffff', fontSize: '8px' });
-        this.addScore(enemy.points);
+        this.popScore(x, y, enemy.points, { color: '#ffffff', fontSize: '8px' });
         this.audio.play('explosion');
         if (this.isChallenge) {
           this.challengeHits++;

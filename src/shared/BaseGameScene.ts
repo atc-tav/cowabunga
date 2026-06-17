@@ -3,6 +3,8 @@ import { InputManager } from './InputManager';
 import { ScoreManager } from './ScoreManager';
 import { SoundManager } from './SoundManager';
 import { CRTOverlay } from './CRTOverlay';
+import { screenShake, ImpactPreset } from './juice';
+import { floatingText, FloatingTextOptions } from './popups';
 import { HUD_STYLE, LABEL_STYLE } from './ui';
 
 export interface BaseGameSceneConfig {
@@ -102,6 +104,31 @@ export abstract class BaseGameScene extends Phaser.Scene {
     this.scores.add(points);
     this.scoreText?.setText(`SCORE ${this.scores.score}`);
     this.highText?.setText(`HI ${this.scores.high}`);
+  }
+
+  /**
+   * Score with feedback: bank the points AND float them from where they were
+   * earned. The shared "reward popup" convention — use it for positioned score
+   * events (a ghost eaten, a barrel smashed, an enemy shot) so confirmation is
+   * consistent across games.
+   */
+  protected popScore(
+    x: number,
+    y: number,
+    points: number,
+    opts?: FloatingTextOptions,
+  ): void {
+    this.addScore(points);
+    floatingText(this, x, y, String(points), opts);
+  }
+
+  /**
+   * Screen-shake impact, gated by the global juice toggle (off for the RL
+   * dojo). Reserve it for genuine impacts — a death, a slam, a POW — not every
+   * point scored.
+   */
+  protected impact(preset: ImpactPreset = 'medium'): void {
+    screenShake(this, preset);
   }
 
   protected returnToMenu(): void {
