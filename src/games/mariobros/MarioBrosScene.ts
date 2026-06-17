@@ -18,7 +18,7 @@ import {
 } from './constants';
 import { COLORS } from './palette';
 import { buildMarioBrosTextures, TX } from './sprites';
-import { FLOORS, PIPES, POW, MARIO_START } from './levels';
+import { FLOORS, PIPES, PIPE_WIDTH, POW, MARIO_START } from './levels';
 
 /**
  * Mario Bros. (original single-screen) — slice 1: the floor layout and Mario's
@@ -111,10 +111,12 @@ export class MarioBrosScene extends BaseGameScene {
     }
 
     for (const pipe of PIPES) {
+      // Vertical shaft, with a wider rim at the opening end (facing the arena).
       g.fillStyle(COLORS.pipe, 1);
-      g.fillRect(pipe.x, pipe.y, 24, 18);
+      g.fillRect(pipe.x, pipe.y1, PIPE_WIDTH, pipe.y2 - pipe.y1);
       g.fillStyle(COLORS.pipeRim, 1);
-      g.fillRect(pipe.x - 2, pipe.y + 14, 28, 4);
+      const rimY = pipe.opening === 'down' ? pipe.y2 - 6 : pipe.y1;
+      g.fillRect(pipe.x - 3, rimY, PIPE_WIDTH + 6, 6);
     }
 
     g.fillStyle(COLORS.pow, 1);

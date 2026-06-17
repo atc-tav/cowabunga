@@ -4,7 +4,7 @@ export const WIDTH = 256;
 export const HEIGHT = 240;
 
 export const GRAVITY = 700; // px/sec^2
-export const JUMP_SPEED = 250; // px/sec — reaches the floor above to bump it
+export const JUMP_SPEED = 265; // px/sec — clears the 48px floor spacing to ascend/bump
 
 // Run with momentum/skid (the slippery Mario Bros feel).
 export const RUN_ACCEL = 650; // px/sec^2 on the ground
