@@ -24,20 +24,44 @@ export const FLOORS: PlatformSegment[] = [
   { x1: 0, x2: 256, y1: 208, y2: 208 },
 ];
 
-/** Vertical pipes: top pair open downward, bottom pair open upward. */
+/**
+ * Horizontal corner pipes whose opening (light rim) faces the CENTRE of the
+ * screen. Top pipes sit at the top-floor level (enemies walk out horizontally
+ * onto it); bottom pipes sit at ground level (kicked shells exit there).
+ */
 export interface Pipe {
-  x: number;
+  x1: number;
+  x2: number;
   y1: number;
   y2: number;
-  opening: 'down' | 'up';
+  open: 'left' | 'right'; // which side the opening faces (toward centre)
+  role: 'top' | 'bottom';
 }
-export const PIPE_WIDTH = 24;
 export const PIPES: Pipe[] = [
-  { x: 2, y1: 24, y2: 60, opening: 'down' },
-  { x: 230, y1: 24, y2: 60, opening: 'down' },
-  { x: 2, y1: 174, y2: 210, opening: 'up' },
-  { x: 230, y1: 174, y2: 210, opening: 'up' },
+  { x1: 0, x2: 30, y1: 44, y2: 64, open: 'right', role: 'top' }, // top-left, opens right
+  { x1: 226, x2: 256, y1: 44, y2: 64, open: 'left', role: 'top' }, // top-right, opens left
+  { x1: 0, x2: 30, y1: 188, y2: 208, open: 'right', role: 'bottom' },
+  { x1: 226, x2: 256, y1: 188, y2: 208, open: 'left', role: 'bottom' },
 ];
+
+/** Spawn just outside a top pipe's opening, walking toward centre, on the top floor. */
+export interface SpawnPoint {
+  x: number;
+  feetY: number;
+  dir: 1 | -1;
+}
+export function topPipeSpawns(): SpawnPoint[] {
+  return PIPES.filter((p) => p.role === 'top').map((p) => ({
+    x: p.open === 'right' ? p.x2 + 2 : p.x1 - 2,
+    feetY: p.y2, // top floor surface
+    dir: p.open === 'right' ? 1 : -1,
+  }));
+}
+
+/** A kicked shell that reaches a bottom pipe's mouth is out of the game. */
+export function bottomPipeZones(): [number, number][] {
+  return PIPES.filter((p) => p.role === 'bottom').map((p) => [p.x1, p.x2]);
+}
 
 export const POW = { x: 128, y: 152 };
 
