@@ -4,7 +4,6 @@ import { Grid } from '../../shared/Grid';
 import { GridMover } from '../../shared/GridMover';
 import { LivesManager } from '../../shared/LivesManager';
 import { StateMachine } from '../../shared/StateMachine';
-import { floatingText } from '../../shared/popups';
 import { LABEL_STYLE, HINT_STYLE } from '../../shared/ui';
 import {
   TILE,
@@ -430,12 +429,11 @@ export class PacmanScene extends BaseGameScene {
   private eatGhost(ghost: Ghost): void {
     const points = GHOST_EAT_BASE * 2 ** this.eatChain;
     this.eatChain = Math.min(this.eatChain + 1, GHOST_EAT_MAX_CHAIN - 1);
-    this.addScore(points);
     this.audio.play('eatghost');
 
     // Feedback: float the points from where the ghost was, and briefly freeze
     // the action with the ghost hidden (classic Pac-Man hit-stop).
-    floatingText(this, ghost.mover.x, ghost.mover.y, String(points), {
+    this.popScore(ghost.mover.x, ghost.mover.y, points, {
       color: '#33ffff',
       fontSize: '10px',
     });
@@ -481,9 +479,8 @@ export class PacmanScene extends BaseGameScene {
     const { col, row } = this.mover.currentTile();
     if (row === FRUIT_TILE.row && (col === FRUIT_TILE.col || col === FRUIT_TILE.col + 1)) {
       const def = fruitForLevel(this.level);
-      this.addScore(def.points);
       this.audio.play('fruit');
-      floatingText(this, this.fruit.x, this.fruit.y, String(def.points), {
+      this.popScore(this.fruit.x, this.fruit.y, def.points, {
         color: '#ffffff',
         fontSize: '10px',
       });

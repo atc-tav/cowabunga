@@ -52,7 +52,6 @@ import {
   FIRE_BAND_BOTTOM,
 } from './constants';
 import { COLORS } from './palette';
-import { floatingText } from '../../shared/popups';
 import { buildDKTextures, BARREL_KEYS, FIRE_KEYS, TX } from './sprites';
 import { LEVEL1_GIRDERS, buildLadders, DK_X, PAULINE_X, Ladder } from './levels';
 
@@ -300,6 +299,7 @@ export class DKScene extends BaseGameScene {
   private enterDying(): void {
     this.audio.play('death');
     this.cameras.main.flash(160, 255, 80, 80);
+    this.impact('medium');
     this.tweens.add({ targets: this.sprite, angle: 360, duration: DEATH_PAUSE_MS });
     this.clearBarrels();
     this.time.delayedCall(DEATH_PAUSE_MS, () => this.afterDeath());
@@ -518,9 +518,9 @@ export class DKScene extends BaseGameScene {
       f.alive = false;
       f.sprite.setVisible(false);
       f.respawn = FIRE_RESPAWN_MS;
-      this.addScore(SCORE_SMASH_FIRE);
-      floatingText(this, f.x, f.y, String(SCORE_SMASH_FIRE), { color: '#ffffff', fontSize: '8px' });
+      this.popScore(f.x, f.y, SCORE_SMASH_FIRE, { color: '#ffffff', fontSize: '8px' });
       this.audio.play('smash');
+      this.impact('light');
       return false;
     }
     return d < FIRE_HIT_DIST;
@@ -582,9 +582,9 @@ export class DKScene extends BaseGameScene {
       if (Phaser.Math.Distance.Between(head.x, head.y, b.x, b.y) < HAMMER_SMASH_DIST) {
         b.sprite.destroy();
         this.barrels.splice(i, 1);
-        this.addScore(SCORE_SMASH);
-        floatingText(this, b.x, b.y, String(SCORE_SMASH), { color: '#ffffff', fontSize: '8px' });
+        this.popScore(b.x, b.y, SCORE_SMASH, { color: '#ffffff', fontSize: '8px' });
         this.audio.play('smash');
+        this.impact('light');
       }
     }
   }

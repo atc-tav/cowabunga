@@ -249,6 +249,7 @@ export class MarioBrosScene extends BaseGameScene {
     if (floor) {
       floor.nudge = -BUMP_AMP;
       this.audio.play('bump');
+      this.impact('light'); // the bump's the core verb — let it land
     }
     for (const e of this.enemies) {
       if (e.state === 'walk' && e.floorSeg === seg) {

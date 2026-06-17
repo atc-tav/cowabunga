@@ -9,6 +9,11 @@ Audio. Personal/educational project — not for commercialization.
 > brief is preserved in `docs/` history; where this file and the brief differ,
 > **this file wins**.
 
+> **Strategic docs:** `CLAUDE.md` is *how to build*. `docs/` is *what we're
+> optimizing for* — one doc per strategic imperative (Fun & Feel, RL Dojo
+> Readiness, Faithfulness, Modularity, Procedural Everything). Start at
+> [`docs/README.md`](docs/README.md) when a decision spans goals.
+
 ## Key decisions (read before building)
 
 - **Plugins: native Phaser first.** Use built-in Phaser 3.60+ FX
