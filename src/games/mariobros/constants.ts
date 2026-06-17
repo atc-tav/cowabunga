@@ -22,3 +22,23 @@ export const PLATFORM_THICKNESS = 10;
 // Bump-from-below: how far the bonked platform pops up, and how fast it settles.
 export const BUMP_AMP = 4; // px the platform rises
 export const BUMP_RECOVER = 36; // px/sec settling back down
+
+// --- enemies & round flow ----------------------------------------------
+
+export const SHELL_W = 12;
+export const SHELL_H = 10;
+export const SHELL_SPEED = 42; // px/sec walking
+export const SHELL_RECOVER_SPEED = 60; // faster after recovering from a flip
+export const SHELL_STUN_MS = 4200; // time flipped before recovering
+export const SHELL_STUN_BLINK_MS = 1500; // flashes when about to recover
+export const SHELL_FRAME_MS = 160;
+export const SHELL_SCORE = 800; // kicking a flipped Shellcreeper
+export const ENEMY_TARGET = 2; // keep this many on the board
+export const ENEMY_RESPAWN_MS = 1600;
+export const ENEMY_GROUND_DWELL_MS = 2500; // time on the ground before recycling to a pipe
+
+export const LIVES_START = 3;
+export const READY_MS = 1300;
+export const DEATH_PAUSE_MS = 1000;
+export const GAMEOVER_MS = 2500;
+

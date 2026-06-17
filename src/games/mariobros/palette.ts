@@ -13,6 +13,10 @@ export const COLORS = {
   hair: 0x6a3000,
   overalls: 0x2038ec,
   boots: 0x6a3000,
+  shell: 0x00a800,
+  shellDark: 0x006000,
+  shellHead: 0xfcd060,
+  shellEye: 0xffffff,
 } as const;
 
 export const MARIO_PALETTE: PixelPalette = {

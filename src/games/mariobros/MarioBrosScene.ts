@@ -1,6 +1,10 @@
 import Phaser from 'phaser';
 import { BaseGameScene } from '../../shared/BaseGameScene';
 import { PlatformerBody, PlatformSegment } from '../../shared/Platformer';
+import { StateMachine } from '../../shared/StateMachine';
+import { LivesManager } from '../../shared/LivesManager';
+import { floatingText } from '../../shared/popups';
+import { LABEL_STYLE } from '../../shared/ui';
 import {
   WIDTH,
   HEIGHT,
@@ -17,21 +21,31 @@ import {
   PLATFORM_THICKNESS,
   BUMP_AMP,
   BUMP_RECOVER,
+  SHELL_STUN_MS,
+  SHELL_SCORE,
+  ENEMY_TARGET,
+  ENEMY_RESPAWN_MS,
+  ENEMY_GROUND_DWELL_MS,
+  LIVES_START,
+  READY_MS,
+  DEATH_PAUSE_MS,
+  GAMEOVER_MS,
 } from './constants';
 import { COLORS } from './palette';
 import { buildMarioBrosTextures, TX } from './sprites';
 import { FLOORS, PIPES, PIPE_WIDTH, POW, MARIO_START } from './levels';
+import { Shellcreeper } from './enemies';
 
 interface Floor {
   seg: PlatformSegment;
-  nudge: number; // current vertical offset (<=0 = raised) from a bump
+  nudge: number;
 }
 
 /**
- * Mario Bros. — slice 2: bump-from-below. Platforms are solid; jumping into a
- * platform's underside bonks Mario and pops that platform up (the core verb
- * that will flip enemies standing on it once they arrive next slice). Also
- * carries the standard-board layout fix forward.
+ * Mario Bros. — slice 3: the Shellcreeper. Turtles spawn from the top pipes and
+ * walk the floors; bumping the platform one stands on flips it, and you kick a
+ * flipped one away for points. Touching an un-flipped one costs a life. Adds a
+ * round flow (shared StateMachine) + lives (shared LivesManager).
  */
 export class MarioBrosScene extends BaseGameScene {
   private mario!: PlatformerBody;
@@ -42,7 +56,17 @@ export class MarioBrosScene extends BaseGameScene {
   private walkFrame: 0 | 1 = 0;
 
   private floors: Floor[] = [];
+  private groundSeg!: PlatformSegment;
   private platformGfx!: Phaser.GameObjects.Graphics;
+
+  private flow!: StateMachine<MarioBrosScene>;
+  private lives!: LivesManager;
+  private readonly lifeIcons: Phaser.GameObjects.Image[] = [];
+  private banner!: Phaser.GameObjects.Text;
+  private readyTimer = 0;
+
+  private readonly enemies: Shellcreeper[] = [];
+  private spawnTimer = 0;
 
   constructor() {
     super({ key: 'game-mariobros', gameId: 'mariobros', width: WIDTH, height: HEIGHT });
@@ -51,20 +75,99 @@ export class MarioBrosScene extends BaseGameScene {
   protected createGame(): void {
     buildMarioBrosTextures(this);
 
-    // Solid floors (thickness enables underside bonks).
     this.floors = FLOORS.map((f) => ({ seg: { ...f, thickness: PLATFORM_THICKNESS }, nudge: 0 }));
+    this.groundSeg = this.floors.find((f) => f.seg.x1 === 0 && f.seg.x2 === WIDTH)!.seg;
     this.drawStatics();
     this.platformGfx = this.add.graphics().setDepth(1);
     this.drawPlatforms();
 
-    this.vx = 0;
+    this.enemies.length = 0;
+    this.lifeIcons.length = 0;
     this.mario = new PlatformerBody(MARIO_START.x, 0, MARIO_W, MARIO_H);
-    this.mario.setFeet(MARIO_START.y);
-    this.mario.onGround = true;
-    this.sprite = this.add.image(this.mario.x, this.mario.y, TX.marioRun0).setDepth(10);
+    this.sprite = this.add.image(0, 0, TX.marioRun0).setDepth(10);
+
+    this.lives = new LivesManager(LIVES_START);
+    this.refreshLives();
+
+    this.banner = this.add
+      .text(WIDTH / 2, HEIGHT / 2, '', LABEL_STYLE)
+      .setOrigin(0.5)
+      .setColor('#fcfc00')
+      .setDepth(1000);
+
+    this.flow = new StateMachine<MarioBrosScene>(this)
+      .add('ready', { enter: () => this.enterReady(), update: (_c, dt) => this.updateReady(dt) })
+      .add('playing', { update: (_c, dt) => this.updatePlaying(dt) })
+      .add('dying', { enter: () => this.enterDying() })
+      .add('gameover', { enter: () => this.enterGameOver() });
+    this.flow.transition('ready');
   }
 
   protected updateGame(_time: number, delta: number): void {
+    this.flow.update(delta);
+  }
+
+  // --- flow ---------------------------------------------------------------
+
+  private enterReady(): void {
+    this.readyTimer = READY_MS;
+    this.banner.setText('READY!').setColor('#fcfc00').setVisible(true);
+    this.placeMarioAtStart();
+    this.clearEnemies();
+    this.spawnTimer = 600;
+  }
+
+  private updateReady(delta: number): void {
+    this.readyTimer -= delta;
+    if (this.readyTimer <= 0) {
+      this.banner.setVisible(false);
+      this.flow.transition('playing');
+    }
+  }
+
+  private updatePlaying(delta: number): void {
+    this.moveMario(delta);
+    this.settleBumps(delta);
+
+    for (const e of this.enemies) {
+      e.update(delta, this.floorSegments());
+    }
+    if (this.mario.bumped) {
+      this.onBump(this.mario.bumped);
+    }
+    this.recoverAndRecycle(delta);
+    this.maintainEnemies(delta);
+
+    if (this.resolveEnemyContact()) {
+      this.flow.transition('dying');
+    }
+  }
+
+  private enterDying(): void {
+    this.audio.play('death');
+    this.cameras.main.flash(180, 255, 80, 80);
+    this.tweens.add({ targets: this.sprite, alpha: 0.2, duration: 120, yoyo: true, repeat: 3 });
+    this.time.delayedCall(DEATH_PAUSE_MS, () => this.afterDeath());
+  }
+
+  private afterDeath(): void {
+    this.sprite.setAlpha(1);
+    if (this.lives.lose() <= 0) {
+      this.flow.transition('gameover');
+      return;
+    }
+    this.refreshLives();
+    this.flow.transition('ready');
+  }
+
+  private enterGameOver(): void {
+    this.banner.setText('GAME OVER').setColor('#ff0000').setVisible(true);
+    this.time.delayedCall(GAMEOVER_MS, () => this.scene.restart());
+  }
+
+  // --- mario --------------------------------------------------------------
+
+  private moveMario(delta: number): void {
     const dt = delta / 1000;
     const dir = (this.controls.isDown('left') ? -1 : 0) + (this.controls.isDown('right') ? 1 : 0);
 
@@ -78,58 +181,31 @@ export class MarioBrosScene extends BaseGameScene {
     }
     this.vx = Phaser.Math.Clamp(this.vx, -RUN_MAX, RUN_MAX);
     this.mario.x += this.vx * dt;
-    this.wrap();
-
-    if (this.controls.justPressed('fire')) {
-      this.mario.jump(JUMP_SPEED);
-    }
-    this.mario.update(delta, GRAVITY, this.floorSegments());
-
-    if (this.mario.bumped) {
-      this.onBump(this.mario.bumped);
-    }
-    this.settleBumps(delta);
-
-    this.sprite.setPosition(this.mario.x, this.mario.y).setFlipX(this.facing < 0);
-    this.animate(delta, dir !== 0);
-  }
-
-  private floorSegments(): PlatformSegment[] {
-    return this.floors.map((f) => f.seg);
-  }
-
-  /** A platform was bonked: pop it up and play the thud. */
-  private onBump(seg: PlatformSegment): void {
-    const floor = this.floors.find((f) => f.seg === seg);
-    if (floor) {
-      floor.nudge = -BUMP_AMP;
-      this.audio.play('bump');
-    }
-  }
-
-  private settleBumps(delta: number): void {
-    const step = (BUMP_RECOVER * delta) / 1000;
-    let dirty = false;
-    for (const f of this.floors) {
-      if (f.nudge < 0) {
-        f.nudge = Math.min(0, f.nudge + step);
-        dirty = true;
-      }
-    }
-    if (dirty) {
-      this.drawPlatforms();
-    }
-  }
-
-  private wrap(): void {
     if (this.mario.x < 0) {
       this.mario.x += WIDTH;
     } else if (this.mario.x > WIDTH) {
       this.mario.x -= WIDTH;
     }
+
+    if (this.controls.justPressed('fire')) {
+      this.mario.jump(JUMP_SPEED);
+    }
+    this.mario.update(delta, GRAVITY, this.floorSegments());
+    this.sprite.setPosition(this.mario.x, this.mario.y).setFlipX(this.facing < 0);
+    this.animateMario(delta, dir !== 0);
   }
 
-  private animate(delta: number, moving: boolean): void {
+  private placeMarioAtStart(): void {
+    this.vx = 0;
+    this.mario.x = MARIO_START.x;
+    this.mario.setFeet(MARIO_START.y);
+    this.mario.vy = 0;
+    this.mario.onGround = true;
+    this.facing = 1;
+    this.sprite.setAlpha(1).setFlipX(false).setTexture(TX.marioRun0).setPosition(this.mario.x, this.mario.y);
+  }
+
+  private animateMario(delta: number, moving: boolean): void {
     if (!this.mario.onGround) {
       this.sprite.setTexture(TX.marioJump);
       return;
@@ -146,9 +222,104 @@ export class MarioBrosScene extends BaseGameScene {
     this.sprite.setTexture(this.walkFrame === 0 ? TX.marioRun0 : TX.marioRun1);
   }
 
-  // --- rendering ----------------------------------------------------------
+  // --- enemies ------------------------------------------------------------
 
-  /** Platforms are redrawn each frame so a bumped one can ride its nudge. */
+  private maintainEnemies(delta: number): void {
+    this.spawnTimer -= delta;
+    if (this.enemies.length < ENEMY_TARGET && this.spawnTimer <= 0) {
+      this.spawnShell();
+      this.spawnTimer = ENEMY_RESPAWN_MS;
+    }
+  }
+
+  private spawnShell(): void {
+    const topPipes = PIPES.filter((p) => p.opening === 'down');
+    const pipe = Phaser.Utils.Array.GetRandom(topPipes);
+    const x = pipe.x + PIPE_WIDTH / 2;
+    this.enemies.push(new Shellcreeper(this, x, pipe.y2 + 4, x < WIDTH / 2 ? 1 : -1));
+  }
+
+  /** A bumped platform pops up and flips any Shellcreeper standing on it. */
+  private onBump(seg: PlatformSegment): void {
+    const floor = this.floors.find((f) => f.seg === seg);
+    if (floor) {
+      floor.nudge = -BUMP_AMP;
+      this.audio.play('bump');
+    }
+    for (const e of this.enemies) {
+      if (e.state === 'walk' && e.floorSeg === seg) {
+        e.flipFor(SHELL_STUN_MS);
+      }
+    }
+  }
+
+  private recoverAndRecycle(delta: number): void {
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      if (e.readyToRecover) {
+        e.recover();
+      }
+      // Loop ground-dwellers back to a pipe so they don't camp the bottom.
+      if (e.state === 'walk' && e.floorSeg === this.groundSeg) {
+        e.groundDwell += delta;
+        if (e.groundDwell >= ENEMY_GROUND_DWELL_MS) {
+          e.sprite.destroy();
+          this.enemies.splice(i, 1);
+        }
+      } else {
+        e.groundDwell = 0;
+      }
+    }
+  }
+
+  /** Kick a flipped enemy; die to a walking one. Returns true on death. */
+  private resolveEnemyContact(): boolean {
+    const mb = this.sprite.getBounds();
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      if (!Phaser.Geom.Intersects.RectangleToRectangle(mb, e.sprite.getBounds())) {
+        continue;
+      }
+      if (e.state === 'flipped') {
+        this.addScore(SHELL_SCORE);
+        floatingText(this, e.sprite.x, e.sprite.y, String(SHELL_SCORE), { color: '#ffffff', fontSize: '8px' });
+        this.audio.play('kick');
+        e.sprite.destroy();
+        this.enemies.splice(i, 1);
+      } else {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private clearEnemies(): void {
+    for (const e of this.enemies) {
+      e.sprite.destroy();
+    }
+    this.enemies.length = 0;
+  }
+
+  private floorSegments(): PlatformSegment[] {
+    return this.floors.map((f) => f.seg);
+  }
+
+  // --- bumps / rendering --------------------------------------------------
+
+  private settleBumps(delta: number): void {
+    const step = (BUMP_RECOVER * delta) / 1000;
+    let dirty = false;
+    for (const f of this.floors) {
+      if (f.nudge < 0) {
+        f.nudge = Math.min(0, f.nudge + step);
+        dirty = true;
+      }
+    }
+    if (dirty) {
+      this.drawPlatforms();
+    }
+  }
+
   private drawPlatforms(): void {
     const g = this.platformGfx;
     g.clear();
@@ -176,5 +347,15 @@ export class MarioBrosScene extends BaseGameScene {
       .text(POW.x, POW.y - 1, 'POW', { fontFamily: 'monospace', fontSize: '8px', color: '#ffffff' })
       .setOrigin(0.5)
       .setDepth(2);
+  }
+
+  private refreshLives(): void {
+    for (const icon of this.lifeIcons) {
+      icon.destroy();
+    }
+    this.lifeIcons.length = 0;
+    for (let i = 0; i < this.lives.count; i++) {
+      this.lifeIcons.push(this.add.image(8 + i * 11, 22, TX.marioRun0).setScale(0.7).setDepth(1000));
+    }
   }
 }
