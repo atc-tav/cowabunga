@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { PacmanScene } from './games/pacman/PacmanScene';
 import { GalagaScene } from './games/galaga/GalagaScene';
 import { DKScene } from './games/donkeykong/DKScene';
+import { MarioBrosScene } from './games/mariobros/MarioBrosScene';
 import { SandboxScene } from './games/sandbox/SandboxScene';
 
 export interface GameResolution {
@@ -43,6 +44,13 @@ export const GAMES: GameEntry[] = [
     key: 'game-dk',
     resolution: { width: 224, height: 240 },
     SceneClass: DKScene,
+  },
+  {
+    id: 'mariobros',
+    title: 'MARIO BROS',
+    key: 'game-mariobros',
+    resolution: { width: 256, height: 240 },
+    SceneClass: MarioBrosScene,
   },
   {
     id: 'sandbox',
