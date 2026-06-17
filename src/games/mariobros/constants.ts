@@ -45,3 +45,8 @@ export const READY_MS = 1300;
 export const DEATH_PAUSE_MS = 1000;
 export const GAMEOVER_MS = 2500;
 
+// POW block: bonk from below to flip every grounded enemy; limited uses.
+export const POW_USES = 3;
+export const POW_W = 24;
+export const POW_H = 14;
+

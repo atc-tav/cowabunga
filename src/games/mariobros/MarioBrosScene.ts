@@ -32,6 +32,9 @@ import {
   READY_MS,
   DEATH_PAUSE_MS,
   GAMEOVER_MS,
+  POW_USES,
+  POW_W,
+  POW_H,
 } from './constants';
 import { COLORS } from './palette';
 import { buildMarioBrosTextures, TX } from './sprites';
@@ -70,6 +73,11 @@ export class MarioBrosScene extends BaseGameScene {
   private readonly enemies: Shellcreeper[] = [];
   private spawnTimer = 0;
 
+  private powUses = POW_USES;
+  private powSeg!: PlatformSegment;
+  private powGfx!: Phaser.GameObjects.Graphics;
+  private powText!: Phaser.GameObjects.Text;
+
   constructor() {
     super({ key: 'game-mariobros', gameId: 'mariobros', width: WIDTH, height: HEIGHT });
   }
@@ -82,6 +90,15 @@ export class MarioBrosScene extends BaseGameScene {
     this.drawStatics();
     this.platformGfx = this.add.graphics().setDepth(1);
     this.drawPlatforms();
+
+    this.powUses = POW_USES;
+    this.powSeg = { x1: POW.x - POW_W / 2, x2: POW.x + POW_W / 2, y1: POW.y, y2: POW.y, thickness: POW_H };
+    this.powGfx = this.add.graphics().setDepth(1);
+    this.powText = this.add
+      .text(POW.x, POW.y + POW_H / 2, 'POW', { fontFamily: 'monospace', fontSize: '8px', color: '#ffffff' })
+      .setOrigin(0.5)
+      .setDepth(2);
+    this.drawPow();
 
     this.enemies.length = 0;
     this.lifeIcons.length = 0;
@@ -134,7 +151,9 @@ export class MarioBrosScene extends BaseGameScene {
     for (const e of this.enemies) {
       e.update(delta, this.floorSegments());
     }
-    if (this.mario.bumped) {
+    if (this.mario.bumped === this.powSeg) {
+      this.activatePow();
+    } else if (this.mario.bumped) {
       this.onBump(this.mario.bumped);
     }
     this.recoverAndRecycle(delta);
@@ -194,9 +213,15 @@ export class MarioBrosScene extends BaseGameScene {
     if (this.controls.justPressed('fire')) {
       this.mario.jump(JUMP_SPEED);
     }
-    this.mario.update(delta, GRAVITY, this.floorSegments());
+    this.mario.update(delta, GRAVITY, this.marioFloors());
     this.sprite.setPosition(this.mario.x, this.mario.y).setFlipX(this.facing < 0);
     this.animateMario(delta, dir !== 0);
+  }
+
+  /** Mario also collides with the POW block (enemies don't). */
+  private marioFloors(): PlatformSegment[] {
+    const segs = this.floorSegments();
+    return this.powUses > 0 ? [...segs, this.powSeg] : segs;
   }
 
   private placeMarioAtStart(): void {
@@ -256,6 +281,38 @@ export class MarioBrosScene extends BaseGameScene {
         e.flipFor(SHELL_STUN_MS);
       }
     }
+  }
+
+  // --- POW block ----------------------------------------------------------
+
+  /** Bonked from below: flip every grounded enemy, shake the screen, wear down. */
+  private activatePow(): void {
+    if (this.powUses <= 0) {
+      return;
+    }
+    this.powUses -= 1;
+    this.cameras.main.shake(180, 0.012);
+    this.audio.play('pow');
+    for (const e of this.enemies) {
+      if (e.state === 'walk' && e.body.onGround) {
+        e.flipFor(SHELL_STUN_MS);
+      }
+    }
+    this.drawPow();
+  }
+
+  private drawPow(): void {
+    this.powGfx.clear();
+    if (this.powUses <= 0) {
+      this.powText.setVisible(false);
+      return;
+    }
+    const alpha = Math.min(1, 0.5 + 0.17 * this.powUses); // fades as it wears out
+    this.powGfx.fillStyle(COLORS.pow, alpha);
+    this.powGfx.fillRect(this.powSeg.x1, this.powSeg.y1, POW_W, POW_H);
+    this.powGfx.fillStyle(COLORS.platformTop, alpha);
+    this.powGfx.fillRect(this.powSeg.x1, this.powSeg.y1, POW_W, 2);
+    this.powText.setVisible(true).setAlpha(alpha);
   }
 
   private recoverAndRecycle(delta: number): void {
@@ -401,12 +458,6 @@ export class MarioBrosScene extends BaseGameScene {
       const rimX = pipe.open === 'right' ? pipe.x2 - 5 : pipe.x1;
       g.fillRect(rimX, pipe.y1 - 2, 5, h + 4);
     }
-    g.fillStyle(COLORS.pow, 1);
-    g.fillRect(POW.x - 12, POW.y - 8, 24, 14);
-    this.add
-      .text(POW.x, POW.y - 1, 'POW', { fontFamily: 'monospace', fontSize: '8px', color: '#ffffff' })
-      .setOrigin(0.5)
-      .setDepth(2);
   }
 
   private refreshLives(): void {
