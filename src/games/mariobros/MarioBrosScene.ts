@@ -17,12 +17,14 @@ import {
   AIR_FRICTION,
   MARIO_W,
   MARIO_H,
+  SHELL_H,
   WALK_FRAME_MS,
   PLATFORM_THICKNESS,
   BUMP_AMP,
   BUMP_RECOVER,
   SHELL_STUN_MS,
   SHELL_SCORE,
+  STOMP_BOUNCE,
   ENEMY_TARGET,
   ENEMY_RESPAWN_MS,
   ENEMY_GROUND_DWELL_MS,
@@ -33,7 +35,7 @@ import {
 } from './constants';
 import { COLORS } from './palette';
 import { buildMarioBrosTextures, TX } from './sprites';
-import { FLOORS, PIPES, PIPE_WIDTH, POW, MARIO_START } from './levels';
+import { FLOORS, PIPES, POW, MARIO_START, topPipeSpawns, bottomPipeZones } from './levels';
 import { Shellcreeper } from './enemies';
 
 interface Floor {
@@ -136,6 +138,8 @@ export class MarioBrosScene extends BaseGameScene {
       this.onBump(this.mario.bumped);
     }
     this.recoverAndRecycle(delta);
+    this.shellsHitEnemies();
+    this.despawnShellsAtPipes();
     this.maintainEnemies(delta);
 
     if (this.resolveEnemyContact()) {
@@ -233,10 +237,10 @@ export class MarioBrosScene extends BaseGameScene {
   }
 
   private spawnShell(): void {
-    const topPipes = PIPES.filter((p) => p.opening === 'down');
-    const pipe = Phaser.Utils.Array.GetRandom(topPipes);
-    const x = pipe.x + PIPE_WIDTH / 2;
-    this.enemies.push(new Shellcreeper(this, x, pipe.y2 + 4, x < WIDTH / 2 ? 1 : -1));
+    const spawn = Phaser.Utils.Array.GetRandom(topPipeSpawns());
+    const shell = new Shellcreeper(this, spawn.x, spawn.feetY - SHELL_H / 2, spawn.dir);
+    shell.body.onGround = true; // walks out horizontally onto the top floor
+    this.enemies.push(shell);
   }
 
   /** A bumped platform pops up and flips any Shellcreeper standing on it. */
@@ -272,25 +276,78 @@ export class MarioBrosScene extends BaseGameScene {
     }
   }
 
-  /** Kick a flipped enemy; die to a walking one. Returns true on death. */
+  /**
+   * Mario vs turtles. Stomp a walker to defeat it; kick a flipped shell into a
+   * projectile; a side hit from a walker (or any lethal shell) kills Mario.
+   * Returns true if Mario died.
+   */
   private resolveEnemyContact(): boolean {
     const mb = this.sprite.getBounds();
-    for (let i = this.enemies.length - 1; i >= 0; i--) {
-      const e = this.enemies[i];
+    for (const e of this.enemies) {
       if (!Phaser.Geom.Intersects.RectangleToRectangle(mb, e.sprite.getBounds())) {
         continue;
       }
-      if (e.state === 'flipped') {
-        this.addScore(SHELL_SCORE);
-        floatingText(this, e.sprite.x, e.sprite.y, String(SHELL_SCORE), { color: '#ffffff', fontSize: '8px' });
+      const stomping = this.mario.vy > 0 && this.mario.feet <= e.body.y + 4;
+
+      if (e.state === 'walk') {
+        if (stomping) {
+          this.defeat(e, e.sprite.x, e.sprite.y);
+          this.mario.vy = -STOMP_BOUNCE;
+        } else {
+          return true;
+        }
+      } else if (e.state === 'flipped') {
+        e.kick(e.body.x >= this.mario.x ? 1 : -1);
         this.audio.play('kick');
-        e.sprite.destroy();
-        this.enemies.splice(i, 1);
-      } else {
-        return true;
+        if (stomping) {
+          this.mario.vy = -STOMP_BOUNCE;
+        }
+      } else if (e.lethalShell) {
+        return true; // your own kicked shell can come back to bite you
       }
     }
     return false;
+  }
+
+  /** A sliding shell mows down other turtles in its path. */
+  private shellsHitEnemies(): void {
+    for (const shell of this.enemies) {
+      if (!shell.isShell) {
+        continue;
+      }
+      const sb = shell.sprite.getBounds();
+      for (const e of this.enemies) {
+        if (e === shell || e.isShell) {
+          continue;
+        }
+        if (Phaser.Geom.Intersects.RectangleToRectangle(sb, e.sprite.getBounds())) {
+          this.defeat(e, e.sprite.x, e.sprite.y);
+        }
+      }
+    }
+  }
+
+  /** A kicked shell that reaches a bottom pipe leaves the game. */
+  private despawnShellsAtPipes(): void {
+    const zones = bottomPipeZones();
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      if (e.isShell && e.body.onGround && zones.some(([a, b]) => e.body.x >= a && e.body.x <= b)) {
+        e.sprite.destroy();
+        this.enemies.splice(i, 1);
+      }
+    }
+  }
+
+  private defeat(e: Shellcreeper, x: number, y: number): void {
+    this.addScore(SHELL_SCORE);
+    floatingText(this, x, y, String(SHELL_SCORE), { color: '#ffffff', fontSize: '8px' });
+    this.audio.play('kick');
+    e.sprite.destroy();
+    const idx = this.enemies.indexOf(e);
+    if (idx >= 0) {
+      this.enemies.splice(idx, 1);
+    }
   }
 
   private clearEnemies(): void {
@@ -335,11 +392,13 @@ export class MarioBrosScene extends BaseGameScene {
   private drawStatics(): void {
     const g = this.add.graphics().setDepth(0);
     for (const pipe of PIPES) {
+      const h = pipe.y2 - pipe.y1;
       g.fillStyle(COLORS.pipe, 1);
-      g.fillRect(pipe.x, pipe.y1, PIPE_WIDTH, pipe.y2 - pipe.y1);
+      g.fillRect(pipe.x1, pipe.y1, pipe.x2 - pipe.x1, h);
+      // Lighter rim (the mouth) is a vertical bar at the centre-facing end.
       g.fillStyle(COLORS.pipeRim, 1);
-      const rimY = pipe.opening === 'down' ? pipe.y2 - 6 : pipe.y1;
-      g.fillRect(pipe.x - 3, rimY, PIPE_WIDTH + 6, 6);
+      const rimX = pipe.open === 'right' ? pipe.x2 - 5 : pipe.x1;
+      g.fillRect(rimX, pipe.y1 - 2, 5, h + 4);
     }
     g.fillStyle(COLORS.pow, 1);
     g.fillRect(POW.x - 12, POW.y - 8, 24, 14);

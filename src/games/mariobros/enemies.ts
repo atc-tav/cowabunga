@@ -7,12 +7,14 @@ import {
   SHELL_H,
   SHELL_SPEED,
   SHELL_RECOVER_SPEED,
+  SHELL_PROJECTILE_SPEED,
+  SHELL_GRACE_MS,
   SHELL_FRAME_MS,
   SHELL_STUN_BLINK_MS,
 } from './constants';
 import { TX } from './sprites';
 
-export type ShellState = 'walk' | 'flipped';
+export type ShellState = 'walk' | 'flipped' | 'shell';
 
 /**
  * Shellcreeper — the turtle. Walks the floors (falling through gaps to the
@@ -27,6 +29,7 @@ export class Shellcreeper {
   dir: 1 | -1 = 1;
   stun = 0;
   groundDwell = 0;
+  grace = 0; // a freshly kicked shell ignores Mario this long
   floorSeg: PlatformSegment | null = null;
 
   private speed = SHELL_SPEED;
@@ -41,15 +44,19 @@ export class Shellcreeper {
 
   update(deltaMs: number, floors: PlatformSegment[]): void {
     const dt = deltaMs / 1000;
-    if (this.state === 'walk') {
-      this.body.x += this.dir * this.speed * dt;
+    if (this.grace > 0) {
+      this.grace -= deltaMs;
+    }
+    if (this.state === 'flipped') {
+      this.stun -= deltaMs;
+    } else {
+      const sp = this.state === 'shell' ? SHELL_PROJECTILE_SPEED : this.speed;
+      this.body.x += this.dir * sp * dt;
       if (this.body.x < 0) {
         this.body.x += WIDTH;
       } else if (this.body.x > WIDTH) {
         this.body.x -= WIDTH;
       }
-    } else {
-      this.stun -= deltaMs;
     }
 
     this.body.update(deltaMs, GRAVITY, floors);
@@ -76,6 +83,22 @@ export class Shellcreeper {
     return this.state === 'flipped' && this.stun <= 0;
   }
 
+  /** Kick a flipped shell into a projectile sliding in `dir`. */
+  kick(dir: 1 | -1): void {
+    this.state = 'shell';
+    this.dir = dir;
+    this.grace = SHELL_GRACE_MS;
+  }
+
+  get isShell(): boolean {
+    return this.state === 'shell';
+  }
+
+  /** A kicked shell is lethal to Mario once its brief grace has elapsed. */
+  get lethalShell(): boolean {
+    return this.state === 'shell' && this.grace <= 0;
+  }
+
   private findFloor(floors: PlatformSegment[]): PlatformSegment | null {
     for (const s of floors) {
       if (this.body.x >= s.x1 && this.body.x <= s.x2 && Math.abs(this.body.feet - surfaceY(s, this.body.x)) < 3) {
@@ -91,9 +114,11 @@ export class Shellcreeper {
       this.sprite.setTexture(TX.shellFlip).setAlpha(blink ? 0.4 : 1);
       return;
     }
+    // Walk and shell both cycle frames; the shell spins faster.
     this.sprite.setAlpha(1);
+    const interval = this.state === 'shell' ? SHELL_FRAME_MS / 3 : SHELL_FRAME_MS;
     this.frameTimer += deltaMs;
-    if (this.frameTimer >= SHELL_FRAME_MS) {
+    if (this.frameTimer >= interval) {
       this.frameTimer = 0;
       this.frame ^= 1;
     }
