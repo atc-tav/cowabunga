@@ -16,4 +16,8 @@ export const COLORS = {
   barrelStave: 0x8a5a18,
   paulineHair: 0x8a2c00,
   paulineDress: 0xff66c4,
+  hammerHead: 0xc8a050,
+  hammerHandle: 0x8a5a18,
+  fireOuter: 0xff6010,
+  fireInner: 0xffd040,
 } as const;

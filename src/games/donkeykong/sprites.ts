@@ -107,6 +107,48 @@ const PAULINE_ART: string[] = [
   '          ',
 ];
 
+// Fireball (10x10): O=outer flame, Y=inner core. Two flicker frames.
+const FIRE_A: string[] = [
+  '    OO    ',
+  '   OOOO   ',
+  '  OOYYOO  ',
+  '  OYYYYO  ',
+  ' OOYYYYOO ',
+  ' OYYYYYYO ',
+  ' OOYYYYOO ',
+  '  OOOOOO  ',
+  '   OOOO   ',
+  '          ',
+];
+const FIRE_B: string[] = [
+  '    OO    ',
+  '   OOOO   ',
+  '  OYYOO   ',
+  ' OOYYYYO  ',
+  ' OYYYYYYO ',
+  'OOYYYYYYOO',
+  ' OYYYYYYO ',
+  '  OOOOOO  ',
+  '   OOOO   ',
+  '          ',
+];
+
+export const FIRE_KEYS = ['dk-fire-0', 'dk-fire-1'];
+
+// Hammer (8x10): H=head, h=handle.
+const HAMMER_ART: string[] = [
+  'HHHHHH  ',
+  'HHHHHH  ',
+  'HHHHHH  ',
+  '   hh   ',
+  '   hh   ',
+  '   hh   ',
+  '   hh   ',
+  '   hh   ',
+  '   hh   ',
+  '   hh   ',
+];
+
 export const TX = {
   marioWalk0: 'dk-mario-0',
   marioWalk1: 'dk-mario-1',
@@ -115,6 +157,7 @@ export const TX = {
   marioClimb1: 'dk-mario-climb-1',
   kong: 'dk-kong',
   pauline: 'dk-pauline',
+  hammer: 'dk-hammer',
 } as const;
 
 export const BARREL_KEYS = ['dk-barrel-0', 'dk-barrel-1', 'dk-barrel-2', 'dk-barrel-3'];
@@ -138,6 +181,10 @@ export function buildDKTextures(scene: Phaser.Scene): void {
     S: COLORS.skin,
     D: COLORS.paulineDress,
   });
+
+  drawPixelArt(scene, TX.hammer, HAMMER_ART, { H: COLORS.hammerHead, h: COLORS.hammerHandle });
+  drawPixelArt(scene, FIRE_KEYS[0], FIRE_A, { O: COLORS.fireOuter, Y: COLORS.fireInner });
+  drawPixelArt(scene, FIRE_KEYS[1], FIRE_B, { O: COLORS.fireOuter, Y: COLORS.fireInner });
 
   makeKong(scene);
   makeBarrels(scene);

@@ -33,9 +33,27 @@ import {
   DEATH_PAUSE_MS,
   WIN_MS,
   GAMEOVER_MS,
+  HAMMER_DURATION_MS,
+  HAMMER_BLINK_MS,
+  HAMMER_SWING_MS,
+  HAMMER_SMASH_DIST,
+  HAMMER_PICKUP_DIST,
+  SCORE_SMASH,
+  HAMMER_SPOTS,
+  FIRE_SPEED,
+  FIRE_CLIMB_SPEED,
+  FIRE_RIDE,
+  FIRE_HIT_DIST,
+  FIRE_FRAME_MS,
+  FIRE_LADDER_CHANCE,
+  FIRE_RESPAWN_MS,
+  SCORE_SMASH_FIRE,
+  FIRE_BAND_TOP,
+  FIRE_BAND_BOTTOM,
 } from './constants';
 import { COLORS } from './palette';
-import { buildDKTextures, BARREL_KEYS, TX } from './sprites';
+import { floatingText } from '../../shared/popups';
+import { buildDKTextures, BARREL_KEYS, FIRE_KEYS, TX } from './sprites';
 import { LEVEL1_GIRDERS, buildLadders, DK_X, PAULINE_X, Ladder } from './levels';
 
 interface Barrel {
@@ -48,6 +66,21 @@ interface Barrel {
   targetGirder: number;
   targetY: number;
   usedLadder: boolean;
+  frameTimer: number;
+  frame: number;
+}
+
+interface Fireball {
+  sprite: Phaser.GameObjects.Image;
+  x: number;
+  y: number;
+  girder: number;
+  dir: 1 | -1;
+  mode: 'walk' | 'climb';
+  targetGirder: number;
+  targetY: number;
+  alive: boolean;
+  respawn: number;
   frameTimer: number;
   frame: number;
 }
@@ -87,6 +120,15 @@ export class DKScene extends BaseGameScene {
   private readonly barrels: Barrel[] = [];
   private barrelTimer = 0;
 
+  private hammerMode = false;
+  private hammerTimer = 0;
+  private hammerSwingTimer = 0;
+  private hammerUp = false;
+  private hammerSprite!: Phaser.GameObjects.Image;
+  private readonly hammerItems: { sprite: Phaser.GameObjects.Image; x: number; y: number; taken: boolean }[] = [];
+
+  private fire!: Fireball;
+
   constructor() {
     super({ key: 'game-dk', gameId: 'donkeykong', width: WIDTH, height: HEIGHT });
   }
@@ -99,6 +141,15 @@ export class DKScene extends BaseGameScene {
     this.barrels.length = 0;
     this.lifeIcons.length = 0;
 
+    this.hammerItems.length = 0;
+    for (const spot of HAMMER_SPOTS) {
+      const x = spot.x;
+      const y = this.surfaceAt(spot.g, x) - 16;
+      this.hammerItems.push({ sprite: this.add.image(x, y, TX.hammer).setDepth(7), x, y, taken: false });
+    }
+    this.hammerSprite = this.add.image(0, 0, TX.hammer).setDepth(11).setVisible(false);
+    this.hammerMode = false;
+
     this.kong = this.add.image(DK_X, this.surfaceAt(0, DK_X) - 14, TX.kong).setDepth(9);
     this.add.image(PAULINE_X, this.surfaceAt(0, PAULINE_X) - 7, TX.pauline).setDepth(9);
     this.helpText = this.add
@@ -107,6 +158,21 @@ export class DKScene extends BaseGameScene {
       .setColor('#ff66c4')
       .setDepth(1000)
       .setVisible(false);
+
+    this.fire = {
+      sprite: this.add.image(0, 0, FIRE_KEYS[0]).setDepth(9).setVisible(false),
+      x: 0,
+      y: 0,
+      girder: FIRE_BAND_TOP,
+      dir: 1,
+      mode: 'walk',
+      targetGirder: FIRE_BAND_TOP,
+      targetY: 0,
+      alive: false,
+      respawn: 0,
+      frameTimer: 0,
+      frame: 0,
+    };
 
     this.mario = new PlatformerBody(this.startX(), 0, MARIO_W, MARIO_H);
     this.sprite = this.add.image(0, 0, TX.marioWalk0).setDepth(10);
@@ -214,13 +280,19 @@ export class DKScene extends BaseGameScene {
 
     this.spawnBarrels(delta);
     this.updateBarrels(delta);
+    this.updateFireball(delta);
     this.tickHelp(delta);
+    if (this.hammerMode) {
+      this.tickHammer(delta);
+    } else {
+      this.checkHammerPickup();
+    }
 
     if (this.reachedPauline()) {
       this.flow.transition('won');
       return;
     }
-    if (this.barrelHitMario()) {
+    if (this.barrelHitMario() || this.fireballHitMario()) {
       this.flow.transition('dying');
     }
   }
@@ -269,11 +341,12 @@ export class DKScene extends BaseGameScene {
       );
       this.facing = dir > 0 ? 1 : -1;
     }
-    if (this.controls.justPressed('fire')) {
+    // While wielding the hammer you can't jump or climb (classic restriction).
+    if (!this.hammerMode && this.controls.justPressed('fire')) {
       this.mario.jump(JUMP_SPEED);
     }
     this.mario.update(delta, GRAVITY, this.girders);
-    if (this.mario.onGround && this.tryMountLadder()) {
+    if (!this.hammerMode && this.mario.onGround && this.tryMountLadder()) {
       return;
     }
     this.sprite.setFlipX(this.facing < 0);
@@ -352,6 +425,12 @@ export class DKScene extends BaseGameScene {
   private placeMarioAtStart(): void {
     this.climbing = false;
     this.ladder = undefined;
+    this.endHammer();
+    for (const item of this.hammerItems) {
+      item.taken = false;
+      item.sprite.setVisible(true);
+    }
+    this.spawnFireball();
     const sx = this.startX();
     this.mario.x = sx;
     this.mario.setFeet(this.surfaceAt(this.startGirder, sx));
@@ -363,6 +442,156 @@ export class DKScene extends BaseGameScene {
       .setFlipX(this.facing < 0)
       .setTexture(TX.marioWalk0)
       .setPosition(this.mario.x, this.mario.y);
+  }
+
+  // --- fireball -----------------------------------------------------------
+
+  private spawnFireball(): void {
+    const f = this.fire;
+    f.girder = FIRE_BAND_TOP;
+    f.x = WIDTH / 2;
+    f.y = this.surfaceAt(f.girder, f.x) - FIRE_RIDE;
+    f.dir = Math.random() < 0.5 ? 1 : -1;
+    f.mode = 'walk';
+    f.alive = true;
+    f.respawn = 0;
+    f.sprite.setVisible(true).setPosition(f.x, f.y);
+  }
+
+  /** Roams the 2nd & 3rd platforms (band), switching between them at the ladder. */
+  private updateFireball(delta: number): void {
+    const f = this.fire;
+    if (!f.alive) {
+      f.respawn -= delta;
+      if (f.respawn <= 0) {
+        this.spawnFireball();
+      }
+      return;
+    }
+    const dt = delta / 1000;
+    if (f.mode === 'walk') {
+      f.x += f.dir * FIRE_SPEED * dt;
+      f.y = this.surfaceAt(f.girder, f.x) - FIRE_RIDE;
+      const g = this.girders[f.girder];
+      if (f.x <= g.x1 + 6) {
+        f.x = g.x1 + 6;
+        f.dir = 1;
+      } else if (f.x >= g.x2 - 6) {
+        f.x = g.x2 - 6;
+        f.dir = -1;
+      }
+      const connector = this.ladders.find((l) => l.fromGirder === FIRE_BAND_TOP);
+      if (connector && Math.abs(f.x - connector.x) < 3 && Math.random() < FIRE_LADDER_CHANCE) {
+        f.targetGirder = f.girder === FIRE_BAND_TOP ? FIRE_BAND_BOTTOM : FIRE_BAND_TOP;
+        f.targetY = this.surfaceAt(f.targetGirder, connector.x);
+        f.x = connector.x;
+        f.mode = 'climb';
+      }
+    } else {
+      const targetCentre = f.targetY - FIRE_RIDE;
+      f.y += Math.sign(targetCentre - f.y) * FIRE_CLIMB_SPEED * dt;
+      if (Math.abs(f.y - targetCentre) < 2) {
+        f.girder = f.targetGirder;
+        f.y = targetCentre;
+        f.mode = 'walk';
+        f.dir = Math.random() < 0.5 ? 1 : -1;
+      }
+    }
+
+    f.frameTimer += delta;
+    if (f.frameTimer >= FIRE_FRAME_MS) {
+      f.frameTimer = 0;
+      f.frame ^= 1;
+      f.sprite.setTexture(FIRE_KEYS[f.frame]);
+    }
+    f.sprite.setPosition(f.x, f.y);
+  }
+
+  /** True if the fireball kills Mario; smashed instead if he's hammering nearby. */
+  private fireballHitMario(): boolean {
+    const f = this.fire;
+    if (!f.alive) {
+      return false;
+    }
+    const d = Phaser.Math.Distance.Between(f.x, f.y, this.mario.x, this.mario.y);
+    if (this.hammerMode && d < HAMMER_SMASH_DIST) {
+      f.alive = false;
+      f.sprite.setVisible(false);
+      f.respawn = FIRE_RESPAWN_MS;
+      this.addScore(SCORE_SMASH_FIRE);
+      floatingText(this, f.x, f.y, String(SCORE_SMASH_FIRE), { color: '#ffffff', fontSize: '8px' });
+      this.audio.play('smash');
+      return false;
+    }
+    return d < FIRE_HIT_DIST;
+  }
+
+  // --- hammer -------------------------------------------------------------
+
+  private checkHammerPickup(): void {
+    for (const item of this.hammerItems) {
+      if (item.taken) {
+        continue;
+      }
+      if (Phaser.Math.Distance.Between(item.x, item.y, this.mario.x, this.mario.y) < HAMMER_PICKUP_DIST) {
+        item.taken = true;
+        item.sprite.setVisible(false);
+        this.hammerMode = true;
+        this.hammerTimer = HAMMER_DURATION_MS;
+        this.hammerSwingTimer = HAMMER_SWING_MS;
+        this.hammerUp = true;
+        this.audio.play('hammer');
+        return;
+      }
+    }
+  }
+
+  private tickHammer(delta: number): void {
+    this.hammerTimer -= delta;
+    if (this.hammerTimer <= 0) {
+      this.endHammer();
+      return;
+    }
+
+    this.hammerSwingTimer -= delta;
+    if (this.hammerSwingTimer <= 0) {
+      this.hammerSwingTimer = HAMMER_SWING_MS;
+      this.hammerUp = !this.hammerUp;
+    }
+
+    const head = this.hammerHead();
+    this.hammerSprite
+      .setVisible(this.hammerTimer > HAMMER_BLINK_MS || Math.floor(this.hammerTimer / 120) % 2 === 0)
+      .setPosition(head.x, head.y)
+      .setAngle(this.hammerUp ? 0 : this.facing > 0 ? 90 : -90)
+      .setFlipX(this.facing < 0);
+
+    this.smashWithHammer(head);
+  }
+
+  private hammerHead(): { x: number; y: number } {
+    if (this.hammerUp) {
+      return { x: this.mario.x, y: this.mario.y - MARIO_H / 2 - 4 };
+    }
+    return { x: this.mario.x + this.facing * 9, y: this.mario.y + 2 };
+  }
+
+  private smashWithHammer(head: { x: number; y: number }): void {
+    for (let i = this.barrels.length - 1; i >= 0; i--) {
+      const b = this.barrels[i];
+      if (Phaser.Math.Distance.Between(head.x, head.y, b.x, b.y) < HAMMER_SMASH_DIST) {
+        b.sprite.destroy();
+        this.barrels.splice(i, 1);
+        this.addScore(SCORE_SMASH);
+        floatingText(this, b.x, b.y, String(SCORE_SMASH), { color: '#ffffff', fontSize: '8px' });
+        this.audio.play('smash');
+      }
+    }
+  }
+
+  private endHammer(): void {
+    this.hammerMode = false;
+    this.hammerSprite.setVisible(false);
   }
 
   // --- win condition ------------------------------------------------------
