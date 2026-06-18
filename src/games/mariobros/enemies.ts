@@ -1,13 +1,13 @@
 import Phaser from 'phaser';
 import { PlatformerBody, PlatformSegment, surfaceY } from '../../shared/Platformer';
 import {
-  WIDTH,
   GRAVITY,
   SHELL_W,
   SHELL_H,
   SHELL_SPEED,
   SHELL_RECOVER_SPEED,
   SHELL_PROJECTILE_SPEED,
+  SHELL_SPIN_DEG,
   SHELL_GRACE_MS,
   SHELL_FRAME_MS,
   SHELL_STUN_BLINK_MS,
@@ -28,7 +28,6 @@ export class Shellcreeper {
   state: ShellState = 'walk';
   dir: 1 | -1 = 1;
   stun = 0;
-  groundDwell = 0;
   grace = 0; // a freshly kicked shell ignores Mario this long
   floorSeg: PlatformSegment | null = null;
 
@@ -52,17 +51,12 @@ export class Shellcreeper {
     } else {
       const sp = this.state === 'shell' ? SHELL_PROJECTILE_SPEED : this.speed;
       this.body.x += this.dir * sp * dt;
-      if (this.body.x < 0) {
-        this.body.x += WIDTH;
-      } else if (this.body.x > WIDTH) {
-        this.body.x -= WIDTH;
-      }
     }
 
     this.body.update(deltaMs, GRAVITY, floors);
     this.floorSeg = this.body.onGround ? this.findFloor(floors) : null;
 
-    this.sprite.setPosition(this.body.x, this.body.y).setFlipX(this.dir < 0);
+    this.sprite.setPosition(this.body.x, this.body.y);
     this.animate(deltaMs);
   }
 
@@ -109,16 +103,20 @@ export class Shellcreeper {
   }
 
   private animate(deltaMs: number): void {
-    if (this.state === 'flipped') {
-      const blink = this.stun < SHELL_STUN_BLINK_MS && Math.floor(this.stun / 150) % 2 === 0;
-      this.sprite.setTexture(TX.shellFlip).setAlpha(blink ? 0.4 : 1);
+    if (this.state === 'shell') {
+      // Stays upside-down and spins until it leaves the screen.
+      this.sprite.setTexture(TX.shellFlip).setAlpha(1).setFlipX(false);
+      this.sprite.angle += (SHELL_SPIN_DEG * deltaMs) / 1000;
       return;
     }
-    // Walk and shell both cycle frames; the shell spins faster.
-    this.sprite.setAlpha(1);
-    const interval = this.state === 'shell' ? SHELL_FRAME_MS / 3 : SHELL_FRAME_MS;
+    if (this.state === 'flipped') {
+      const blink = this.stun < SHELL_STUN_BLINK_MS && Math.floor(this.stun / 150) % 2 === 0;
+      this.sprite.setTexture(TX.shellFlip).setAngle(0).setAlpha(blink ? 0.4 : 1);
+      return;
+    }
+    this.sprite.setAngle(0).setAlpha(1).setFlipX(this.dir < 0);
     this.frameTimer += deltaMs;
-    if (this.frameTimer >= interval) {
+    if (this.frameTimer >= SHELL_FRAME_MS) {
       this.frameTimer = 0;
       this.frame ^= 1;
     }

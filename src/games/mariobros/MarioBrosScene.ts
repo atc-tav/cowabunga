@@ -3,7 +3,6 @@ import { BaseGameScene } from '../../shared/BaseGameScene';
 import { PlatformerBody, PlatformSegment } from '../../shared/Platformer';
 import { StateMachine } from '../../shared/StateMachine';
 import { LivesManager } from '../../shared/LivesManager';
-import { floatingText } from '../../shared/popups';
 import { LABEL_STYLE } from '../../shared/ui';
 import {
   WIDTH,
@@ -23,11 +22,11 @@ import {
   BUMP_AMP,
   BUMP_RECOVER,
   SHELL_STUN_MS,
+  SHELL_STOP_WAKE_MS,
   SHELL_SCORE,
   STOMP_BOUNCE,
   ENEMY_TARGET,
   ENEMY_RESPAWN_MS,
-  ENEMY_GROUND_DWELL_MS,
   LIVES_START,
   READY_MS,
   DEATH_PAUSE_MS,
@@ -156,9 +155,9 @@ export class MarioBrosScene extends BaseGameScene {
     } else if (this.mario.bumped) {
       this.onBump(this.mario.bumped);
     }
-    this.recoverAndRecycle(delta);
+    this.recoverEnemies();
     this.shellsHitEnemies();
-    this.despawnShellsAtPipes();
+    this.handleEnemyBounds();
     this.maintainEnemies(delta);
 
     if (this.resolveEnemyContact()) {
@@ -291,14 +290,28 @@ export class MarioBrosScene extends BaseGameScene {
       return;
     }
     this.powUses -= 1;
-    this.cameras.main.shake(180, 0.012);
+    this.impact('heavy');
     this.audio.play('pow');
+    this.flashPow();
     for (const e of this.enemies) {
       if (e.state === 'walk' && e.body.onGround) {
         e.flipFor(SHELL_STUN_MS);
       }
     }
     this.drawPow();
+  }
+
+  /** A bright pulse on the POW block so the bonk reads unmistakably. */
+  private flashPow(): void {
+    const flash = this.add
+      .rectangle(POW.x, POW.y + POW_H / 2, POW_W + 4, POW_H + 4, 0xffffff)
+      .setDepth(3);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 220,
+      onComplete: () => flash.destroy(),
+    });
   }
 
   private drawPow(): void {
@@ -315,21 +328,10 @@ export class MarioBrosScene extends BaseGameScene {
     this.powText.setVisible(true).setAlpha(alpha);
   }
 
-  private recoverAndRecycle(delta: number): void {
-    for (let i = this.enemies.length - 1; i >= 0; i--) {
-      const e = this.enemies[i];
+  private recoverEnemies(): void {
+    for (const e of this.enemies) {
       if (e.readyToRecover) {
         e.recover();
-      }
-      // Loop ground-dwellers back to a pipe so they don't camp the bottom.
-      if (e.state === 'walk' && e.floorSeg === this.groundSeg) {
-        e.groundDwell += delta;
-        if (e.groundDwell >= ENEMY_GROUND_DWELL_MS) {
-          e.sprite.destroy();
-          this.enemies.splice(i, 1);
-        }
-      } else {
-        e.groundDwell = 0;
       }
     }
   }
@@ -360,8 +362,15 @@ export class MarioBrosScene extends BaseGameScene {
         if (stomping) {
           this.mario.vy = -STOMP_BOUNCE;
         }
-      } else if (e.lethalShell) {
-        return true; // your own kicked shell can come back to bite you
+      } else if (e.state === 'shell') {
+        // Stomp a speeding shell to stop it (re-kickable, or wakes after 3s); a
+        // side hit from a live shell kills Mario.
+        if (stomping) {
+          e.flipFor(SHELL_STOP_WAKE_MS);
+          this.mario.vy = -STOMP_BOUNCE;
+        } else if (e.lethalShell) {
+          return true;
+        }
       }
     }
     return false;
@@ -385,21 +394,29 @@ export class MarioBrosScene extends BaseGameScene {
     }
   }
 
-  /** A kicked shell that reaches a bottom pipe leaves the game. */
-  private despawnShellsAtPipes(): void {
+  /**
+   * On the bottom floor there's no wrap — enemies (and spent shells) walk into a
+   * corner pipe and leave the game. On the upper floors they wrap edge-to-edge.
+   */
+  private handleEnemyBounds(): void {
     const zones = bottomPipeZones();
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
-      if (e.isShell && e.body.onGround && zones.some(([a, b]) => e.body.x >= a && e.body.x <= b)) {
-        e.sprite.destroy();
-        this.enemies.splice(i, 1);
+      if (e.floorSeg === this.groundSeg) {
+        if (zones.some(([a, b]) => e.body.x >= a && e.body.x <= b)) {
+          e.sprite.destroy();
+          this.enemies.splice(i, 1);
+        }
+      } else if (e.body.x < 0) {
+        e.body.x += WIDTH;
+      } else if (e.body.x > WIDTH) {
+        e.body.x -= WIDTH;
       }
     }
   }
 
   private defeat(e: Shellcreeper, x: number, y: number): void {
-    this.addScore(SHELL_SCORE);
-    floatingText(this, x, y, String(SHELL_SCORE), { color: '#ffffff', fontSize: '8px' });
+    this.popScore(x, y, SHELL_SCORE, { color: '#ffffff', fontSize: '8px' });
     this.audio.play('kick');
     e.sprite.destroy();
     const idx = this.enemies.indexOf(e);

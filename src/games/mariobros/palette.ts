@@ -6,7 +6,7 @@ export const COLORS = {
   platformTop: 0x9cd0ff, // bright top edge
   pipe: 0x00a800,
   pipeRim: 0x00d800,
-  pow: 0x2038ec,
+  pow: 0x00c0c0, // teal — distinct from the blue platforms
   powText: 0xffffff,
   capShirt: 0xff0000,
   skin: 0xfcb088,
