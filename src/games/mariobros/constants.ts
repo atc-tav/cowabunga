@@ -37,6 +37,16 @@ export const SHELL_SCORE = 800; // stomping a turtle / a kicked shell defeating 
 export const SHELL_PROJECTILE_SPEED = 63; // 1.5x walk speed when kicked
 export const SHELL_SPIN_DEG = 600; // spin rate (deg/sec) of a sliding shell
 export const SHELL_GRACE_MS = 250; // a kicked shell ignores Mario briefly
+
+// Sidestepper (crab): takes two bumps — the first only angers (+speed), the
+// second flips it. Can't be stomped while active; only killable once flipped.
+export const CRAB_W = 14;
+export const CRAB_H = 10;
+export const CRAB_SPEED = 38; // px/sec walking
+export const CRAB_ANGRY_SPEED = 74; // sped-up after the first bump
+export const CRAB_RECOVER_SPEED = 74; // stays mad/fast after recovering from a flip
+export const CRAB_SCORE = 1200;
+
 export const STOMP_BOUNCE = 160; // Mario's hop after a stomp
 export const ENEMY_TARGET = 2; // keep this many on the board
 export const ENEMY_RESPAWN_MS = 1600;

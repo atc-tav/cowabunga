@@ -92,6 +92,44 @@ const SHELL_FLIP: string[] = [
   '            ',
 ];
 
+// Sidestepper (crab, 14x10). C=body, D=pattern, W=eye, E=claw/leg.
+const CRAB_WALK_A: string[] = [
+  '  E        E  ',
+  '  EE      EE  ',
+  '  CCCCCCCCCC  ',
+  ' WCCCCCCCCCCW ',
+  ' CCCCCCCCCCCC ',
+  ' CDCDCDCDCDCD ',
+  ' CCCCCCCCCCCC ',
+  '  CC  CC  CC  ',
+  '  C   CC   C  ',
+  '              ',
+];
+const CRAB_WALK_B: string[] = [
+  '  E        E  ',
+  '  EE      EE  ',
+  '  CCCCCCCCCC  ',
+  ' WCCCCCCCCCCW ',
+  ' CCCCCCCCCCCC ',
+  ' CDCDCDCDCDCD ',
+  ' CCCCCCCCCCCC ',
+  '  C  CCCC  C  ',
+  ' C   C  C   C ',
+  '              ',
+];
+const CRAB_FLIP: string[] = [
+  '  E        E  ',
+  ' E          E ',
+  '  CC      CC  ',
+  '   CCCCCCCC   ',
+  '  CCCCCCCCCC  ',
+  '  CDCDCDCDCC  ',
+  '  CCCCCCCCCC  ',
+  '   CCCCCCCC   ',
+  '              ',
+  '              ',
+];
+
 export const TX = {
   marioRun0: 'mb-mario-0',
   marioRun1: 'mb-mario-1',
@@ -99,6 +137,9 @@ export const TX = {
   shellWalk0: 'mb-shell-0',
   shellWalk1: 'mb-shell-1',
   shellFlip: 'mb-shell-flip',
+  crabWalk0: 'mb-crab-0',
+  crabWalk1: 'mb-crab-1',
+  crabFlip: 'mb-crab-flip',
 } as const;
 
 export function buildMarioBrosTextures(scene: Phaser.Scene): void {
@@ -116,4 +157,14 @@ export function buildMarioBrosTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, TX.shellWalk0, SHELL_WALK_A, shellPal);
   drawPixelArt(scene, TX.shellWalk1, SHELL_WALK_B, shellPal);
   drawPixelArt(scene, TX.shellFlip, SHELL_FLIP, shellPal);
+
+  const crabPal = {
+    C: COLORS.crab,
+    D: COLORS.crabDark,
+    W: COLORS.crabEye,
+    E: COLORS.crabClaw,
+  };
+  drawPixelArt(scene, TX.crabWalk0, CRAB_WALK_A, crabPal);
+  drawPixelArt(scene, TX.crabWalk1, CRAB_WALK_B, crabPal);
+  drawPixelArt(scene, TX.crabFlip, CRAB_FLIP, crabPal);
 }

@@ -16,14 +16,12 @@ import {
   AIR_FRICTION,
   MARIO_W,
   MARIO_H,
-  SHELL_H,
   WALK_FRAME_MS,
   PLATFORM_THICKNESS,
   BUMP_AMP,
   BUMP_RECOVER,
   SHELL_STUN_MS,
   SHELL_STOP_WAKE_MS,
-  SHELL_SCORE,
   STOMP_BOUNCE,
   ENEMY_TARGET,
   ENEMY_RESPAWN_MS,
@@ -38,7 +36,7 @@ import {
 import { COLORS } from './palette';
 import { buildMarioBrosTextures, TX } from './sprites';
 import { FLOORS, PIPES, POW, MARIO_START, topPipeSpawns, bottomPipeZones } from './levels';
-import { Shellcreeper } from './enemies';
+import { Enemy, KINDS } from './enemies';
 
 interface Floor {
   seg: PlatformSegment;
@@ -69,7 +67,7 @@ export class MarioBrosScene extends BaseGameScene {
   private banner!: Phaser.GameObjects.Text;
   private readyTimer = 0;
 
-  private readonly enemies: Shellcreeper[] = [];
+  private readonly enemies: Enemy[] = [];
   private spawnTimer = 0;
 
   private powUses = POW_USES;
@@ -255,16 +253,17 @@ export class MarioBrosScene extends BaseGameScene {
   private maintainEnemies(delta: number): void {
     this.spawnTimer -= delta;
     if (this.enemies.length < ENEMY_TARGET && this.spawnTimer <= 0) {
-      this.spawnShell();
+      this.spawnEnemy();
       this.spawnTimer = ENEMY_RESPAWN_MS;
     }
   }
 
-  private spawnShell(): void {
+  private spawnEnemy(): void {
     const spawn = Phaser.Utils.Array.GetRandom(topPipeSpawns());
-    const shell = new Shellcreeper(this, spawn.x, spawn.feetY - SHELL_H / 2, spawn.dir);
-    shell.body.onGround = true; // walks out horizontally onto the top floor
-    this.enemies.push(shell);
+    const kind = Math.random() < 0.5 ? KINDS.turtle : KINDS.crab;
+    const e = new Enemy(this, kind, spawn.x, spawn.feetY - kind.h / 2, spawn.dir);
+    e.body.onGround = true; // walks out horizontally onto the top floor
+    this.enemies.push(e);
   }
 
   /** A bumped platform pops up and flips any Shellcreeper standing on it. */
@@ -276,8 +275,8 @@ export class MarioBrosScene extends BaseGameScene {
       this.impact('light'); // the bump's the core verb — let it land
     }
     for (const e of this.enemies) {
-      if (e.state === 'walk' && e.floorSeg === seg) {
-        e.flipFor(SHELL_STUN_MS);
+      if (e.isActive && e.floorSeg === seg) {
+        e.bump(SHELL_STUN_MS);
       }
     }
   }
@@ -294,8 +293,8 @@ export class MarioBrosScene extends BaseGameScene {
     this.audio.play('pow');
     this.flashPow();
     for (const e of this.enemies) {
-      if (e.state === 'walk' && e.body.onGround) {
-        e.flipFor(SHELL_STUN_MS);
+      if (e.isActive && e.body.onGround) {
+        e.bump(SHELL_STUN_MS);
       }
     }
     this.drawPow();
@@ -337,9 +336,11 @@ export class MarioBrosScene extends BaseGameScene {
   }
 
   /**
-   * Mario vs turtles. Stomp a walker to defeat it; kick a flipped shell into a
-   * projectile; a side hit from a walker (or any lethal shell) kills Mario.
-   * Returns true if Mario died.
+   * Mario vs enemies, by state and species. Landing on top ("from above") of a
+   * stompable enemy defeats it; on a non-stompable one (the crab) it's a
+   * harmless bounce. A flipped enemy is kicked — a turtle into a sliding shell,
+   * others to their death. A side hit from an active enemy (or any lethal shell)
+   * kills Mario. Returns true if Mario died.
    */
   private resolveEnemyContact(): boolean {
     const mb = this.sprite.getBounds();
@@ -347,28 +348,34 @@ export class MarioBrosScene extends BaseGameScene {
       if (!Phaser.Geom.Intersects.RectangleToRectangle(mb, e.sprite.getBounds())) {
         continue;
       }
-      const stomping = this.mario.vy > 0 && this.mario.feet <= e.body.y + 4;
+      const fromAbove = this.mario.feet <= e.body.y + 4;
 
-      if (e.state === 'walk') {
-        if (stomping) {
-          this.defeat(e, e.sprite.x, e.sprite.y);
-          this.mario.vy = -STOMP_BOUNCE;
+      if (e.isFlipped) {
+        if (e.kick(e.body.x >= this.mario.x ? 1 : -1)) {
+          this.audio.play('kick'); // turtle slid off as a shell
         } else {
-          return true;
+          this.defeat(e, e.sprite.x, e.sprite.y); // crab/fly killed
         }
-      } else if (e.state === 'flipped') {
-        e.kick(e.body.x >= this.mario.x ? 1 : -1);
-        this.audio.play('kick');
-        if (stomping) {
+        if (fromAbove) {
           this.mario.vy = -STOMP_BOUNCE;
         }
-      } else if (e.state === 'shell') {
+      } else if (e.isShell) {
         // Stomp a speeding shell to stop it (re-kickable, or wakes after 3s); a
         // side hit from a live shell kills Mario.
-        if (stomping) {
+        if (fromAbove) {
           e.flipFor(SHELL_STOP_WAKE_MS);
           this.mario.vy = -STOMP_BOUNCE;
         } else if (e.lethalShell) {
+          return true;
+        }
+      } else {
+        // Active (walking/angry).
+        if (fromAbove && e.kind.canStomp) {
+          this.defeat(e, e.sprite.x, e.sprite.y);
+          this.mario.vy = -STOMP_BOUNCE;
+        } else if (fromAbove) {
+          this.mario.vy = -STOMP_BOUNCE; // can't be stomped — bounce off harmlessly
+        } else {
           return true;
         }
       }
@@ -415,8 +422,8 @@ export class MarioBrosScene extends BaseGameScene {
     }
   }
 
-  private defeat(e: Shellcreeper, x: number, y: number): void {
-    this.popScore(x, y, SHELL_SCORE, { color: '#ffffff', fontSize: '8px' });
+  private defeat(e: Enemy, x: number, y: number): void {
+    this.popScore(x, y, e.kind.score, { color: '#ffffff', fontSize: '8px' });
     this.audio.play('kick');
     e.sprite.destroy();
     const idx = this.enemies.indexOf(e);

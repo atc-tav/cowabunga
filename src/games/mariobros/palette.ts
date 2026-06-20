@@ -17,6 +17,11 @@ export const COLORS = {
   shellDark: 0x006000,
   shellHead: 0xfcd060,
   shellEye: 0xffffff,
+  crab: 0xf83800, // Sidestepper red
+  crabDark: 0xa01000,
+  crabEye: 0xffffff,
+  crabClaw: 0xfca044,
+  crabAngry: 0xff9090, // tint when sped-up after the first bump
 } as const;
 
 export const MARIO_PALETTE: PixelPalette = {
