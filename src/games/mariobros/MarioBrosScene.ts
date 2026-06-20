@@ -3,7 +3,6 @@ import { BaseGameScene } from '../../shared/BaseGameScene';
 import { PlatformerBody, PlatformSegment } from '../../shared/Platformer';
 import { StateMachine } from '../../shared/StateMachine';
 import { LivesManager } from '../../shared/LivesManager';
-import { floatingText } from '../../shared/popups';
 import { LABEL_STYLE } from '../../shared/ui';
 import {
   WIDTH,
@@ -17,26 +16,27 @@ import {
   AIR_FRICTION,
   MARIO_W,
   MARIO_H,
-  SHELL_H,
   WALK_FRAME_MS,
   PLATFORM_THICKNESS,
   BUMP_AMP,
   BUMP_RECOVER,
   SHELL_STUN_MS,
-  SHELL_SCORE,
+  SHELL_STOP_WAKE_MS,
   STOMP_BOUNCE,
   ENEMY_TARGET,
   ENEMY_RESPAWN_MS,
-  ENEMY_GROUND_DWELL_MS,
   LIVES_START,
   READY_MS,
   DEATH_PAUSE_MS,
   GAMEOVER_MS,
+  POW_USES,
+  POW_W,
+  POW_H,
 } from './constants';
 import { COLORS } from './palette';
 import { buildMarioBrosTextures, TX } from './sprites';
 import { FLOORS, PIPES, POW, MARIO_START, topPipeSpawns, bottomPipeZones } from './levels';
-import { Shellcreeper } from './enemies';
+import { Enemy, KINDS } from './enemies';
 
 interface Floor {
   seg: PlatformSegment;
@@ -67,8 +67,13 @@ export class MarioBrosScene extends BaseGameScene {
   private banner!: Phaser.GameObjects.Text;
   private readyTimer = 0;
 
-  private readonly enemies: Shellcreeper[] = [];
+  private readonly enemies: Enemy[] = [];
   private spawnTimer = 0;
+
+  private powUses = POW_USES;
+  private powSeg!: PlatformSegment;
+  private powGfx!: Phaser.GameObjects.Graphics;
+  private powText!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'game-mariobros', gameId: 'mariobros', width: WIDTH, height: HEIGHT });
@@ -82,6 +87,15 @@ export class MarioBrosScene extends BaseGameScene {
     this.drawStatics();
     this.platformGfx = this.add.graphics().setDepth(1);
     this.drawPlatforms();
+
+    this.powUses = POW_USES;
+    this.powSeg = { x1: POW.x - POW_W / 2, x2: POW.x + POW_W / 2, y1: POW.y, y2: POW.y, thickness: POW_H };
+    this.powGfx = this.add.graphics().setDepth(1);
+    this.powText = this.add
+      .text(POW.x, POW.y + POW_H / 2, 'POW', { fontFamily: 'monospace', fontSize: '8px', color: '#ffffff' })
+      .setOrigin(0.5)
+      .setDepth(2);
+    this.drawPow();
 
     this.enemies.length = 0;
     this.lifeIcons.length = 0;
@@ -134,12 +148,14 @@ export class MarioBrosScene extends BaseGameScene {
     for (const e of this.enemies) {
       e.update(delta, this.floorSegments());
     }
-    if (this.mario.bumped) {
+    if (this.mario.bumped === this.powSeg) {
+      this.activatePow();
+    } else if (this.mario.bumped) {
       this.onBump(this.mario.bumped);
     }
-    this.recoverAndRecycle(delta);
+    this.recoverEnemies();
     this.shellsHitEnemies();
-    this.despawnShellsAtPipes();
+    this.handleEnemyBounds();
     this.maintainEnemies(delta);
 
     if (this.resolveEnemyContact()) {
@@ -194,9 +210,15 @@ export class MarioBrosScene extends BaseGameScene {
     if (this.controls.justPressed('fire')) {
       this.mario.jump(JUMP_SPEED);
     }
-    this.mario.update(delta, GRAVITY, this.floorSegments());
+    this.mario.update(delta, GRAVITY, this.marioFloors());
     this.sprite.setPosition(this.mario.x, this.mario.y).setFlipX(this.facing < 0);
     this.animateMario(delta, dir !== 0);
+  }
+
+  /** Mario also collides with the POW block (enemies don't). */
+  private marioFloors(): PlatformSegment[] {
+    const segs = this.floorSegments();
+    return this.powUses > 0 ? [...segs, this.powSeg] : segs;
   }
 
   private placeMarioAtStart(): void {
@@ -231,16 +253,17 @@ export class MarioBrosScene extends BaseGameScene {
   private maintainEnemies(delta: number): void {
     this.spawnTimer -= delta;
     if (this.enemies.length < ENEMY_TARGET && this.spawnTimer <= 0) {
-      this.spawnShell();
+      this.spawnEnemy();
       this.spawnTimer = ENEMY_RESPAWN_MS;
     }
   }
 
-  private spawnShell(): void {
+  private spawnEnemy(): void {
     const spawn = Phaser.Utils.Array.GetRandom(topPipeSpawns());
-    const shell = new Shellcreeper(this, spawn.x, spawn.feetY - SHELL_H / 2, spawn.dir);
-    shell.body.onGround = true; // walks out horizontally onto the top floor
-    this.enemies.push(shell);
+    const kind = Math.random() < 0.5 ? KINDS.turtle : KINDS.crab;
+    const e = new Enemy(this, kind, spawn.x, spawn.feetY - kind.h / 2, spawn.dir);
+    e.body.onGround = true; // walks out horizontally onto the top floor
+    this.enemies.push(e);
   }
 
   /** A bumped platform pops up and flips any Shellcreeper standing on it. */
@@ -252,35 +275,72 @@ export class MarioBrosScene extends BaseGameScene {
       this.impact('light'); // the bump's the core verb — let it land
     }
     for (const e of this.enemies) {
-      if (e.state === 'walk' && e.floorSeg === seg) {
-        e.flipFor(SHELL_STUN_MS);
+      if (e.isActive && e.floorSeg === seg) {
+        e.bump(SHELL_STUN_MS);
       }
     }
   }
 
-  private recoverAndRecycle(delta: number): void {
-    for (let i = this.enemies.length - 1; i >= 0; i--) {
-      const e = this.enemies[i];
+  // --- POW block ----------------------------------------------------------
+
+  /** Bonked from below: flip every grounded enemy, shake the screen, wear down. */
+  private activatePow(): void {
+    if (this.powUses <= 0) {
+      return;
+    }
+    this.powUses -= 1;
+    this.impact('heavy');
+    this.audio.play('pow');
+    this.flashPow();
+    for (const e of this.enemies) {
+      if (e.isActive && e.body.onGround) {
+        e.bump(SHELL_STUN_MS);
+      }
+    }
+    this.drawPow();
+  }
+
+  /** A bright pulse on the POW block so the bonk reads unmistakably. */
+  private flashPow(): void {
+    const flash = this.add
+      .rectangle(POW.x, POW.y + POW_H / 2, POW_W + 4, POW_H + 4, 0xffffff)
+      .setDepth(3);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 220,
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  private drawPow(): void {
+    this.powGfx.clear();
+    if (this.powUses <= 0) {
+      this.powText.setVisible(false);
+      return;
+    }
+    const alpha = Math.min(1, 0.5 + 0.17 * this.powUses); // fades as it wears out
+    this.powGfx.fillStyle(COLORS.pow, alpha);
+    this.powGfx.fillRect(this.powSeg.x1, this.powSeg.y1, POW_W, POW_H);
+    this.powGfx.fillStyle(COLORS.platformTop, alpha);
+    this.powGfx.fillRect(this.powSeg.x1, this.powSeg.y1, POW_W, 2);
+    this.powText.setVisible(true).setAlpha(alpha);
+  }
+
+  private recoverEnemies(): void {
+    for (const e of this.enemies) {
       if (e.readyToRecover) {
         e.recover();
-      }
-      // Loop ground-dwellers back to a pipe so they don't camp the bottom.
-      if (e.state === 'walk' && e.floorSeg === this.groundSeg) {
-        e.groundDwell += delta;
-        if (e.groundDwell >= ENEMY_GROUND_DWELL_MS) {
-          e.sprite.destroy();
-          this.enemies.splice(i, 1);
-        }
-      } else {
-        e.groundDwell = 0;
       }
     }
   }
 
   /**
-   * Mario vs turtles. Stomp a walker to defeat it; kick a flipped shell into a
-   * projectile; a side hit from a walker (or any lethal shell) kills Mario.
-   * Returns true if Mario died.
+   * Mario vs enemies, by state and species. Landing on top ("from above") of a
+   * stompable enemy defeats it; on a non-stompable one (the crab) it's a
+   * harmless bounce. A flipped enemy is kicked — a turtle into a sliding shell,
+   * others to their death. A side hit from an active enemy (or any lethal shell)
+   * kills Mario. Returns true if Mario died.
    */
   private resolveEnemyContact(): boolean {
     const mb = this.sprite.getBounds();
@@ -288,23 +348,36 @@ export class MarioBrosScene extends BaseGameScene {
       if (!Phaser.Geom.Intersects.RectangleToRectangle(mb, e.sprite.getBounds())) {
         continue;
       }
-      const stomping = this.mario.vy > 0 && this.mario.feet <= e.body.y + 4;
+      const fromAbove = this.mario.feet <= e.body.y + 4;
 
-      if (e.state === 'walk') {
-        if (stomping) {
+      if (e.isFlipped) {
+        if (e.kick(e.body.x >= this.mario.x ? 1 : -1)) {
+          this.audio.play('kick'); // turtle slid off as a shell
+        } else {
+          this.defeat(e, e.sprite.x, e.sprite.y); // crab/fly killed
+        }
+        if (fromAbove) {
+          this.mario.vy = -STOMP_BOUNCE;
+        }
+      } else if (e.isShell) {
+        // Stomp a speeding shell to stop it (re-kickable, or wakes after 3s); a
+        // side hit from a live shell kills Mario.
+        if (fromAbove) {
+          e.flipFor(SHELL_STOP_WAKE_MS);
+          this.mario.vy = -STOMP_BOUNCE;
+        } else if (e.lethalShell) {
+          return true;
+        }
+      } else {
+        // Active (walking/angry).
+        if (fromAbove && e.kind.canStomp) {
           this.defeat(e, e.sprite.x, e.sprite.y);
           this.mario.vy = -STOMP_BOUNCE;
+        } else if (fromAbove) {
+          this.mario.vy = -STOMP_BOUNCE; // can't be stomped — bounce off harmlessly
         } else {
           return true;
         }
-      } else if (e.state === 'flipped') {
-        e.kick(e.body.x >= this.mario.x ? 1 : -1);
-        this.audio.play('kick');
-        if (stomping) {
-          this.mario.vy = -STOMP_BOUNCE;
-        }
-      } else if (e.lethalShell) {
-        return true; // your own kicked shell can come back to bite you
       }
     }
     return false;
@@ -328,21 +401,29 @@ export class MarioBrosScene extends BaseGameScene {
     }
   }
 
-  /** A kicked shell that reaches a bottom pipe leaves the game. */
-  private despawnShellsAtPipes(): void {
+  /**
+   * On the bottom floor there's no wrap — enemies (and spent shells) walk into a
+   * corner pipe and leave the game. On the upper floors they wrap edge-to-edge.
+   */
+  private handleEnemyBounds(): void {
     const zones = bottomPipeZones();
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
-      if (e.isShell && e.body.onGround && zones.some(([a, b]) => e.body.x >= a && e.body.x <= b)) {
-        e.sprite.destroy();
-        this.enemies.splice(i, 1);
+      if (e.floorSeg === this.groundSeg) {
+        if (zones.some(([a, b]) => e.body.x >= a && e.body.x <= b)) {
+          e.sprite.destroy();
+          this.enemies.splice(i, 1);
+        }
+      } else if (e.body.x < 0) {
+        e.body.x += WIDTH;
+      } else if (e.body.x > WIDTH) {
+        e.body.x -= WIDTH;
       }
     }
   }
 
-  private defeat(e: Shellcreeper, x: number, y: number): void {
-    this.addScore(SHELL_SCORE);
-    floatingText(this, x, y, String(SHELL_SCORE), { color: '#ffffff', fontSize: '8px' });
+  private defeat(e: Enemy, x: number, y: number): void {
+    this.popScore(x, y, e.kind.score, { color: '#ffffff', fontSize: '8px' });
     this.audio.play('kick');
     e.sprite.destroy();
     const idx = this.enemies.indexOf(e);
@@ -401,12 +482,6 @@ export class MarioBrosScene extends BaseGameScene {
       const rimX = pipe.open === 'right' ? pipe.x2 - 5 : pipe.x1;
       g.fillRect(rimX, pipe.y1 - 2, 5, h + 4);
     }
-    g.fillStyle(COLORS.pow, 1);
-    g.fillRect(POW.x - 12, POW.y - 8, 24, 14);
-    this.add
-      .text(POW.x, POW.y - 1, 'POW', { fontFamily: 'monospace', fontSize: '8px', color: '#ffffff' })
-      .setOrigin(0.5)
-      .setDepth(2);
   }
 
   private refreshLives(): void {

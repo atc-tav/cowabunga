@@ -6,7 +6,7 @@ export const COLORS = {
   platformTop: 0x9cd0ff, // bright top edge
   pipe: 0x00a800,
   pipeRim: 0x00d800,
-  pow: 0x2038ec,
+  pow: 0x00c0c0, // teal — distinct from the blue platforms
   powText: 0xffffff,
   capShirt: 0xff0000,
   skin: 0xfcb088,
@@ -17,6 +17,11 @@ export const COLORS = {
   shellDark: 0x006000,
   shellHead: 0xfcd060,
   shellEye: 0xffffff,
+  crab: 0xf83800, // Sidestepper red
+  crabDark: 0xa01000,
+  crabEye: 0xffffff,
+  crabClaw: 0xfca044,
+  crabAngry: 0xff9090, // tint when sped-up after the first bump
 } as const;
 
 export const MARIO_PALETTE: PixelPalette = {

@@ -30,18 +30,34 @@ export const SHELL_H = 10;
 export const SHELL_SPEED = 42; // px/sec walking
 export const SHELL_RECOVER_SPEED = 60; // faster after recovering from a flip
 export const SHELL_STUN_MS = 4200; // time flipped before recovering
+export const SHELL_STOP_WAKE_MS = 3000; // a stomped speeding shell waits 3s, then wakes
 export const SHELL_STUN_BLINK_MS = 1500; // flashes when about to recover
 export const SHELL_FRAME_MS = 160;
 export const SHELL_SCORE = 800; // stomping a turtle / a kicked shell defeating one
 export const SHELL_PROJECTILE_SPEED = 63; // 1.5x walk speed when kicked
+export const SHELL_SPIN_DEG = 600; // spin rate (deg/sec) of a sliding shell
 export const SHELL_GRACE_MS = 250; // a kicked shell ignores Mario briefly
+
+// Sidestepper (crab): takes two bumps — the first only angers (+speed), the
+// second flips it. Can't be stomped while active; only killable once flipped.
+export const CRAB_W = 14;
+export const CRAB_H = 10;
+export const CRAB_SPEED = 38; // px/sec walking
+export const CRAB_ANGRY_SPEED = 74; // sped-up after the first bump
+export const CRAB_RECOVER_SPEED = 74; // stays mad/fast after recovering from a flip
+export const CRAB_SCORE = 1200;
+
 export const STOMP_BOUNCE = 160; // Mario's hop after a stomp
 export const ENEMY_TARGET = 2; // keep this many on the board
 export const ENEMY_RESPAWN_MS = 1600;
-export const ENEMY_GROUND_DWELL_MS = 2500; // time on the ground before recycling to a pipe
 
 export const LIVES_START = 3;
 export const READY_MS = 1300;
 export const DEATH_PAUSE_MS = 1000;
 export const GAMEOVER_MS = 2500;
+
+// POW block: bonk from below to flip every grounded enemy; limited uses.
+export const POW_USES = 3;
+export const POW_W = 24;
+export const POW_H = 14;
 
