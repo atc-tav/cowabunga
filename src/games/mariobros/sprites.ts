@@ -130,6 +130,44 @@ const CRAB_FLIP: string[] = [
   '              ',
 ];
 
+// Fighter Fly (12x10). F=body, W=eye, V=wing.
+const FLY_WINGS_UP: string[] = [
+  '   V    V   ',
+  '   VV  VV   ',
+  '   FFFFFF   ',
+  '  FWFFFFWF  ',
+  '  FFFFFFFF  ',
+  '  FFFFFFFF  ',
+  '   FFFFFF   ',
+  '   F    F   ',
+  '            ',
+  '            ',
+];
+const FLY_WINGS_DOWN: string[] = [
+  '            ',
+  '   FFFFFF   ',
+  '  FWFFFFWF  ',
+  '  FFFFFFFF  ',
+  ' VFFFFFFFFV ',
+  ' VVFFFFFFVV ',
+  '   FFFFFF   ',
+  '   F    F   ',
+  '            ',
+  '            ',
+];
+const FLY_FLIP: string[] = [
+  '   F    F   ',
+  '   FFFFFF   ',
+  '  FFFFFFFF  ',
+  '  FFFFFFFF  ',
+  '  FWFFFFWF  ',
+  '   FFFFFF   ',
+  '            ',
+  '            ',
+  '            ',
+  '            ',
+];
+
 export const TX = {
   marioRun0: 'mb-mario-0',
   marioRun1: 'mb-mario-1',
@@ -140,6 +178,9 @@ export const TX = {
   crabWalk0: 'mb-crab-0',
   crabWalk1: 'mb-crab-1',
   crabFlip: 'mb-crab-flip',
+  flyWalk0: 'mb-fly-0',
+  flyWalk1: 'mb-fly-1',
+  flyFlip: 'mb-fly-flip',
 } as const;
 
 export function buildMarioBrosTextures(scene: Phaser.Scene): void {
@@ -167,4 +208,13 @@ export function buildMarioBrosTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, TX.crabWalk0, CRAB_WALK_A, crabPal);
   drawPixelArt(scene, TX.crabWalk1, CRAB_WALK_B, crabPal);
   drawPixelArt(scene, TX.crabFlip, CRAB_FLIP, crabPal);
+
+  const flyPal = {
+    F: COLORS.fly,
+    W: COLORS.flyEye,
+    V: COLORS.flyWing,
+  };
+  drawPixelArt(scene, TX.flyWalk0, FLY_WINGS_UP, flyPal);
+  drawPixelArt(scene, TX.flyWalk1, FLY_WINGS_DOWN, flyPal);
+  drawPixelArt(scene, TX.flyFlip, FLY_FLIP, flyPal);
 }

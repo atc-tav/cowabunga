@@ -34,9 +34,10 @@ export const SHELL_STOP_WAKE_MS = 3000; // a stomped speeding shell waits 3s, th
 export const SHELL_STUN_BLINK_MS = 1500; // flashes when about to recover
 export const SHELL_FRAME_MS = 160;
 export const SHELL_SCORE = 800; // stomping a turtle / a kicked shell defeating one
-export const SHELL_PROJECTILE_SPEED = 63; // 1.5x walk speed when kicked
+export const SHELL_PROJECTILE_SPEED = 84; // 2x walk speed when kicked
 export const SHELL_SPIN_DEG = 600; // spin rate (deg/sec) of a sliding shell
 export const SHELL_GRACE_MS = 250; // a kicked shell ignores Mario briefly
+export const SHELL_BUMP_HOP = 180; // px/sec a sliding shell pops up when bumped from below
 
 // Sidestepper (crab): takes two bumps — the first only angers (+speed), the
 // second flips it. Can't be stomped while active; only killable once flipped.
@@ -46,6 +47,17 @@ export const CRAB_SPEED = 38; // px/sec walking
 export const CRAB_ANGRY_SPEED = 74; // sped-up after the first bump
 export const CRAB_RECOVER_SPEED = 74; // stays mad/fast after recovering from a flip
 export const CRAB_SCORE = 1200;
+
+// Fighter Fly: hops along the floors and is only flippable during the brief
+// grounded window between hops. Can be stomped (like the turtle).
+export const FLY_W = 12;
+export const FLY_H = 10;
+export const FLY_SPEED = 40; // px/sec horizontal drift
+export const FLY_RECOVER_SPEED = 64;
+export const FLY_SCORE = 1000;
+export const FLY_HOP_SPEED = 210; // px/sec launch of each hop
+export const FLY_GROUND_MS = 200; // grounded (flippable) dwell between hops
+export const FLY_FRAME_MS = 90; // wing flap
 
 export const STOMP_BOUNCE = 160; // Mario's hop after a stomp
 export const ENEMY_TARGET = 2; // keep this many on the board
