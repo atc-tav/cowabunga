@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { MainMenu } from './scenes/MainMenu';
 import { GAMES } from './registry';
+import { TouchControls } from './shared/TouchControls';
 
 /**
  * Game bootstrap. The canvas starts at the menu's size; each scene resizes the
@@ -26,6 +27,9 @@ const config: Phaser.Types.Core.GameConfig = {
 };
 
 const game = new Phaser.Game(config);
+
+// Mount on-screen controls on touch devices (no-op on desktop).
+TouchControls.init();
 
 game.scene.add('MainMenu', MainMenu, false);
 for (const entry of GAMES) {
