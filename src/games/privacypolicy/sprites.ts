@@ -25,14 +25,36 @@ const BULLET_ART: string[] = ['YY', 'YY', 'YY', 'YY'];
 // A single star — a short vertical streak, tinted per parallax tier.
 const STAR_ART: string[] = ['W', 'W'];
 
+// Spinning chocolate-chip cookie (16x16). D = dough, C = chip.
+const COOKIE_ART: string[] = [
+  '      DDDD      ',
+  '    DDDDDDDD    ',
+  '   DDDDDDDDDD   ',
+  '  DDDDDDDDDDDD  ',
+  '  DDDDDCDDDDDD  ',
+  ' DDDDDDDDCDDDDD ',
+  ' DDDDDDDDDDDDDD ',
+  'DDDCDDDDDDDDDDDD',
+  'DDDDDDDDDDDCDDDD',
+  ' DDDDDCDDDDDDDD ',
+  ' DDDDDDDDDDDDDD ',
+  '  DDDDDDDCDDDD  ',
+  '  DDDDDDDDDDDD  ',
+  '   DDDDCDDDDD   ',
+  '    DDDDDDDD    ',
+  '      DDDD      ',
+];
+
 export const TX = {
   ship: 'pp-ship',
   bullet: 'pp-bullet',
   star: 'pp-star',
+  cookie: 'pp-cookie',
 } as const;
 
 export function buildPrivacyTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, TX.ship, SHIP_ART, { W: COLORS.ship, R: COLORS.cockpit });
   drawPixelArt(scene, TX.bullet, BULLET_ART, { Y: COLORS.bullet });
   drawPixelArt(scene, TX.star, STAR_ART, { W: 0xffffff });
+  drawPixelArt(scene, TX.cookie, COOKIE_ART, { D: 0xc8853f, C: 0x4a2607 });
 }
