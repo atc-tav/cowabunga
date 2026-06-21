@@ -21,6 +21,9 @@ export const TX = {
   brickSilverHit: 'ak-brick-silver-hit',
 
   laserBeam: 'ak-laser',
+
+  breakPortal0: 'ak-portal-0',
+  breakPortal1: 'ak-portal-1',
 } as const;
 
 export type TXKey = keyof typeof TX;
@@ -90,6 +93,26 @@ function brickArt(cracked = false): string[] {
 }
 
 // --- ball ----------------------------------------------------------------
+
+// Break portal (8×16). P = ring, W = inner glow, '.' = the opening.
+const PORTAL_ART: string[] = [
+  '  PPPP  ',
+  ' PWWWWP ',
+  'PWPPPPWP',
+  'PWP..PWP',
+  'PWP..PWP',
+  'PWPPPPWP',
+  'PWWWWWWP',
+  'PWP..PWP',
+  'PWP..PWP',
+  'PWPPPPWP',
+  'PWWWWWWP',
+  'PWP..PWP',
+  'PWP..PWP',
+  'PWPPPPWP',
+  ' PWWWWP ',
+  '  PPPP  ',
+];
 
 const BALL_ART: string[] = [
   '  WWWW  ',
@@ -225,6 +248,10 @@ export function buildArkanoidTextures(scene: Phaser.Scene): void {
   // Laser beam
   const beam = ['L', 'L', 'L', 'L', 'L', 'L'];
   drawPixelArt(scene, TX.laserBeam, beam, { L: COLORS.laser });
+
+  // Break portal — two shimmer frames (P/W swapped) on the right wall.
+  drawPixelArt(scene, TX.breakPortal0, PORTAL_ART, { P: 0xb040e0, W: 0xfcfc00 });
+  drawPixelArt(scene, TX.breakPortal1, PORTAL_ART, { P: 0xfcfc00, W: 0xb040e0 });
 
   // Bricks — one texture per cell code plus the silver damage frame.
   for (const code of Object.keys(BRICK_COLORS) as CellCode[]) {

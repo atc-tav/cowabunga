@@ -57,6 +57,9 @@ export const GAME = {
 
   // Break portal
   breakBonusPoints: 10000,
+  breakPortalY: 176, // center Y of the portal on the right wall
+  breakPortalHalfH: 8, // vertical half-extent of the opening
+  breakPortalFrameMs: 150, // shimmer animation cadence
 
   // Enemies
   uniraSpeed: 0.8,
@@ -140,7 +143,6 @@ export type CapsuleType = 'L' | 'E' | 'C' | 'S' | 'D' | 'P' | 'B';
 
 /**
  * Capsule drop weights. B and P are half as likely as the rest (Section 5.1).
- * Break (B) is deferred this slice, so it is omitted from the live pool.
  */
 export const CAPSULE_WEIGHTS: Partial<Record<CapsuleType, number>> = {
   L: 2,
@@ -149,6 +151,7 @@ export const CAPSULE_WEIGHTS: Partial<Record<CapsuleType, number>> = {
   S: 2,
   D: 2,
   P: 1,
+  B: 1,
 };
 
 /** Silver brick hit requirement for a given 1-based stage number. */
