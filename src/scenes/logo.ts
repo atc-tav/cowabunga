@@ -210,24 +210,23 @@ function drawWordmark(scene: Phaser.Scene, cx: number, topY: number): void {
   // Outlined glyphs share a 10-col x 11-row footprint.
   const baseW = 10 * PX;
   const baseH = 11 * PX;
-  const GAP = PX;
 
   // Arc text: every letter stands on ONE circle (baselines on the arc) and is
   // rotated tangent to it, so the wordmark reads as a single continuous arc.
-  // Letters also grow toward the ends. The arc geometry naturally drops the
-  // outer letters lower (bottoms much lower, tops a little lower than centre).
-  const GROW = 0.38; // C/A noticeably taller than the centre; OW/NG transition
-  const EXTRA = 1.5;
-  const targetArc = 200; // arc-length budget for the whole word
-  const endAngle = (36 * Math.PI) / 180; // tilt of the outermost letters
+  // Letters grow toward the ends (C/A pop, O/G transition), and squish tight so
+  // adjacent letters share only their black outlines. The arc geometry drops
+  // the outer letters lower (bottoms much lower, tops a little lower).
+  const GROW = 0.5;
+  const GROW_EXP = 1.3; // >1 emphasises the very ends (C/A) over O/G
+  const GAP_TIGHT = -2; // overlap footprints so outlines merge
+  const targetArc = 200; // arc-length budget; curve shape stays the same
+  const endAngle = (36 * Math.PI) / 180;
 
   const tiltAt = (i: number) => Math.abs((i - mid) / mid);
-  const growth = Array.from({ length: n }, (_, i) => 1 + GROW * tiltAt(i));
-  const gapAt = (i: number) => GAP + EXTRA * ((tiltAt(i) + tiltAt(i + 1)) / 2);
+  const growth = Array.from({ length: n }, (_, i) => 1 + GROW * tiltAt(i) ** GROW_EXP);
 
   // Lay out in unscaled units, scale to the arc-length budget, then bend.
-  let raw = growth.reduce((s, g) => s + baseW * g, 0);
-  for (let i = 0; i < n - 1; i++) raw += gapAt(i);
+  let raw = growth.reduce((s, g) => s + baseW * g, 0) + GAP_TIGHT * (n - 1);
   const SC = targetArc / raw;
   const arcLen = raw * SC;
   const radius = arcLen / 2 / endAngle;
@@ -235,13 +234,11 @@ function drawWordmark(scene: Phaser.Scene, cx: number, topY: number): void {
   const baseY = topY + baseH * SC;
 
   let s = -arcLen / 2; // signed arc-length cursor from the centre
-  let leftX = cx;
-  let rightX = cx;
   for (let i = 0; i < n; i++) {
     const sc = SC * growth[i];
     const w = baseW * sc;
     const sCenter = s + w / 2;
-    s += w + (i < n - 1 ? gapAt(i) * SC : 0);
+    s += w + (i < n - 1 ? GAP_TIGHT * SC : 0);
 
     const a = sCenter / radius; // angle along the arc (rad), signed
     const x = cx + radius * Math.sin(a);
@@ -253,17 +250,58 @@ function drawWordmark(scene: Phaser.Scene, cx: number, topY: number): void {
       .setOrigin(0.5, 1) // stand the letter on the arc
       .setScale(sc)
       .setAngle((a * 180) / Math.PI)
-      .setDepth(20);
-    if (i === 0) leftX = x - w / 2;
-    if (i === n - 1) rightX = x + w / 2;
+      .setDepth(19);
   }
 
-  // Sparkle stars around the wordmark (one left, two right), like the artwork.
-  drawPixelArt(scene, 'logo_star', STAR, { '#': 0xfcfc00 }, 1);
-  const place = (sx: number, sy: number, st: number) =>
-    scene.add.image(sx, sy, 'logo_star').setOrigin(0.5).setScale(st).setDepth(21);
-  place(leftX - 4, baseY - 6, 1.3);
-  place(rightX + 4, baseY - 10, 1.6);
-  place(rightX + 1, baseY + 14, 1.0);
+  drawStarfield(scene, cx, topY, baseY, arcLen / 2);
+}
+
+/**
+ * Twinkling sparkle field confined to the black gaps: the wedge between the
+ * banner and the descending outer letters, and the concave space beneath the
+ * arc. Stars fade/scale in and out on staggered loops so they shimmer.
+ */
+function drawStarfield(
+  scene: Phaser.Scene,
+  cx: number,
+  topY: number,
+  baseY: number,
+  half: number,
+): void {
+  drawPixelArt(scene, 'logo_star', STAR, { '#': 0xffffff }, 1);
+  const colors = [0xfcfc00, 0xffffff, 0x3cbcfc];
+  // x is a fraction of the half-width; y is absolute.
+  const spots: { fx: number; y: number; s: number }[] = [
+    // Upper wedges between the banner and the descending outer letters.
+    { fx: -0.96, y: topY + 6, s: 1.2 },
+    { fx: -0.66, y: topY + 1, s: 0.9 },
+    { fx: 0.66, y: topY + 1, s: 0.9 },
+    { fx: 0.99, y: topY + 3, s: 1.3 },
+    // The arc beneath the wordmark.
+    { fx: -0.46, y: baseY + 24, s: 1.0 },
+    { fx: 0.0, y: baseY + 30, s: 0.8 },
+    { fx: 0.5, y: baseY + 24, s: 1.1 },
+  ];
+  spots.forEach((spot, i) => {
+    const star = scene.add
+      .image(cx + spot.fx * half, spot.y, 'logo_star')
+      .setOrigin(0.5)
+      .setTint(colors[i % colors.length])
+      .setScale(spot.s)
+      .setAlpha(0)
+      .setDepth(21);
+    scene.tweens.add({
+      targets: star,
+      alpha: { from: 0, to: 1 },
+      scale: { from: spot.s * 0.3, to: spot.s },
+      ease: 'Sine.InOut',
+      duration: 520 + Math.random() * 520,
+      hold: 160 + Math.random() * 320,
+      yoyo: true,
+      repeat: -1,
+      repeatDelay: 700 + Math.random() * 1700,
+      delay: Math.random() * 2400,
+    });
+  });
 }
 
