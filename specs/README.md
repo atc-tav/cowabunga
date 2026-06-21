@@ -28,8 +28,13 @@ to build (or validate) a faithful clone.
 | Donkey Kong | NES (1983) | [donkey-kong-nes.md](./donkey-kong-nes.md) |
 | Arkanoid | Arcade (Taito, 1986) | [arkanoid.md](./arkanoid.md) |
 | Mario Bros. | Arcade (Nintendo, 1983) | [mario-bros-arcade.md](./mario-bros-arcade.md) |
+| HYDRA (working title) | **Original** (Cowabunga, 2026) | [hydra-original.md](./hydra-original.md) |
 
 **Notes**
+- **HYDRA** is an *original* game (Snake, inverted — you hunt an AI that's playing
+  Snake), not a clone. Original specs follow the same house style with three
+  sections reinterpreted; see `AUTHORING.md`. It's the first spec authored fully
+  through that guide and passes `npm run lint:specs` clean.
 - The **NES Dig Dug** spec is a *delta* on top of the **arcade Dig Dug** spec —
   read the arcade one first for shared mechanics, then the NES one for the
   differences (flagged `⚠️ NES DIFF:`).

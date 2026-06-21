@@ -87,12 +87,12 @@ function lineOf(text, index) {
 // Individual checks
 // ---------------------------------------------------------------------------
 
-/** Title must be `# <Game> (<Year> <Platform>) — Clone Design Specification`. */
+/** Title must end `— <…> Design Specification` (Clone or Game for originals). */
 function checkTitle(text, r) {
   const first = text.split('\n').find((l) => l.startsWith('# '));
   if (!first) return r.error('title', 'No H1 title found.', 1);
-  if (!/—\s*Clone Design Specification\s*$/.test(first)) {
-    r.error('title', `Title must end with "— Clone Design Specification". Got: ${first}`, 1);
+  if (!/—\s*[A-Za-z ]*Design Specification\s*$/.test(first)) {
+    r.error('title', `Title must end with "— … Design Specification". Got: ${first}`, 1);
   }
   if (!/\(.*\d{4}.*\)/.test(first)) {
     r.warn('title', 'Title should include "(<Year> <Platform>)".', 1);

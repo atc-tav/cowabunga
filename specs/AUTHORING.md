@@ -106,6 +106,16 @@ Immediately under the H1 title, a set of blockquote callouts. Copy this shape:
 The title format is fixed: **`<Game> (<Year> <Platform>) — Clone Design
 Specification`**.
 
+> **Original games.** Cowabunga also builds original games, not just clones. For
+> those, title the spec `<Game> (<Year>, Original) — Game Design Specification`,
+> and reinterpret three sections: **§13 Canonical vs. Tunable** becomes "identity
+> invariants (the design decisions that *are* the game — don't change) vs.
+> tunable feel values"; **§14 Level / Content Data** holds the procedural content
+> (spawn tables, difficulty ramps, probability tables) rather than authored
+> levels; and **§16 Reference Sources** becomes design influences. Everything
+> else — skeleton, `✅ CHECK` callouts, sprite rules, typed constants — is
+> identical. See `hydra-original.md` for the worked example.
+
 ---
 
 ## 3. Section-by-section requirements
