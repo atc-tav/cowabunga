@@ -7,7 +7,7 @@ import {
   PLAYER_ONE_KEYS,
   PLAYER_TWO_KEYS,
 } from '../../shared/InputManager';
-import { LABEL_STYLE, HINT_STYLE } from '../../shared/ui';
+import { LABEL_STYLE, HINT_STYLE, TITLE_STYLE } from '../../shared/ui';
 import { floatingText } from '../../shared/popups';
 import {
   WIDTH,
@@ -73,6 +73,12 @@ export class MarioBrosScene extends BaseGameScene {
 
   private selectIndex = 0;
   private selectGfx: Phaser.GameObjects.Text[] = [];
+  private titleText!: Phaser.GameObjects.Text;
+  private promptText!: Phaser.GameObjects.Text;
+  private panelGfx!: Phaser.GameObjects.Graphics;
+  private blinkTimer = 0;
+  private demoSpawnTimer = 0;
+  private demoKindIdx = 0;
   private hudTexts: Phaser.GameObjects.Text[] = [];
   private hiText!: Phaser.GameObjects.Text;
   private readonly lifeIcons: Phaser.GameObjects.Image[] = [];
@@ -129,13 +135,27 @@ export class MarioBrosScene extends BaseGameScene {
       .setColor('#fcfc00')
       .setDepth(1000);
 
+    // Attract / title-screen furniture (shown only on the front end).
+    this.panelGfx = this.add.graphics().setDepth(1500).setVisible(false);
+    this.titleText = this.add
+      .text(WIDTH / 2, 30, 'MARIO BROS', { ...TITLE_STYLE, fontSize: '20px' })
+      .setOrigin(0.5)
+      .setDepth(1600)
+      .setVisible(false);
+    this.promptText = this.add
+      .text(WIDTH / 2, 132, 'PRESS START', LABEL_STYLE)
+      .setOrigin(0.5)
+      .setDepth(1600)
+      .setVisible(false);
+
     this.flow = new StateMachine<MarioBrosScene>(this)
-      .add('select', { enter: () => this.enterSelect(), update: () => this.updateSelect() })
+      .add('attract', { enter: () => this.enterAttract(), update: (_c, dt) => this.updateAttract(dt) })
+      .add('modeselect', { enter: () => this.enterModeSelect(), update: (_c, dt) => this.updateModeSelect(dt) })
       .add('ready', { enter: () => this.enterReady(), update: (_c, dt) => this.updateReady(dt) })
       .add('phaseintro', { enter: () => this.enterPhaseIntro(), update: (_c, dt) => this.updatePhaseIntro(dt) })
       .add('playing', { update: (_c, dt) => this.updatePlaying(dt) })
       .add('gameover', { enter: () => this.enterGameOver() });
-    this.flow.transition('select');
+    this.flow.transition('attract');
   }
 
   protected updateGame(_time: number, delta: number): void {
@@ -144,31 +164,62 @@ export class MarioBrosScene extends BaseGameScene {
     this.flow.update(delta);
   }
 
-  // --- mode select --------------------------------------------------------
+  // --- attract / title ----------------------------------------------------
 
-  private enterSelect(): void {
+  private enterAttract(): void {
     this.powUses = 0;
     this.drawPow();
     this.clearEnemies();
+    this.demoSpawnTimer = 0;
+    this.demoKindIdx = 0;
+    this.blinkTimer = 0;
+    this.banner.setVisible(false);
+    this.phaseText.setText('');
+    this.panelGfx.setVisible(false);
+    this.titleText.setVisible(true);
+    this.promptText.setVisible(true);
+  }
+
+  private updateAttract(delta: number): void {
+    this.runDemo(delta);
+    this.blinkTimer += delta;
+    this.promptText.setVisible(Math.floor(this.blinkTimer / 400) % 2 === 0);
+    // SPACE / Z / gamepad A start (ENTER is the pause key, handled by the base).
+    if (this.controls.justPressed('confirm') || this.controls.justPressed('fire')) {
+      this.promptText.setVisible(false);
+      this.flow.transition('modeselect');
+    }
+  }
+
+  // --- mode select --------------------------------------------------------
+
+  private enterModeSelect(): void {
     this.selectIndex = 0;
-    this.banner.setText('MARIO BROS').setColor('#fcfc00').setVisible(true);
-    const baseY = HEIGHT / 2 - 6;
+    // A dark panel so the options read clearly over the busy demo level.
+    this.panelGfx.clear();
+    this.panelGfx.fillStyle(0x000000, 0.72);
+    this.panelGfx.fillRect(24, 86, WIDTH - 48, 96);
+    this.panelGfx.lineStyle(1, 0xffffff, 0.5);
+    this.panelGfx.strokeRect(24, 86, WIDTH - 48, 96);
+    this.panelGfx.setVisible(true);
+    const baseY = 104;
     this.selectGfx = MODES.map((m, i) =>
       this.add
-        .text(WIDTH / 2, baseY + i * 16, m.label, { ...LABEL_STYLE, fontSize: '10px' })
+        .text(WIDTH / 2, baseY + i * 18, m.label, { ...LABEL_STYLE, fontSize: '10px' })
         .setOrigin(0.5)
-        .setDepth(1500),
+        .setDepth(1600),
     );
     this.selectGfx.push(
       this.add
-        .text(WIDTH / 2, baseY + MODES.length * 16 + 8, 'UP/DOWN + JUMP TO SELECT', HINT_STYLE)
+        .text(WIDTH / 2, baseY + MODES.length * 18 + 6, 'UP / DOWN + JUMP', HINT_STYLE)
         .setOrigin(0.5)
-        .setDepth(1500),
+        .setDepth(1600),
     );
     this.refreshSelect();
   }
 
-  private updateSelect(): void {
+  private updateModeSelect(delta: number): void {
+    this.runDemo(delta);
     if (this.controls.justPressed('up')) {
       this.selectIndex = (this.selectIndex + MODES.length - 1) % MODES.length;
       this.refreshSelect();
@@ -179,6 +230,8 @@ export class MarioBrosScene extends BaseGameScene {
       this.mode = MODES[this.selectIndex].mode;
       this.selectGfx.forEach((t) => t.destroy());
       this.selectGfx = [];
+      this.panelGfx.setVisible(false);
+      this.titleText.setVisible(false);
       this.createPlayers();
       this.flow.transition('ready');
     }
@@ -187,8 +240,24 @@ export class MarioBrosScene extends BaseGameScene {
   private refreshSelect(): void {
     MODES.forEach((_, i) => {
       const on = i === this.selectIndex;
-      this.selectGfx[i].setColor(on ? '#ffffff' : '#888888').setText(`${on ? '> ' : '  '}${MODES[i].label}`);
+      this.selectGfx[i].setColor(on ? '#ffffff' : '#9a9a9a').setText(`${on ? '▸ ' : '  '}${MODES[i].label}`);
     });
+  }
+
+  /** Attract demo: every enemy type roams the level (no players, no scoring). */
+  private runDemo(delta: number): void {
+    for (const e of this.enemies) {
+      e.update(delta, this.floorSegments());
+    }
+    this.handleEnemyCollisions();
+    this.handleEnemyBounds();
+    this.demoSpawnTimer -= delta;
+    if (this.enemies.length < 5 && this.demoSpawnTimer <= 0) {
+      const kinds = [KINDS.turtle, KINDS.crab, KINDS.fly];
+      this.spawnEnemy(kinds[this.demoKindIdx % kinds.length]);
+      this.demoKindIdx += 1;
+      this.demoSpawnTimer = 850;
+    }
   }
 
   private createPlayers(): void {
