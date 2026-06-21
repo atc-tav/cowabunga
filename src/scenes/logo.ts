@@ -162,13 +162,16 @@ function outlineGlyph(rows: string[]): string[] {
 
 /** Draw the full logo centered on `cx`, starting at `topY`. */
 export function drawCowabungaLogo(scene: Phaser.Scene, cx: number, topY: number): void {
-  drawBanner(scene, cx, topY);
-  drawWordmark(scene, cx, topY + 24);
+  const bannerH = drawBanner(scene, cx, topY);
+  // Let the wordmark tuck up slightly under the banner (its black outline keeps
+  // it legible over the red), like the reference.
+  drawWordmark(scene, cx, topY + bannerH - 3);
 }
 
-function drawBanner(scene: Phaser.Scene, cx: number, topY: number): void {
-  const bannerW = 196;
-  const bannerH = 20;
+/** Returns the banner height so the wordmark can be placed just beneath it. */
+function drawBanner(scene: Phaser.Scene, cx: number, topY: number): number {
+  const bannerW = 200;
+  const bannerH = 16;
   const inset = 9;
   const left = cx - bannerW / 2;
   const g = scene.add.graphics().setDepth(20);
@@ -188,49 +191,52 @@ function drawBanner(scene: Phaser.Scene, cx: number, topY: number): void {
   scene.add
     .text(cx, topY + bannerH / 2, 'CLASSIC ARCADE GAMES', {
       fontFamily: 'monospace',
-      fontSize: '11px',
+      fontSize: '13px',
       fontStyle: 'bold',
       color: '#ffffff',
     })
     .setOrigin(0.5)
     .setDepth(21);
+
+  return bannerH;
 }
 
 function drawWordmark(scene: Phaser.Scene, cx: number, topY: number): void {
   const word = 'COWABUNGA';
   const palette = { '#': GREEN, c: GREEN_CRACK, K: OUTLINE };
-  const gap = PX;
 
-  const widths: number[] = [];
-  let totalW = 0;
-  for (const ch of word) {
-    const key = `logo_${ch}`;
-    const rows = outlineGlyph(GLYPHS[ch]);
-    drawPixelArt(scene, key, rows, palette, PX);
-    const w = rows[0].length * PX;
-    widths.push(w);
-    totalW += w + gap;
-  }
-  totalW -= gap;
+  // All glyphs share the same outlined footprint (8 body + 1px outline each
+  // side = 10 cols). Scale the whole wordmark up to roughly fill the width.
+  const cols = 10;
+  const baseW = cols * PX;
+  const naturalW = word.length * baseW + (word.length - 1) * PX;
+  const scale = Math.min(1.35, 224 / naturalW);
+  const letterW = baseW * scale;
+  const gap = PX * scale;
+  const totalW = word.length * letterW + (word.length - 1) * gap;
 
   const mid = (word.length - 1) / 2;
-  const archDepth = 9;
+  const archDepth = 9 * scale;
   let x = cx - totalW / 2;
   for (let i = 0; i < word.length; i++) {
-    // Valley curve: ends ride high, middle dips low (a smile).
-    const arch = Math.round(archDepth * (1 - ((i - mid) / mid) ** 2));
+    // Arch (frown): middle rides high, ends sweep down — like the reference.
+    const arch = Math.round(archDepth * ((i - mid) / mid) ** 2);
+    const key = `logo_${word[i]}`;
+    drawPixelArt(scene, key, outlineGlyph(GLYPHS[word[i]]), palette, PX);
     scene.add
-      .image(x, topY + arch, `logo_${word[i]}`)
+      .image(x, topY + arch, key)
       .setOrigin(0, 0)
+      .setScale(scale)
       .setDepth(20);
-    x += widths[i] + gap;
+    x += letterW + gap;
   }
 
   // Sparkle stars around the wordmark (one left, two right), like the artwork.
   drawPixelArt(scene, 'logo_star', STAR, { '#': 0xfcfc00 }, 1);
-  const place = (sx: number, sy: number, scale: number) =>
-    scene.add.image(sx, sy, 'logo_star').setOrigin(0.5).setScale(scale).setDepth(21);
-  place(cx - totalW / 2 - 4, topY + 6, 1.4);
-  place(cx + totalW / 2 + 6, topY - 2, 1.7);
-  place(cx + totalW / 2 + 2, topY + 22, 1.1);
+  const place = (sx: number, sy: number, s: number) =>
+    scene.add.image(sx, sy, 'logo_star').setOrigin(0.5).setScale(s).setDepth(21);
+  place(cx - totalW / 2 - 1, topY + 12, 1.3);
+  place(cx + totalW / 2 + 2, topY - 1, 1.6);
+  place(cx + totalW / 2 - 1, topY + 25, 1.0);
 }
+
