@@ -79,6 +79,14 @@ export const ICICLE_FULL_MS = 500; // hangs full for a beat before it drops
 export const ICICLE_SPAWN_MS = 1700; // gap between new icicles forming
 export const ICICLE_MAX = 3; // concurrent icicles in an icicle phase
 
+// Bonus phases: no enemies — grab all the coins before the clock runs out.
+export const COIN_W = 6;
+export const COIN_H = 6;
+export const COIN_SCORE = 300; // per coin
+export const BONUS_TIME_MS = 20000; // 20 seconds to collect them all
+export const BONUS_COMPLETE_FIRST = 3000; // grabbing every coin (first time)
+export const BONUS_COMPLETE_REPEAT = 5000; // ...and on later bonus phases
+
 export const STOMP_BOUNCE = 160; // Mario's hop after a stomp
 export const ENEMY_TARGET = 2; // baseline number on the board at once
 export const ENEMY_LAST_MULT = 2.0; // the final enemy of a phase turns blue & super-fast

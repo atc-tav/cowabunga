@@ -15,15 +15,19 @@ export interface PhaseDef {
   slipice?: boolean;
   /** Icicles form on the top platform's underside and drop. */
   icicles?: boolean;
+  /** Coin-collection bonus phase: no enemies, beat the clock. */
+  bonus?: boolean;
 }
 
 export const PHASES: PhaseDef[] = [
   { roster: ['turtle', 'turtle', 'turtle'] },
   { roster: ['turtle', 'turtle', 'turtle', 'turtle', 'turtle'] },
+  { roster: [], bonus: true },
   { roster: ['crab', 'crab', 'crab', 'crab'] },
   { roster: ['turtle', 'turtle', 'crab', 'crab', 'crab', 'crab'] },
   { roster: ['fly', 'fly', 'fly', 'fly'] },
   { roster: ['fly', 'fly', 'fly', 'crab', 'crab'] },
+  { roster: [], bonus: true },
   { roster: ['turtle', 'turtle', 'turtle', 'turtle', 'fly'], slipice: true },
   { roster: ['crab', 'crab', 'crab', 'crab', 'fly'], slipice: true },
   { roster: ['crab', 'crab', 'fly', 'fly'], slipice: true, icicles: true },

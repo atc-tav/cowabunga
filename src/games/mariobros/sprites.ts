@@ -238,6 +238,16 @@ const ICICLE_3: string[] = [
   '      ',
 ];
 
+// Bonus coin (6x6). Y=gold, W=highlight.
+const COIN: string[] = [
+  ' YYYY ',
+  'YYWWYY',
+  'YWWYYY',
+  'YYYWWY',
+  'YYWWYY',
+  ' YYYY ',
+];
+
 export const TX = {
   marioRun0: 'mb-mario-0',
   marioRun1: 'mb-mario-1',
@@ -259,6 +269,7 @@ export const TX = {
   icicleForm0: 'mb-icicle-0',
   icicleForm1: 'mb-icicle-1',
   icicleForm2: 'mb-icicle-2',
+  coin: 'mb-coin',
 } as const;
 
 export function buildMarioBrosTextures(scene: Phaser.Scene): void {
@@ -312,4 +323,6 @@ export function buildMarioBrosTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, TX.icicleForm0, ICICLE_1, icePal);
   drawPixelArt(scene, TX.icicleForm1, ICICLE_2, icePal);
   drawPixelArt(scene, TX.icicleForm2, ICICLE_3, icePal);
+
+  drawPixelArt(scene, TX.coin, COIN, { Y: COLORS.coin, W: COLORS.coinHi });
 }

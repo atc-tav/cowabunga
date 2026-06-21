@@ -36,6 +36,10 @@ import {
   ICE_FRICTION_SCALE,
   ICICLE_SPAWN_MS,
   ICICLE_MAX,
+  COIN_SCORE,
+  BONUS_TIME_MS,
+  BONUS_COMPLETE_FIRST,
+  BONUS_COMPLETE_REPEAT,
 } from './constants';
 import { COLORS } from './palette';
 import { buildMarioBrosTextures, TX } from './sprites';
@@ -48,6 +52,7 @@ import {
   topPipeSpawns,
   bottomPipeZones,
   icicleAnchors,
+  bonusCoinSpots,
 } from './levels';
 import { Enemy, EnemyKind, EnemyKindId, KINDS } from './enemies';
 import { Slipice } from './slipice';
@@ -115,6 +120,9 @@ export class MarioBrosScene extends BaseGameScene {
   private slipiceCount = 0;
   private readonly icicles: Icicle[] = [];
   private icicleSpawnTimer = 0;
+  private readonly coins: Phaser.GameObjects.Image[] = [];
+  private bonusTimer = 0;
+  private bonusCompletions = 0;
 
   private powUses = POW_USES;
   private powSeg!: PlatformSegment;
@@ -177,6 +185,7 @@ export class MarioBrosScene extends BaseGameScene {
       .add('modeselect', { enter: () => this.enterModeSelect(), update: (_c, dt) => this.updateModeSelect(dt) })
       .add('ready', { enter: () => this.enterReady(), update: (_c, dt) => this.updateReady(dt) })
       .add('phaseintro', { enter: () => this.enterPhaseIntro(), update: (_c, dt) => this.updatePhaseIntro(dt) })
+      .add('bonus', { enter: () => this.enterBonus(), update: (_c, dt) => this.updateBonus(dt) })
       .add('playing', { update: (_c, dt) => this.updatePlaying(dt) })
       .add('gameover', { enter: () => this.enterGameOver() });
     this.flow.transition('attract');
@@ -196,6 +205,7 @@ export class MarioBrosScene extends BaseGameScene {
     this.clearEnemies();
     this.clearSlipices();
     this.clearIcicles();
+    this.clearCoins();
     this.demoSpawnTimer = 0;
     this.demoKindIdx = 0;
     this.blinkTimer = 0;
@@ -340,7 +350,8 @@ export class MarioBrosScene extends BaseGameScene {
       this.loopCount += 1;
     }
     this.startPhase(this.phaseIndex);
-    this.banner.setText(`PHASE ${this.phaseNumber()}`).setColor('#fcfc00').setVisible(true);
+    const bonus = PHASES[this.phaseIndex].bonus;
+    this.banner.setText(bonus ? 'BONUS PHASE' : `PHASE ${this.phaseNumber()}`).setColor('#fcfc00').setVisible(true);
     this.phaseTimer = PHASE_INTRO_MS;
   }
 
@@ -348,7 +359,7 @@ export class MarioBrosScene extends BaseGameScene {
     this.phaseTimer -= delta;
     if (this.phaseTimer <= 0) {
       this.banner.setVisible(false);
-      this.flow.transition('playing');
+      this.flow.transition(PHASES[this.phaseIndex].bonus ? 'bonus' : 'playing');
     }
   }
 
@@ -362,6 +373,7 @@ export class MarioBrosScene extends BaseGameScene {
     this.clearEnemies();
     this.clearSlipices();
     this.clearIcicles();
+    this.clearCoins();
     this.floors.forEach((f) => (f.iced = false));
     this.drawPlatforms();
     this.spawnQueue = Phaser.Utils.Array.Shuffle([...PHASES[index].roster]);
@@ -370,9 +382,66 @@ export class MarioBrosScene extends BaseGameScene {
     this.slipiceCount = 0;
     this.slipiceSpawnTimer = SLIPICE_SPAWN_MS;
     this.icicleSpawnTimer = ICICLE_SPAWN_MS;
-    this.powUses = POW_USES;
+    this.powUses = PHASES[index].bonus ? 0 : POW_USES; // no POW in bonus phases
     this.drawPow();
     this.phaseText.setText(`PHASE ${this.phaseNumber()}`);
+  }
+
+  // --- bonus phase --------------------------------------------------------
+
+  private enterBonus(): void {
+    this.bonusTimer = BONUS_TIME_MS;
+    this.players.forEach((p) => p.placeAtStart());
+    for (const spot of bonusCoinSpots()) {
+      this.coins.push(this.add.image(spot.x, spot.y, TX.coin).setDepth(8));
+    }
+  }
+
+  private updateBonus(delta: number): void {
+    this.bonusTimer = Math.max(0, this.bonusTimer - delta);
+    this.players.forEach((p) => {
+      p.update(delta, this.playerFloors(), this.iceScaleFor(p));
+      if (p.alive) {
+        this.collectCoins(p);
+      }
+    });
+    this.phaseText.setText(`BONUS  ${Math.ceil(this.bonusTimer / 1000)}`);
+    this.refreshHud();
+
+    if (this.coins.length === 0 || this.bonusTimer <= 0) {
+      this.phaseText.setText('');
+      this.flow.transition('phaseintro');
+    }
+  }
+
+  private collectCoins(p: Player): void {
+    const mb = p.getBounds();
+    for (let i = this.coins.length - 1; i >= 0; i--) {
+      const coin = this.coins[i];
+      if (!Phaser.Geom.Intersects.RectangleToRectangle(mb, coin.getBounds())) {
+        continue;
+      }
+      p.score += COIN_SCORE;
+      this.addScore(COIN_SCORE);
+      floatingText(this, coin.x, coin.y, String(COIN_SCORE), { color: p.color, fontSize: '8px' });
+      coin.destroy();
+      this.coins.splice(i, 1);
+      if (this.coins.length === 0) {
+        // grabbed them all: completion bonus to the finisher
+        const reward = this.bonusCompletions === 0 ? BONUS_COMPLETE_FIRST : BONUS_COMPLETE_REPEAT;
+        this.bonusCompletions += 1;
+        p.score += reward;
+        this.addScore(reward);
+        floatingText(this, p.body.x, p.body.y - 10, `${reward}!`, { color: p.color, fontSize: '10px' });
+      }
+    }
+  }
+
+  private clearCoins(): void {
+    for (const coin of this.coins) {
+      coin.destroy();
+    }
+    this.coins.length = 0;
   }
 
   private updatePlaying(delta: number): void {
