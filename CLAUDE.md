@@ -78,6 +78,13 @@ exercises the whole foundation. Remove or keep as a harness as you like.
 Build order for the games themselves: **Pac-Man → Galaga → Donkey Kong →
 Mario Bros. → Dig Dug**, each one slice at a time.
 
+**Scrolling games** (camera-scrolling platformer/adventure — e.g. Super Mario
+Bros. 2, Kirby's Adventure) build on the **`src/shared/world/`** foundation:
+ASCII-tile levels (`parseAsciiLevel`), swept tile collision (`TileBody`),
+scrolling camera (`WorldCamera`), and a baked tile layer (`renderTileLayer`).
+Read [`src/shared/world/README.md`](src/shared/world/README.md) and compose on
+it **before** writing your own camera or tile collision.
+
 ## Code standards
 
 - TypeScript strict; no `any`.
