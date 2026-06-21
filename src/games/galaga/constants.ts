@@ -71,7 +71,9 @@ export const READY_MS = 1500;
 export const DEATH_PAUSE_MS = 1100;
 export const GAMEOVER_MS = 2500;
 
-export const DUAL_OFFSET = 14; // gap between the two ships of a dual fighter
+// Dual-fighter ships sit exactly one formation column apart, so the twin shots
+// line up with two adjacent enemies (the whole point of doubling up).
+export const DUAL_OFFSET = FORM_COL_GAP;
 export const RESCUE_FLY_MS = 1000; // captive's fly-down (match the capture length)
 export const INVULN_MS = 1000; // brief i-frames after losing a wingman
 export const DIVE_GRACE_MS = 800; // breathing space before diving starts each stage

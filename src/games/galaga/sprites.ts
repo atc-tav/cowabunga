@@ -3,18 +3,23 @@ import { drawPixelArt } from '../../shared/textures';
 import { COLORS } from './palette';
 import { EnemyType } from './constants';
 
-// Player fighter (11x10). W = hull, R = cockpit.
+// Player fighter (13x14). F = hull (white), C = cockpit (cyan),
+// R = swept wing (red), E = engine glow.
 const SHIP_ART: string[] = [
-  '     W     ',
-  '    WWW    ',
-  '    WRW    ',
-  '   WWWWW   ',
-  '  WWWWWWW  ',
-  ' WWWWWWWWW ',
-  'WWWWWWWWWWW',
-  'WWW WWW WWW',
-  ' W  WWW  W ',
-  '    W W    ',
+  '      F      ',
+  '      F      ',
+  '     FFF     ',
+  '     FCF     ',
+  '     FFF     ',
+  '    FFFFF    ',
+  '    FFFFF    ',
+  '  RRFFFFFRR  ',
+  ' RRRFFFFFRRR ',
+  'RRRRFFFFFRRRR',
+  'RRR FFFFF RRR',
+  '   FFFFFFF   ',
+  '   FFF FFF   ',
+  '   E     E   ',
 ];
 
 // Player bolt (2x4).
@@ -32,74 +37,98 @@ const ENEMY_BULLET_ART: string[] = [
 // A single star — a short vertical streak, tinted per parallax tier.
 const STAR_ART: string[] = ['W', 'W'];
 
-// --- enemies (10x8, two wing frames each) -------------------------------
-// Y=body, B=wing, W=eye for the bee; R=wing, Y=body for the butterfly; etc.
-
+// --- enemies (two wing-flap frames each) --------------------------------
+// Bee (Zako, 13x11): Y=body (yellow), B=wing (blue), W=eye.
 const BEE_A: string[] = [
-  ' B      B ',
-  ' BB    BB ',
-  '  BWYYWB  ',
-  '  BYYYYB  ',
-  '  BYYYYB  ',
-  '   YYYY   ',
-  '   Y  Y   ',
-  '          ',
+  '  B       B  ',
+  ' BBB     BBB ',
+  ' BBBBB BBBBB ',
+  '  BBYYYYYBB  ',
+  '  BYWYYYWYB  ',
+  '  BYYYYYYYB  ',
+  '   YYYYYYY   ',
+  '   YYYYYYY   ',
+  '   YY Y YY   ',
+  '    Y   Y    ',
+  '             ',
 ];
 const BEE_B: string[] = [
-  '          ',
-  '  B    B  ',
-  ' BBWYYWBB ',
-  '  BYYYYB  ',
-  '  BYYYYB  ',
-  '   YYYY   ',
-  '   Y  Y   ',
-  '          ',
+  '             ',
+  '   BB   BB   ',
+  '  BBBB BBBB  ',
+  '  BBYYYYYBB  ',
+  '  BYWYYYWYB  ',
+  '  BYYYYYYYB  ',
+  '   YYYYYYY   ',
+  '   YYYYYYY   ',
+  '   YY Y YY   ',
+  '    Y   Y    ',
+  '             ',
 ];
 
+// Butterfly (Goei, 13x12): R=wing (red), Y=body (peach), W=eye.
 const BUTTERFLY_A: string[] = [
-  'R        R',
-  'RR  YY  RR',
-  ' RRYWWYRR ',
-  '  RYYYYR  ',
-  '  RYYYYR  ',
-  '   YYYY   ',
-  '   R  R   ',
-  '          ',
+  'R    YYY    R',
+  'RR   YYY   RR',
+  'RRR YWYWY RRR',
+  'RRRRYYYYYRRRR',
+  'RRRRYYYYYRRRR',
+  ' RRRYYYYYRRR ',
+  '  RRYYYYYRR  ',
+  '   RYYYYYR   ',
+  '    YYYYY    ',
+  '    Y Y Y    ',
+  '    Y   Y    ',
+  '             ',
 ];
 const BUTTERFLY_B: string[] = [
-  '          ',
-  ' RR YY RR ',
-  'RRRYWWYRRR',
-  '  RYYYYR  ',
-  '  RYYYYR  ',
-  '   YYYY   ',
-  '   R  R   ',
-  '          ',
+  'RR   YYY   RR',
+  'RRR  YYY  RRR',
+  'RRRRYWYWYRRRR',
+  ' RRRYYYYYRRR ',
+  ' RRRYYYYYRRR ',
+  '  RRYYYYYRR  ',
+  '  RRYYYYYRR  ',
+  '   RYYYYYR   ',
+  '    YYYYY    ',
+  '    Y Y Y    ',
+  '    Y   Y    ',
+  '             ',
 ];
 
+// Boss Galaga (15x14): G=body (green), B=wing (blue), Y=crown (yellow),
+// W=eye, A=accent band (red).
 const BOSS_A: string[] = [
-  '    YYYY    ',
-  '   GGGGGG   ',
-  '  GGWGGWGG  ',
-  '  GGGGGGGG  ',
-  ' BGGGGGGGGB ',
-  'BBGGGGGGGGBB',
-  'BB GGGGGG BB',
-  '    GGGG    ',
-  '   G    G   ',
-  '            ',
+  '     YYYYY     ',
+  '    GGGGGGG    ',
+  '   GGWGGGWGG   ',
+  '   GGGGGGGGG   ',
+  '  GAAAAAAAAAG  ',
+  '  GGGGGGGGGGG  ',
+  ' BBGGGGGGGGGBB ',
+  'BBBGGGGGGGGGBBB',
+  'BBBGGGGGGGGGBBB',
+  ' BBGGGGGGGGGBB ',
+  '  GGGGGGGGGGG  ',
+  '   GGGG GGGG   ',
+  '   GG     GG   ',
+  '               ',
 ];
 const BOSS_B: string[] = [
-  '    YYYY    ',
-  '   GGGGGG   ',
-  '  GGWGGWGG  ',
-  'B GGGGGGGG B',
-  'BBGGGGGGGGBB',
-  ' BGGGGGGGGB ',
-  '   GGGGGG   ',
-  '    GGGG    ',
-  '   G    G   ',
-  '            ',
+  '     YYYYY     ',
+  '    GGGGGGG    ',
+  '   GGWGGGWGG   ',
+  '   GGGGGGGGG   ',
+  '  GAAAAAAAAAG  ',
+  'BB GGGGGGGGG BB',
+  'BBBGGGGGGGGGBBB',
+  ' BBGGGGGGGGGBB ',
+  '  GGGGGGGGGGG  ',
+  '  GGGGGGGGGGG  ',
+  '   GGGG GGGG   ',
+  '   GG     GG   ',
+  '               ',
+  '               ',
 ];
 
 export const EXPLOSION_KEYS = [
@@ -122,7 +151,12 @@ export const TX = {
 } as const;
 
 export function buildGalagaTextures(scene: Phaser.Scene): void {
-  drawPixelArt(scene, TX.ship, SHIP_ART, { W: COLORS.ship, R: COLORS.cockpit });
+  drawPixelArt(scene, TX.ship, SHIP_ART, {
+    F: COLORS.ship,
+    C: COLORS.shipTrim,
+    R: COLORS.cockpit,
+    E: COLORS.engine,
+  });
   drawPixelArt(scene, TX.bullet, BULLET_ART, { Y: COLORS.bullet });
   drawPixelArt(scene, TX.enemyBullet, ENEMY_BULLET_ART, { M: COLORS.enemyBullet, W: 0xffffff });
   drawPixelArt(scene, TX.star, STAR_ART, { W: 0xffffff });
@@ -135,7 +169,13 @@ export function buildGalagaTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, enemyFrame('butterfly', 0), BUTTERFLY_A, butterflyPal);
   drawPixelArt(scene, enemyFrame('butterfly', 1), BUTTERFLY_B, butterflyPal);
 
-  const bossPal = { G: COLORS.bossBody, B: COLORS.bossWing, Y: COLORS.bossCrown, W: COLORS.eye };
+  const bossPal = {
+    G: COLORS.bossBody,
+    B: COLORS.bossWing,
+    Y: COLORS.bossCrown,
+    W: COLORS.eye,
+    A: COLORS.bossAccent,
+  };
   drawPixelArt(scene, enemyFrame('boss', 0), BOSS_A, bossPal);
   drawPixelArt(scene, enemyFrame('boss', 1), BOSS_B, bossPal);
 
