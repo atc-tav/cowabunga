@@ -4,6 +4,7 @@ import { GalagaScene } from './games/galaga/GalagaScene';
 import { DKScene } from './games/donkeykong/DKScene';
 import { MarioBrosScene } from './games/mariobros/MarioBrosScene';
 import { ArkanoidScene } from './games/arkanoid/ArkanoidScene';
+import { SuperMario2Scene } from './games/supermario2/SuperMario2Scene';
 import { PrivacyPolicyScene } from './games/privacypolicy/PrivacyPolicyScene';
 import { SandboxScene } from './games/sandbox/SandboxScene';
 
@@ -66,6 +67,13 @@ export const GAMES: GameEntry[] = [
     key: 'game-arkanoid',
     resolution: { width: 224, height: 256 },
     SceneClass: ArkanoidScene,
+  },
+  {
+    id: 'supermario2',
+    title: 'SUPER MARIO 2',
+    key: 'game-supermario2',
+    resolution: { width: 256, height: 224 },
+    SceneClass: SuperMario2Scene,
   },
   {
     id: 'privacypolicy',
