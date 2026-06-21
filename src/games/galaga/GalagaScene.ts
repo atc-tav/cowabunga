@@ -61,9 +61,13 @@ import {
   DIVE_GRACE_MS,
   ENEMY_SCORE,
   EnemyType,
+  MAX_LIVES,
+  EXTRA_LIFE_FIRST,
+  EXTRA_LIFE_REPEAT,
+  EXTRA_LIFE_MAX_SCORE,
 } from './constants';
 import { COLORS } from './palette';
-import { buildGalagaTextures, enemyFrame, EXPLOSION_KEYS, TX } from './sprites';
+import { buildGalagaTextures, enemyFrame, EXPLOSION_KEYS, TX, BOSS_HIT_KEY } from './sprites';
 import { Starfield } from './starfield';
 import { buildFormation, Enemy } from './enemies';
 import { makeEntryPath, makeDivePath, makeApproachPath, makeChallengePath } from './entryPaths';
@@ -102,6 +106,7 @@ export class GalagaScene extends BaseGameScene {
 
   // wave / difficulty
   private wave = 1;
+  private nextExtraLife: number = EXTRA_LIFE_FIRST;
   private isChallenge = false;
   private challengeChains: ChainSpec[] = [];
   private challengeClock = 0;
@@ -164,6 +169,7 @@ export class GalagaScene extends BaseGameScene {
     this.player = this.add.image(WIDTH / 2, PLAYER_Y, TX.ship).setDepth(10);
 
     this.lives = new LivesManager(LIVES_START);
+    this.nextExtraLife = EXTRA_LIFE_FIRST;
     this.refreshLives();
 
     this.banner = this.add
@@ -191,6 +197,24 @@ export class GalagaScene extends BaseGameScene {
   protected updateGame(_time: number, delta: number): void {
     this.stars.update(delta);
     this.flow.update(delta);
+    this.checkExtraLife();
+  }
+
+  /** Award a bonus fighter at 20k, then every 70k, capped (Section 10.4). */
+  private checkExtraLife(): void {
+    while (
+      this.scores.score >= this.nextExtraLife &&
+      this.nextExtraLife <= EXTRA_LIFE_MAX_SCORE &&
+      this.lives.count < MAX_LIVES
+    ) {
+      this.lives.gain(1);
+      this.refreshLives();
+      this.audio.play('extend');
+      this.nextExtraLife =
+        this.nextExtraLife === EXTRA_LIFE_FIRST
+          ? EXTRA_LIFE_REPEAT
+          : this.nextExtraLife + EXTRA_LIFE_REPEAT;
+    }
   }
 
   // --- waves --------------------------------------------------------------
@@ -371,6 +395,9 @@ export class GalagaScene extends BaseGameScene {
         sprite,
         type: spec.type,
         points: ENEMY_SCORE[spec.type],
+        attackPoints: ENEMY_SCORE[spec.type],
+        hits: 1,
+        damaged: false,
         home: { x: path[0].x, y: path[0].y },
         follower: new PathFollower(path, CHALLENGE_SPEED),
         startDelay: i * CHAIN_STAGGER_MS,
@@ -667,8 +694,18 @@ export class GalagaScene extends BaseGameScene {
     this.flapTimer = 0;
     this.flapFrame = this.flapFrame === 0 ? 1 : 0;
     for (const enemy of this.enemies) {
+      // A damaged Boss keeps its red texture instead of flapping.
+      if (enemy.type === 'boss' && enemy.damaged) {
+        enemy.sprite.setTexture(BOSS_HIT_KEY);
+        continue;
+      }
       enemy.sprite.setTexture(enemyFrame(enemy.type, this.flapFrame));
     }
+  }
+
+  /** Points for shooting an enemy: lower when seated, higher when attacking. */
+  private scoreFor(enemy: Enemy): number {
+    return enemy.state === 'formed' ? enemy.points : enemy.attackPoints;
   }
 
   private scheduleDives(delta: number): void {
@@ -928,9 +965,20 @@ export class GalagaScene extends BaseGameScene {
         if (!Phaser.Geom.Intersects.RectangleToRectangle(bounds, enemy.sprite.getBounds())) {
           continue;
         }
+        // Boss Galaga survives its first hit — turns red, keeps full value.
+        enemy.hits--;
+        if (enemy.hits > 0) {
+          enemy.damaged = true;
+          enemy.sprite.setTexture(BOSS_HIT_KEY);
+          this.audio.play('hit');
+          bullet.destroy();
+          this.bullets.splice(b, 1);
+          consumed = true;
+          break;
+        }
         const { x, y } = enemy.sprite;
         playFrames(this, x, y, EXPLOSION_KEYS, EXPLOSION_FRAME_MS);
-        this.popScore(x, y, enemy.points, { color: '#ffffff', fontSize: '8px' });
+        this.popScore(x, y, this.scoreFor(enemy), { color: '#ffffff', fontSize: '8px' });
         this.audio.play('explosion');
         if (this.isChallenge) {
           this.challengeHits++;
@@ -982,7 +1030,10 @@ export class GalagaScene extends BaseGameScene {
 
   private refreshLives(): void {
     this.destroyAll(this.lifeIcons);
-    for (let i = 0; i < this.lives.count; i++) {
+    // Show one icon per reserve fighter, capped so a big stockpile can't run
+    // off the edge of the HUD.
+    const shown = Math.min(this.lives.count, 8);
+    for (let i = 0; i < shown; i++) {
       this.lifeIcons.push(
         this.add.image(10 + i * 14, HEIGHT - 8, TX.ship).setScale(0.7).setDepth(1000),
       );
