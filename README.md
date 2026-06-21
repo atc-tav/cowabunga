@@ -1,3 +1,5 @@
+<img width="1518" height="790" alt="cowabunga" src="https://github.com/user-attachments/assets/82ca2ac6-cfc9-493e-ba2b-e8ce97442d4a" />
+
 # cowabunga
 classic arcade games built with claude code web and phaser. sent from my iphone
 
