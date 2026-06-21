@@ -4,6 +4,7 @@ import { GalagaScene } from './games/galaga/GalagaScene';
 import { DKScene } from './games/donkeykong/DKScene';
 import { MarioBrosScene } from './games/mariobros/MarioBrosScene';
 import { ArkanoidScene } from './games/arkanoid/ArkanoidScene';
+import { PrivacyPolicyScene } from './games/privacypolicy/PrivacyPolicyScene';
 import { SandboxScene } from './games/sandbox/SandboxScene';
 
 export interface GameResolution {
@@ -65,6 +66,14 @@ export const GAMES: GameEntry[] = [
     key: 'game-arkanoid',
     resolution: { width: 224, height: 256 },
     SceneClass: ArkanoidScene,
+  },
+  {
+    id: 'privacypolicy',
+    title: 'PRIVACY POLICY',
+    key: 'game-privacypolicy',
+    resolution: { width: 224, height: 288 },
+    SceneClass: PrivacyPolicyScene,
+    // Easter egg — visible for now; we'll hide it once it's dialed in.
   },
   {
     id: 'sandbox',
