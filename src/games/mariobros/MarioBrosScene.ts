@@ -34,12 +34,24 @@ import {
   SLIPICE_SPAWN_MS,
   SLIPICE_PER_PHASE,
   ICE_FRICTION_SCALE,
+  ICICLE_SPAWN_MS,
+  ICICLE_MAX,
 } from './constants';
 import { COLORS } from './palette';
 import { buildMarioBrosTextures, TX } from './sprites';
-import { FLOORS, PIPES, POW, MARIO_START, LUIGI_START, topPipeSpawns, bottomPipeZones } from './levels';
+import {
+  FLOORS,
+  PIPES,
+  POW,
+  MARIO_START,
+  LUIGI_START,
+  topPipeSpawns,
+  bottomPipeZones,
+  icicleAnchors,
+} from './levels';
 import { Enemy, EnemyKind, EnemyKindId, KINDS } from './enemies';
 import { Slipice } from './slipice';
+import { Icicle } from './icicle';
 import { PHASES } from './phases';
 import { Player } from './player';
 
@@ -101,6 +113,8 @@ export class MarioBrosScene extends BaseGameScene {
   private readonly slipices: Slipice[] = [];
   private slipiceSpawnTimer = 0;
   private slipiceCount = 0;
+  private readonly icicles: Icicle[] = [];
+  private icicleSpawnTimer = 0;
 
   private powUses = POW_USES;
   private powSeg!: PlatformSegment;
@@ -181,6 +195,7 @@ export class MarioBrosScene extends BaseGameScene {
     this.drawPow();
     this.clearEnemies();
     this.clearSlipices();
+    this.clearIcicles();
     this.demoSpawnTimer = 0;
     this.demoKindIdx = 0;
     this.blinkTimer = 0;
@@ -346,6 +361,7 @@ export class MarioBrosScene extends BaseGameScene {
   private startPhase(index: number): void {
     this.clearEnemies();
     this.clearSlipices();
+    this.clearIcicles();
     this.floors.forEach((f) => (f.iced = false));
     this.drawPlatforms();
     this.spawnQueue = Phaser.Utils.Array.Shuffle([...PHASES[index].roster]);
@@ -353,6 +369,7 @@ export class MarioBrosScene extends BaseGameScene {
     this.pipeToggle = 0;
     this.slipiceCount = 0;
     this.slipiceSpawnTimer = SLIPICE_SPAWN_MS;
+    this.icicleSpawnTimer = ICICLE_SPAWN_MS;
     this.powUses = POW_USES;
     this.drawPow();
     this.phaseText.setText(`PHASE ${this.phaseNumber()}`);
@@ -378,10 +395,11 @@ export class MarioBrosScene extends BaseGameScene {
     this.handleEnemyBounds();
     this.spawnFromQueue(delta);
     this.updateSlipice(delta);
+    this.updateIcicles(delta);
 
     this.players.forEach((p, i) => {
       p.tickCombo(delta);
-      if (p.alive && !p.safe && (this.resolveEnemyContact(p, i) || this.touchedSlipice(p))) {
+      if (p.alive && !p.safe && (this.resolveEnemyContact(p, i) || this.touchedSlipice(p) || this.touchedIcicle(p))) {
         p.die();
       }
     });
@@ -656,6 +674,52 @@ export class MarioBrosScene extends BaseGameScene {
       s.sprite.destroy();
     }
     this.slipices.length = 0;
+  }
+
+  // --- icicles ------------------------------------------------------------
+
+  private updateIcicles(delta: number): void {
+    const phase = PHASES[this.phaseIndex];
+    if (phase.icicles && this.icicles.length < ICICLE_MAX) {
+      this.icicleSpawnTimer -= delta;
+      if (this.icicleSpawnTimer <= 0) {
+        this.spawnIcicle();
+        this.icicleSpawnTimer = ICICLE_SPAWN_MS;
+      }
+    }
+    for (let i = this.icicles.length - 1; i >= 0; i--) {
+      const ic = this.icicles[i];
+      ic.update(delta, this.groundSeg.y1);
+      if (ic.done) {
+        this.shatter(ic.sprite.x, ic.sprite.y);
+        ic.sprite.destroy();
+        this.icicles.splice(i, 1);
+      }
+    }
+  }
+
+  private spawnIcicle(): void {
+    const taken = new Set(this.icicles.map((ic) => ic.anchorX));
+    const free = icicleAnchors().filter((a) => !taken.has(a.x));
+    if (free.length === 0) {
+      return;
+    }
+    const a = Phaser.Utils.Array.GetRandom(free);
+    this.icicles.push(new Icicle(this, a.x, a.y));
+  }
+
+  private touchedIcicle(p: Player): boolean {
+    const mb = p.getBounds();
+    return this.icicles.some(
+      (ic) => ic.lethal && Phaser.Geom.Intersects.RectangleToRectangle(mb, ic.sprite.getBounds()),
+    );
+  }
+
+  private clearIcicles(): void {
+    for (const ic of this.icicles) {
+      ic.sprite.destroy();
+    }
+    this.icicles.length = 0;
   }
 
   // --- POW block ----------------------------------------------------------

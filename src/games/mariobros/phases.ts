@@ -13,6 +13,8 @@ export interface PhaseDef {
   roster: EnemyKindId[];
   /** Slipice (Freezie) prowls this phase, icing platforms. */
   slipice?: boolean;
+  /** Icicles form on the top platform's underside and drop. */
+  icicles?: boolean;
 }
 
 export const PHASES: PhaseDef[] = [
@@ -24,4 +26,5 @@ export const PHASES: PhaseDef[] = [
   { roster: ['fly', 'fly', 'fly', 'crab', 'crab'] },
   { roster: ['turtle', 'turtle', 'turtle', 'turtle', 'fly'], slipice: true },
   { roster: ['crab', 'crab', 'crab', 'crab', 'fly'], slipice: true },
+  { roster: ['crab', 'crab', 'fly', 'fly'], slipice: true, icicles: true },
 ];

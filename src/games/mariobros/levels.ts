@@ -63,6 +63,12 @@ export function bottomPipeZones(): [number, number][] {
   return PIPES.filter((p) => p.role === 'bottom').map((p) => [p.x1, p.x2]);
 }
 
+/** Anchor points for icicles on the underside of the top floor (y 64 + 10). */
+export function icicleAnchors(): { x: number; y: number }[] {
+  const y = 74;
+  return [40, 70, 100, 156, 186, 216].map((x) => ({ x, y }));
+}
+
 export const POW = { x: 128, y: 152 };
 
 export const MARIO_START = { x: 40, y: 208 } as const;

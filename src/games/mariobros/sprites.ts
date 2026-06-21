@@ -194,6 +194,50 @@ const SLIPICE_WALK_B: string[] = [
   '            ',
 ];
 
+// Icicles (6x12), hanging point-down, in three formation stages. I=ice, C=crystal.
+const ICICLE_1: string[] = [
+  'IICCII',
+  'IIIIII',
+  ' IIII ',
+  '  II  ',
+  '      ',
+  '      ',
+  '      ',
+  '      ',
+  '      ',
+  '      ',
+  '      ',
+  '      ',
+];
+const ICICLE_2: string[] = [
+  'IICCII',
+  'IIIIII',
+  'IIIIII',
+  ' IIII ',
+  ' IIII ',
+  '  II  ',
+  '  II  ',
+  '      ',
+  '      ',
+  '      ',
+  '      ',
+  '      ',
+];
+const ICICLE_3: string[] = [
+  'IICCII',
+  'IIIIII',
+  'IIIIII',
+  'IIIIII',
+  ' IIII ',
+  ' IIII ',
+  ' IIII ',
+  '  II  ',
+  '  II  ',
+  '  II  ',
+  '  II  ',
+  '      ',
+];
+
 export const TX = {
   marioRun0: 'mb-mario-0',
   marioRun1: 'mb-mario-1',
@@ -212,6 +256,9 @@ export const TX = {
   flyFlip: 'mb-fly-flip',
   slipiceWalk0: 'mb-slipice-0',
   slipiceWalk1: 'mb-slipice-1',
+  icicleForm0: 'mb-icicle-0',
+  icicleForm1: 'mb-icicle-1',
+  icicleForm2: 'mb-icicle-2',
 } as const;
 
 export function buildMarioBrosTextures(scene: Phaser.Scene): void {
@@ -260,4 +307,9 @@ export function buildMarioBrosTextures(scene: Phaser.Scene): void {
   };
   drawPixelArt(scene, TX.slipiceWalk0, SLIPICE_WALK_A, slipicePal);
   drawPixelArt(scene, TX.slipiceWalk1, SLIPICE_WALK_B, slipicePal);
+
+  const icePal = { I: COLORS.slipice, C: COLORS.slipiceCrystal };
+  drawPixelArt(scene, TX.icicleForm0, ICICLE_1, icePal);
+  drawPixelArt(scene, TX.icicleForm1, ICICLE_2, icePal);
+  drawPixelArt(scene, TX.icicleForm2, ICICLE_3, icePal);
 }

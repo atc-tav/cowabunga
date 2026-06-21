@@ -70,6 +70,15 @@ export const SLIPICE_SPAWN_MS = 4500; // gap between Slipice emerging in an ice 
 export const SLIPICE_PER_PHASE = 3; // how many a phase will send out
 export const ICE_FRICTION_SCALE = 0.12; // an iced platform keeps ~12% of normal friction
 
+// Icicles: form on the underside of the top platform, then drop. Lethal only
+// while falling; not enemies (can't be flipped).
+export const ICICLE_W = 6;
+export const ICICLE_H = 12;
+export const ICICLE_FORM_MS = 2600; // hidden nub → full spike
+export const ICICLE_FULL_MS = 500; // hangs full for a beat before it drops
+export const ICICLE_SPAWN_MS = 1700; // gap between new icicles forming
+export const ICICLE_MAX = 3; // concurrent icicles in an icicle phase
+
 export const STOMP_BOUNCE = 160; // Mario's hop after a stomp
 export const ENEMY_TARGET = 2; // baseline number on the board at once
 export const ENEMY_LAST_MULT = 2.0; // the final enemy of a phase turns blue & super-fast
