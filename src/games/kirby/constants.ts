@@ -52,11 +52,18 @@ export const GAME = {
   iframeDurationMs: 1800, // ms of invincibility after taking damage
 
   // === ABILITIES (slice subset; §5.1) ===
-  beamRangePx: 40, // px — whip-crack arc reach
-  beamDurationMs: 260, // ms the beam arc is live
-  beamCooldownMs: 320, // ms between beam casts
+  abilityCooldownMs: 320, // ms gap for tap abilities (beam / cutter / freeze)
+  beamDurationMs: 260, // ms a beam arc blob lives
   sparkRadiusPx: 26, // px — electric barrier radius while B held
   sparkTickMs: 120, // ms between spark damage ticks
+  fireTickMs: 70, // ms between flame puffs while B held
+  fireRangePx: 40, // px — flame breath reach
+  fireSpeed: 3.0, // px/frame — flame puff travel
+  fireLifeMs: 220, // ms — flame puff lifetime
+  cutterSpeed: 4.0, // px/frame — thrown blade speed
+  cutterRangePx: 70, // px — distance before the blade boomerangs back
+  freezeRadiusPx: 42, // px — Freeze burst radius (wider, one shot)
+  stoneFallSpeed: 6.0, // px/frame — Stone form drops fast
 
   // === SCORING (§8.2, tunable) ===
   pointsBasicEnemy: 100, // Waddle Dee, Bronto Burt, …
@@ -67,8 +74,14 @@ export const GAME = {
   livesStart: 3,
 } as const;
 
-/** Copy abilities present in this slice. Star Rod etc. land in later slices. */
-export type AbilityName = 'beam' | 'spark';
+/** Copy abilities present in this slice. The remaining 18 + Star Rod follow. */
+export type AbilityName =
+  | 'beam'
+  | 'spark'
+  | 'fire'
+  | 'cutter'
+  | 'stone'
+  | 'freeze';
 
 // === KIRBY HITBOX ===
 export const KIRBY_W = 12; // px — body width (matches the 12-wide art grid)

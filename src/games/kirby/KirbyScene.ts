@@ -100,8 +100,10 @@ export class KirbyScene extends BaseGameScene {
   private slideIFrames = 0;
   private iframeMs = 0;
   private hurtMs = 0;
-  private beamCooldownMs = 0;
+  private abilityCooldownMs = 0; // tap abilities (beam / cutter / freeze)
   private sparkTickMs = 0;
+  private fireTickMs = 0; // gap between Fire-breath puffs
+  private stoneForm = false; // Stone ability engaged (invincible, immobile)
 
   // run double-tap tracking
   private running = false;
@@ -119,6 +121,8 @@ export class KirbyScene extends BaseGameScene {
   private inhaleGfx!: Phaser.GameObjects.Graphics;
   private sparkBits: Phaser.GameObjects.Image[] = [];
   private sparkPhase = 0;
+  private dropKey?: Phaser.Input.Keyboard.Key; // Select — discard current ability
+  private cutter: { sprite: Phaser.GameObjects.Image; x: number; y: number; vx: number; returning: boolean; spin: number } | null = null;
 
   // --- session ---
   private hp: number = GAME.maxHP;
@@ -150,6 +154,7 @@ export class KirbyScene extends BaseGameScene {
     this.shots = [];
     this.clearAbilityStar();
     this.clearSpark();
+    this.clearCutter();
     this.resetKirbyState();
 
     this.worldGfx = this.add.graphics().setDepth(1);
@@ -160,6 +165,9 @@ export class KirbyScene extends BaseGameScene {
 
     this.sprite = this.add.image(0, 0, TX.kirbyIdle).setDepth(10);
     this.inhaleGfx = this.add.graphics().setDepth(9);
+    // Select-equivalent: X discards the current Copy Ability (it pops out as a
+    // re-inhalable star), so a player can swap between abilities (§3.1).
+    this.dropKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.X);
 
     for (const spawn of ENEMY_SPAWNS) {
       this.enemies.push(new Enemy(this, spawn, surfaceAt));
@@ -206,7 +214,9 @@ export class KirbyScene extends BaseGameScene {
     this.timer = RESPAWN_MS;
     this.inhaling = false;
     this.holding = false;
+    this.stoneForm = false;
     this.clearSpark();
+    this.clearCutter();
     this.sprite.setTexture(TX.kirbyHit);
     this.tweens.add({ targets: this.sprite, alpha: 0.15, duration: 160, yoyo: true, repeat: 2 });
   }
@@ -262,11 +272,13 @@ export class KirbyScene extends BaseGameScene {
     const f = delta / FRAME_MS;
 
     this.tickTimers(delta);
+    this.maybeDropAbility();
     this.handleHorizontal(f);
     this.handleActions(f, delta);
     this.handleVertical(f);
     this.updateEnemies(f, delta);
     this.updateShots(f, delta);
+    this.updateCutter(f, delta);
     this.updateAbilityStar(f, delta);
     this.updateSpark(f, delta);
 
@@ -282,8 +294,9 @@ export class KirbyScene extends BaseGameScene {
   private tickTimers(delta: number): void {
     if (this.iframeMs > 0) this.iframeMs -= delta;
     if (this.hurtMs > 0) this.hurtMs -= delta;
-    if (this.beamCooldownMs > 0) this.beamCooldownMs -= delta;
+    if (this.abilityCooldownMs > 0) this.abilityCooldownMs -= delta;
     if (this.sparkTickMs > 0) this.sparkTickMs -= delta;
+    if (this.fireTickMs > 0) this.fireTickMs -= delta;
   }
 
   /** Walk / run, double-tap detection, and facing. Inhale locks movement (§3.4). */
@@ -303,7 +316,7 @@ export class KirbyScene extends BaseGameScene {
     if (!left && !right) this.running = false;
 
     // Movement-locking states.
-    if (this.inhaling || this.hurtMs > 0 || this.sliding) {
+    if (this.inhaling || this.hurtMs > 0 || this.sliding || this.stoneForm) {
       if (this.sliding) this.advanceSlide(f);
       else if (this.hurtMs > 0) this.kx += this.vx * f; // ride out knockback
       this.clampX();
@@ -344,6 +357,12 @@ export class KirbyScene extends BaseGameScene {
     const fire = this.controls.justPressed('fire');
     const fireHeld = this.controls.isDown('fire');
 
+    // --- Stone form locks out everything but the revert press. ---
+    if (this.stoneForm) {
+      if (fire) this.stoneForm = false; // revert to normal Kirby
+      return;
+    }
+
     // --- jump / hover (A) ---
     if (jump && !this.inhaling && !this.sliding && this.hurtMs <= 0) {
       if (this.onGround) {
@@ -366,12 +385,8 @@ export class KirbyScene extends BaseGameScene {
       return;
     }
 
-    if (this.copyAbility === 'beam') {
-      if (fire && this.beamCooldownMs <= 0) this.castBeam();
-      return;
-    }
-    if (this.copyAbility === 'spark') {
-      this.sparkActive = fireHeld; // sustained while held
+    if (this.copyAbility !== null) {
+      this.useAbility(fire, fireHeld);
       return;
     }
 
@@ -422,7 +437,8 @@ export class KirbyScene extends BaseGameScene {
       const g = holdingUp ? GAME.gravity * 0.5 : GAME.gravity;
       if (this.jumpHoldFrames > 0) this.jumpHoldFrames -= f;
       this.vy += g * f;
-      if (this.vy > GAME.maxFallSpeed) this.vy = GAME.maxFallSpeed;
+      const maxFall = this.stoneForm ? GAME.stoneFallSpeed : GAME.maxFallSpeed;
+      if (this.vy > maxFall) this.vy = maxFall;
     }
 
     this.ky += this.vy * f;
@@ -552,6 +568,18 @@ export class KirbyScene extends BaseGameScene {
     this.heldAbility = null;
   }
 
+  /** Select (X): discard the equipped ability as a re-inhalable star (§3.1). */
+  private maybeDropAbility(): void {
+    if (!this.dropKey || !Phaser.Input.Keyboard.JustDown(this.dropKey)) return;
+    if (!this.copyAbility) return;
+    this.stoneForm = false;
+    this.sparkActive = false;
+    this.clearSpark();
+    this.clearCutter();
+    this.dropAbilityStar(this.copyAbility, this.facing);
+    this.copyAbility = null;
+  }
+
   // =========================================================================
   // Abilities, pellets, projectiles
   // =========================================================================
@@ -562,8 +590,34 @@ export class KirbyScene extends BaseGameScene {
     this.vy = 0.6; // begin a gentle descent
   }
 
+  /** Dispatch the equipped ability's B-press / B-hold behaviour (§5.1). */
+  private useAbility(fire: boolean, fireHeld: boolean): void {
+    switch (this.copyAbility) {
+      case 'beam':
+        if (fire && this.abilityCooldownMs <= 0) this.castBeam();
+        break;
+      case 'spark':
+        this.sparkActive = fireHeld; // sustained barrier while held
+        break;
+      case 'fire':
+        if (fireHeld) this.breatheFire(); // sustained flame while held
+        break;
+      case 'cutter':
+        if (fire && !this.cutter) this.throwCutter();
+        break;
+      case 'freeze':
+        if (fire && this.abilityCooldownMs <= 0) this.castFreeze();
+        break;
+      case 'stone':
+        if (fire) this.enterStone();
+        break;
+      default:
+        break;
+    }
+  }
+
   private castBeam(): void {
-    this.beamCooldownMs = GAME.beamCooldownMs;
+    this.abilityCooldownMs = GAME.abilityCooldownMs;
     // A short whip arc of blobs sweeping forward and down (Waddle Doo beam).
     const arc = [-10, -4, 2, 8];
     for (let i = 0; i < arc.length; i++) {
@@ -573,6 +627,81 @@ export class KirbyScene extends BaseGameScene {
       s.vy = 0.8;
       s.sprite.setPosition(s.x, s.y);
     }
+  }
+
+  /** Fire: a sustained flame breath — puffs spawn on a tick while B is held. */
+  private breatheFire(): void {
+    if (this.fireTickMs > 0) return;
+    this.fireTickMs = GAME.fireTickMs;
+    const s = this.spawnShot(TX.flame, this.facing * GAME.fireSpeed, 0, GAME.fireLifeMs);
+    s.y = this.ky + 2;
+    s.sprite.setPosition(s.x, s.y);
+  }
+
+  /** Cutter: a single boomerang blade that flies out, then returns to Kirby. */
+  private throwCutter(): void {
+    this.abilityCooldownMs = GAME.abilityCooldownMs;
+    this.cutter = {
+      sprite: this.add.image(this.mouthX(), this.ky, TX.blade).setDepth(11),
+      x: this.mouthX(),
+      y: this.ky,
+      vx: this.facing * GAME.cutterSpeed,
+      returning: false,
+      spin: 0,
+    };
+  }
+
+  /** Freeze: a one-shot radial burst that defeats everything in range (§5.1). */
+  private castFreeze(): void {
+    this.abilityCooldownMs = GAME.abilityCooldownMs;
+    const r = GAME.freezeRadiusPx;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      playFrames(this, this.kx + Math.cos(a) * r * 0.6, this.ky + Math.sin(a) * r * 0.6, [TX.ice], 160, 12);
+    }
+    for (const e of this.enemies) {
+      if (e.state === 'dead') continue;
+      if (Math.hypot(e.x - this.kx, e.y - this.ky) <= r + e.width / 2) {
+        this.defeatEnemy(e);
+      }
+    }
+    this.impact('light');
+  }
+
+  /** Stone: become a heavy invincible rock until B is pressed again. */
+  private enterStone(): void {
+    this.stoneForm = true;
+    this.hovering = false;
+    this.inhaling = false;
+    this.vx = 0;
+  }
+
+  /** Cutter blade flight: out to max range, then boomerang home (§5.1). */
+  private updateCutter(f: number, delta: number): void {
+    const c = this.cutter;
+    if (!c) return;
+    c.spin += delta;
+    if (!c.returning && Math.abs(c.x - this.kx) >= GAME.cutterRangePx) {
+      c.returning = true;
+    }
+    c.vx = c.returning ? (this.kx - c.x) * 0.12 : c.vx;
+    c.x += c.vx * f;
+    c.sprite.setPosition(c.x, c.y).setAngle(c.spin).setFlipX(this.facing < 0);
+    for (const e of this.enemies) {
+      if (e.state === 'dead') continue;
+      if (Phaser.Geom.Rectangle.Contains(e.bounds(), c.x, c.y)) {
+        this.defeatEnemy(e);
+      }
+    }
+    if (c.returning && Math.abs(c.x - this.kx) < 6) {
+      c.sprite.destroy();
+      this.cutter = null;
+    }
+  }
+
+  private clearCutter(): void {
+    this.cutter?.sprite.destroy();
+    this.cutter = null;
   }
 
   private updateSpark(f: number, delta: number): void {
@@ -670,10 +799,13 @@ export class KirbyScene extends BaseGameScene {
     );
     for (const e of this.enemies) {
       if (e.state === 'dead' || e === this.pulled) continue;
-      if (Phaser.Geom.Intersects.RectangleToRectangle(kb, e.bounds())) {
-        this.damageKirby(e.x);
-        return;
+      if (!Phaser.Geom.Intersects.RectangleToRectangle(kb, e.bounds())) continue;
+      if (this.stoneForm) {
+        this.defeatEnemy(e); // Stone is invincible and crushes on contact
+        continue;
       }
+      this.damageKirby(e.x);
+      return;
     }
   }
 
@@ -684,6 +816,8 @@ export class KirbyScene extends BaseGameScene {
     this.inhaling = false;
     this.holding = false;
     this.sparkActive = false;
+    this.stoneForm = false;
+    this.clearCutter();
     const away = this.kx < fromX ? -1 : 1;
     this.vx = away * KNOCKBACK;
     this.vy = -1.5;
@@ -787,11 +921,13 @@ export class KirbyScene extends BaseGameScene {
     // Blink while invincible so the safe window is readable; peach-tint with ability.
     const blink = this.iframeMs > 0 && Math.floor(this.iframeMs / 100) % 2 === 0;
     this.sprite.setAlpha(blink ? 0.4 : 1);
-    this.sprite.setTint(this.copyAbility ? 0xffd0e8 : 0xffffff);
+    // Stone draws its own rock sprite; otherwise peach-tint when carrying an ability.
+    this.sprite.setTint(this.copyAbility && !this.stoneForm ? 0xffd0e8 : 0xffffff);
     this.drawInhaleCone();
   }
 
   private pickKirbyTexture(delta: number): string {
+    if (this.stoneForm) return TX.kirbyStone;
     if (this.hurtMs > 0) return TX.kirbyHit;
     if (this.sliding) return TX.kirbySlide;
     if (this.inhaling) return TX.kirbyInhale;
@@ -837,13 +973,15 @@ export class KirbyScene extends BaseGameScene {
     this.ducking = false;
     this.copyAbility = null;
     this.sparkActive = false;
+    this.stoneForm = false;
     this.jumpHoldFrames = 0;
     this.slideFrames = 0;
     this.slideIFrames = 0;
     this.iframeMs = 0;
     this.hurtMs = 0;
-    this.beamCooldownMs = 0;
+    this.abilityCooldownMs = 0;
     this.sparkTickMs = 0;
+    this.fireTickMs = 0;
     this.running = false;
     this.pulled = null;
     this.animTimer = 0;

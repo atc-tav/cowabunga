@@ -3,7 +3,15 @@ import { TX } from './sprites';
 import { GAME, AbilityName } from './constants';
 import { EnemySpawn } from './levels';
 
-export type EnemyKindId = 'waddleDee' | 'bronto' | 'waddleDoo' | 'sparky';
+export type EnemyKindId =
+  | 'waddleDee'
+  | 'bronto'
+  | 'waddleDoo'
+  | 'sparky'
+  | 'hotHead'
+  | 'sirKibble'
+  | 'rocky'
+  | 'chilly';
 
 interface EnemyKindDef {
   frames: [string, string];
@@ -60,6 +68,50 @@ const KINDS: Record<EnemyKindId, EnemyKindDef> = {
     flyer: false,
     ledgeTurner: true,
     ability: 'spark',
+    score: GAME.pointsAbilityEnemy,
+  },
+  hotHead: {
+    frames: [TX.hotHead0, TX.hotHead1],
+    frameMs: 250,
+    width: 14,
+    height: 12,
+    speed: 0.6,
+    flyer: false,
+    ledgeTurner: true,
+    ability: 'fire',
+    score: GAME.pointsAbilityEnemy,
+  },
+  sirKibble: {
+    frames: [TX.sirKibble0, TX.sirKibble1],
+    frameMs: 200,
+    width: 11,
+    height: 10,
+    speed: 0.5,
+    flyer: false,
+    ledgeTurner: true,
+    ability: 'cutter',
+    score: GAME.pointsAbilityEnemy,
+  },
+  rocky: {
+    frames: [TX.rocky0, TX.rocky1],
+    frameMs: 220,
+    width: 11,
+    height: 10,
+    speed: 0.4,
+    flyer: false,
+    ledgeTurner: true,
+    ability: 'stone',
+    score: GAME.pointsAbilityEnemy,
+  },
+  chilly: {
+    frames: [TX.chilly0, TX.chilly1],
+    frameMs: 300,
+    width: 11,
+    height: 10,
+    speed: 0.5,
+    flyer: false,
+    ledgeTurner: true,
+    ability: 'freeze',
     score: GAME.pointsAbilityEnemy,
   },
 };

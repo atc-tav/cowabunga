@@ -22,12 +22,28 @@ export const COLORS = {
   wdooBody: 0x3068f0, // Waddle Doo body blue (§14.2)
   sparkyBody: 0xf8d800, // Sparky yellow (§14.2)
   sparkArc: 0xfcfcfc, // spark white (§14.2)
+  hotBody: 0xf87830, // Hot Head orange (§14.2)
+  hotFlame: 0xf8b800, // Hot Head flame yellow-orange (§14.2)
+  hotEye: 0xfcfcfc, // Hot Head eye white
+  kibbleShell: 0xa8a8a8, // Sir Kibble shell gray (§14.2)
+  kibbleBlade: 0xd8d8d8, // Sir Kibble blade silver (§14.2)
+  rockyBody: 0xa07050, // Rocky stone gray-brown (§14.2)
+  rockyCrack: 0x603820, // Rocky cracks dark (§14.2)
+  chillyBody: 0xf8f8f8, // Chilly snowman white (§14.2)
+  chillyScarf: 0xd01038, // Chilly scarf red (§14.2)
 
   // Props / FX
   star: 0xf8d800, // spat / ability star body
   starHi: 0xfcfce0, // star highlight
   beam: 0xf8f800, // beam whip yellow
   beamHi: 0xfcfcc0,
+  flame: 0xf87830, // Fire breath body
+  flameHi: 0xf8d800, // Fire breath core
+  ice: 0x90d0f8, // Freeze crystal body
+  iceHi: 0xfcfcfc, // Freeze crystal highlight
+  blade: 0xd8d8d8, // Cutter blade silver
+  stoneBody: 0x9890a0, // Kirby Stone form
+  stoneCrack: 0x504860,
   pelletHi: 0xfcfcfc, // air-pellet puff
   doorBody: 0x5038d0, // goal-door indigo
   doorHi: 0xa890f8,
@@ -85,4 +101,33 @@ export const SPARKY_PALETTE: PixelPalette = {
   K: COLORS.sparkyBody,
   S: COLORS.sparkArc,
   E: COLORS.eye,
+};
+
+export const HOT_HEAD_PALETTE: PixelPalette = {
+  H: COLORS.hotBody,
+  F: COLORS.hotFlame,
+  E: COLORS.hotEye,
+};
+
+export const SIR_KIBBLE_PALETTE: PixelPalette = {
+  S: COLORS.kibbleShell,
+  B: COLORS.kibbleBlade,
+  E: COLORS.eye,
+};
+
+export const ROCKY_PALETTE: PixelPalette = {
+  R: COLORS.rockyBody,
+  C: COLORS.rockyCrack,
+};
+
+export const CHILLY_PALETTE: PixelPalette = {
+  W: COLORS.chillyBody,
+  S: COLORS.chillyScarf,
+  E: COLORS.eye,
+};
+
+/** Kirby's Stone form (§5.1) — heavy invincible rock. */
+export const KIRBY_STONE_PALETTE: PixelPalette = {
+  G: COLORS.stoneBody,
+  D: COLORS.stoneCrack,
 };

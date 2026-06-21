@@ -8,6 +8,11 @@ import {
   BRONTO_PALETTE,
   WADDLE_DOO_PALETTE,
   SPARKY_PALETTE,
+  HOT_HEAD_PALETTE,
+  SIR_KIBBLE_PALETTE,
+  ROCKY_PALETTE,
+  CHILLY_PALETTE,
+  KIRBY_STONE_PALETTE,
 } from './palette';
 
 // ===========================================================================
@@ -156,6 +161,21 @@ const KIRBY_HIT: string[] = [
   '            ',
 ];
 
+const KIRBY_STONE: string[] = [
+  '   GGGGGG   ',
+  '  GGGGGGGG  ',
+  ' GGGGGGGGGG ',
+  ' GGDGGGGDGG ',
+  'GGGGGGGGGGGG',
+  'GGGGGGGGGGGG',
+  'GGGGGGGGGGGG',
+  ' GGGGGGGGGG ',
+  ' GGGGGGGGGG ',
+  '  GGGGGGGG  ',
+  '   GGGGGG   ',
+  '            ',
+];
+
 // ===========================================================================
 // Enemies
 // ===========================================================================
@@ -260,6 +280,114 @@ const SPARKY_1: string[] = [
   '          ',
 ];
 
+const HOT_HEAD_0: string[] = [
+  '    FFFFFFF   ',
+  '   FFFFFFFFF  ',
+  '   HHHHHHHH   ',
+  '  HHEEHEHHH   ',
+  '  HHHHHHHHHH  ',
+  ' HHHHHHHHHHH  ',
+  '  HHHHHHHHHH  ',
+  '   HHHHHHHH   ',
+  '    HH  HH    ',
+  '    HH  HH    ',
+  '   HHH  HHH   ',
+  '              ',
+];
+
+const HOT_HEAD_1: string[] = [
+  '   FFFFFFF    ',
+  '  FFFFFFFFF   ',
+  '   HHHHHHHH   ',
+  '  HHEEHEHHH   ',
+  ' HHHHHHHHHHH  ',
+  ' HHHHHHHHHHH  ',
+  '  HHHHHHHHHH  ',
+  '   HHHHHHHH   ',
+  '    HH  HH    ',
+  '    HH  HH    ',
+  '   HHH  HHH   ',
+  '              ',
+];
+
+const SIR_KIBBLE_0: string[] = [
+  '   SSSSSS  ',
+  '  SSSSSSSS ',
+  '  SSESSSS  ',
+  ' SSBBBSSSS ',
+  ' SSSSSSSSS ',
+  ' SSSSSSSSS ',
+  '  SSSSSSS  ',
+  '   SS  SS  ',
+  '  SSS  SSS ',
+  '           ',
+];
+
+const SIR_KIBBLE_1: string[] = [
+  '   SSSSSS  ',
+  '  SSSSSSSS ',
+  '  SSESSSS  ',
+  ' SSBBBSSSS ',
+  ' SSSSSSSSS ',
+  ' SSSSSSSSS ',
+  '   SSSSS   ',
+  '  SS    SS ',
+  '  SSS  SSS ',
+  '           ',
+];
+
+const ROCKY_0: string[] = [
+  '  RRRRRRR  ',
+  ' RRRRRRRRR ',
+  ' RRRRRRRRR ',
+  ' RRCCRRCR  ',
+  'RRRRRRRRRRR',
+  ' RRRRRRRR  ',
+  '  RRRRR    ',
+  '   RR  R   ',
+  '  RRR  RR  ',
+  '           ',
+];
+
+const ROCKY_1: string[] = [
+  '  RRRRRRR  ',
+  ' RRRRRRRRR ',
+  ' RRRRRRRRR ',
+  ' RRCCRRCR  ',
+  'RRRRRRRRRRR',
+  ' RRRRRRRR  ',
+  '  RRRRR    ',
+  '  R  RR    ',
+  '  RR  RRR  ',
+  '           ',
+];
+
+const CHILLY_0: string[] = [
+  '   WWWWW   ',
+  '  WWWWWWW  ',
+  '  WEEWWWW  ',
+  '  WWWWWWW  ',
+  '   WWWWW   ',
+  '  SSSSSSS  ',
+  '  WWWWWWW  ',
+  '  WWWWWWW  ',
+  '   WWWWW   ',
+  '           ',
+];
+
+const CHILLY_1: string[] = [
+  '   WWWWW   ',
+  '  WWWWWWW  ',
+  '  WEEWWWW  ',
+  '  WWWWWWW  ',
+  '   WWWWW   ',
+  '  SSSSSSS  ',
+  ' WWWWWWWWW ',
+  '  WWWWWWW  ',
+  '   WWWWW   ',
+  '           ',
+];
+
 // ===========================================================================
 // Props / FX
 // ===========================================================================
@@ -312,6 +440,37 @@ const SPARK_BIT: string[] = [
   ' S S ',
 ];
 
+const FLAME: string[] = [
+  '  YY  ',
+  ' YOY  ',
+  ' YOOY ',
+  'YOOOY ',
+  'YOOOY ',
+  'YOOOY ',
+  ' YOY  ',
+  '  Y   ',
+];
+
+const ICE_CRYSTAL: string[] = [
+  '  W   ',
+  ' WCW  ',
+  'WCCCW ',
+  ' WCW  ',
+  '  W   ',
+  '      ',
+];
+
+const CUTTER_BLADE: string[] = [
+  '  BBBB  ',
+  ' BB  BB ',
+  'BB    BB',
+  'B      B',
+  'B      B',
+  'BB    BB',
+  ' BB  BB ',
+  '  BBBB  ',
+];
+
 const DOOR: string[] = [
   '                ',
   '   DDDDDDDDDD   ',
@@ -361,6 +520,7 @@ export const TX = {
   kirbySlide: 'kb-slide',
   kirbyDuck: 'kb-duck',
   kirbyHit: 'kb-hit',
+  kirbyStone: 'kb-stone',
 
   waddleDee0: 'kb-wdee0',
   waddleDee1: 'kb-wdee1',
@@ -370,12 +530,23 @@ export const TX = {
   waddleDoo1: 'kb-wdoo1',
   sparky0: 'kb-sparky0',
   sparky1: 'kb-sparky1',
+  hotHead0: 'kb-hot0',
+  hotHead1: 'kb-hot1',
+  sirKibble0: 'kb-kibble0',
+  sirKibble1: 'kb-kibble1',
+  rocky0: 'kb-rocky0',
+  rocky1: 'kb-rocky1',
+  chilly0: 'kb-chilly0',
+  chilly1: 'kb-chilly1',
 
   star: 'kb-star',
   abilityStar: 'kb-abilitystar',
   airPellet: 'kb-pellet',
   beam: 'kb-beam',
   spark: 'kb-spark',
+  flame: 'kb-flame',
+  ice: 'kb-ice',
+  blade: 'kb-blade',
   door: 'kb-door',
   hpFull: 'kb-hp-full',
   hpEmpty: 'kb-hp-empty',
@@ -394,6 +565,7 @@ export function buildKirbyTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, TX.kirbySlide, KIRBY_SLIDE, KIRBY_PALETTE);
   drawPixelArt(scene, TX.kirbyDuck, KIRBY_DUCK, KIRBY_PALETTE);
   drawPixelArt(scene, TX.kirbyHit, KIRBY_HIT, KIRBY_HIT_PALETTE);
+  drawPixelArt(scene, TX.kirbyStone, KIRBY_STONE, KIRBY_STONE_PALETTE);
 
   drawPixelArt(scene, TX.waddleDee0, WADDLE_DEE_0, WADDLE_DEE_PALETTE);
   drawPixelArt(scene, TX.waddleDee1, WADDLE_DEE_1, WADDLE_DEE_PALETTE);
@@ -403,6 +575,14 @@ export function buildKirbyTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, TX.waddleDoo1, WADDLE_DOO_1, WADDLE_DOO_PALETTE);
   drawPixelArt(scene, TX.sparky0, SPARKY_0, SPARKY_PALETTE);
   drawPixelArt(scene, TX.sparky1, SPARKY_1, SPARKY_PALETTE);
+  drawPixelArt(scene, TX.hotHead0, HOT_HEAD_0, HOT_HEAD_PALETTE);
+  drawPixelArt(scene, TX.hotHead1, HOT_HEAD_1, HOT_HEAD_PALETTE);
+  drawPixelArt(scene, TX.sirKibble0, SIR_KIBBLE_0, SIR_KIBBLE_PALETTE);
+  drawPixelArt(scene, TX.sirKibble1, SIR_KIBBLE_1, SIR_KIBBLE_PALETTE);
+  drawPixelArt(scene, TX.rocky0, ROCKY_0, ROCKY_PALETTE);
+  drawPixelArt(scene, TX.rocky1, ROCKY_1, ROCKY_PALETTE);
+  drawPixelArt(scene, TX.chilly0, CHILLY_0, CHILLY_PALETTE);
+  drawPixelArt(scene, TX.chilly1, CHILLY_1, CHILLY_PALETTE);
 
   drawPixelArt(scene, TX.star, STAR, { Y: COLORS.star, S: COLORS.starHi });
   drawPixelArt(scene, TX.abilityStar, ABILITY_STAR, {
@@ -412,6 +592,9 @@ export function buildKirbyTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, TX.airPellet, AIR_PELLET, { W: COLORS.pelletHi });
   drawPixelArt(scene, TX.beam, BEAM_BLOB, { Y: COLORS.beam, H: COLORS.beamHi });
   drawPixelArt(scene, TX.spark, SPARK_BIT, { S: COLORS.sparkArc });
+  drawPixelArt(scene, TX.flame, FLAME, { Y: COLORS.flameHi, O: COLORS.flame });
+  drawPixelArt(scene, TX.ice, ICE_CRYSTAL, { W: COLORS.iceHi, C: COLORS.ice });
+  drawPixelArt(scene, TX.blade, CUTTER_BLADE, { B: COLORS.blade });
   drawPixelArt(scene, TX.door, DOOR, {
     D: COLORS.doorBody,
     H: COLORS.doorHi,

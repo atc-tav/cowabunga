@@ -4,6 +4,7 @@ import { buildGalagaTextures, TX as GAL, enemyFrame } from '../games/galaga/spri
 import { buildDKTextures, TX as DK, BARREL_KEYS } from '../games/donkeykong/sprites';
 import { buildMarioBrosTextures, TX as MB } from '../games/mariobros/sprites';
 import { buildArkanoidTextures, TX as AK, brickTexture } from '../games/arkanoid/sprites';
+import { buildKirbyTextures, TX as KB } from '../games/kirby/sprites';
 
 /**
  * Animated "TV channel" previews for the title-screen carousel. Each preview is
@@ -245,6 +246,57 @@ const arkanoid: PreviewFactory = (scene, layer, b) => {
   };
 };
 
+const kirby: PreviewFactory = (scene, layer, b) => {
+  buildKirbyTextures(scene);
+  background(scene, layer, b, 0x68b0f8); // Dream Land sky
+  const groundY = b.height - 12;
+  add(layer, scene.add.rectangle(0, groundY, b.width, 12, 0x60a020).setOrigin(0, 0));
+  add(layer, scene.add.rectangle(0, groundY, b.width, 2, 0x98e048).setOrigin(0, 0));
+
+  const kirbyImg = add(layer, scene.add.image(b.width * 0.4, groundY - 5, KB.kirbyIdle)).setOrigin(0.5, 1);
+  const dee = add(layer, scene.add.image(b.width + 8, groundY - 5, KB.waddleDee0)).setOrigin(0.5, 1);
+  const star = add(layer, scene.add.image(0, 0, KB.star)).setOrigin(0.5).setVisible(false);
+
+  let t = 0;
+  let phase: 'approach' | 'inhale' | 'walk' = 'approach';
+  let starT = 0;
+  return {
+    update(_time, delta) {
+      t += delta;
+      const wob = Math.sin(t * 0.008) * 1.2;
+      if (phase === 'approach') {
+        dee.x -= delta * 0.03;
+        dee.setTexture(Math.floor(t / 200) % 2 ? KB.waddleDee1 : KB.waddleDee0).setFlipX(true);
+        kirbyImg.setTexture(KB.kirbyIdle);
+        if (dee.x < kirbyImg.x + 26) phase = 'inhale';
+      } else if (phase === 'inhale') {
+        kirbyImg.setTexture(KB.kirbyInhale);
+        dee.x -= delta * 0.06; // sucked in
+        if (dee.x <= kirbyImg.x + 6) {
+          dee.setVisible(false);
+          kirbyImg.setTexture(KB.kirbyHolding);
+          star.setVisible(true).setPosition(kirbyImg.x + 18, groundY - 8);
+          starT = 0;
+          phase = 'walk';
+        }
+      } else {
+        kirbyImg.y = groundY - 5 + wob;
+        starT += delta;
+        star.x += delta * 0.06;
+        star.y -= delta * 0.02;
+        star.angle += delta * 0.4;
+        if (starT > 900) {
+          star.setVisible(false);
+          dee.setVisible(true);
+          dee.x = b.width + 8;
+          phase = 'approach';
+        }
+      }
+    },
+    destroy() {},
+  };
+};
+
 const fallback: PreviewFactory = (scene, layer, b) => {
   background(scene, layer, b, 0x101020);
   const palette = [0xd82800, 0xffd000, 0x3cbcfc, 0x00b050, 0xff4dd2];
@@ -272,6 +324,7 @@ const FACTORIES: Record<string, PreviewFactory> = {
   donkeykong,
   mariobros,
   arkanoid,
+  kirby,
 };
 
 /** Build the animated preview for a game id, falling back to a generic card. */
