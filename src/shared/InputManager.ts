@@ -76,6 +76,8 @@ const PAD_START = 9;
 const PAD_SELECT = 8;
 // Left analog-stick click (L3) — mapped to mirror the A button.
 const PAD_L3 = 10;
+// Left trigger (LT) — mapped to mirror the B button.
+const PAD_LT = 6;
 
 // Analog-stick travel past which we treat it as a directional press.
 const STICK_DEADZONE = 0.5;
@@ -234,9 +236,9 @@ export class InputManager {
       // Menu confirm / launch: south face, Start, or L3.
       case 'confirm':
         return pad.A || this.buttonDown(pad, PAD_START) || this.buttonDown(pad, PAD_L3);
-      // Back out: east face or Select/Back.
+      // Back out: east face, Select/Back, or LT.
       case 'cancel':
-        return pad.B || this.buttonDown(pad, PAD_SELECT);
+        return pad.B || this.buttonDown(pad, PAD_SELECT) || this.buttonDown(pad, PAD_LT);
       case 'pause':
         return this.buttonDown(pad, PAD_START);
       default:

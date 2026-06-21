@@ -53,6 +53,7 @@ src/
 │   ├── StateMachine.ts     Generic FSM (ghost states, enemy AI, flow)
 │   ├── textures.ts         drawPixelArt() — the programmatic-sprite primitive
 │   ├── titleArt.ts         Arc title logos (banner + arc wordmark + stars); see docs/title-art.md
+│   ├── transition.ts       Fade scene transitions (home<->game, with title card)
 │   └── ui.ts               Shared colors + text styles
 └── games/
     └── <name>/             Self-contained; imports only from shared/
