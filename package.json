@@ -7,12 +7,14 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:game": "node src/shared/testkit/run.mjs"
   },
   "dependencies": {
     "phaser": "^3.80.1"
   },
   "devDependencies": {
+    "playwright": "^1.49.0",
     "typescript": "^5.4.5",
     "vite": "^5.2.0"
   }
