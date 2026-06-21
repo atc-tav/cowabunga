@@ -155,7 +155,8 @@ export abstract class BaseGameScene extends Phaser.Scene {
       return;
     }
     this.transitioning = true;
-    fadeToScene(this, 'MainMenu');
+    // Tell the menu which game we came from, so it re-selects it.
+    fadeToScene(this, 'MainMenu', { data: { lastGameId: this.gameId } });
   }
 
   private createHud(): void {

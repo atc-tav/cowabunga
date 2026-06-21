@@ -20,7 +20,7 @@ const OVERLAY_DEPTH = 100000;
 export function fadeToScene(
   scene: Phaser.Scene,
   target: string,
-  opts: { title?: string } = {},
+  opts: { title?: string; data?: object } = {},
 ): void {
   const cam = scene.cameras.main;
   const w = cam.width;
@@ -40,7 +40,7 @@ export function fadeToScene(
     ease: 'Linear',
     onComplete: () => {
       if (!opts.title) {
-        scene.time.delayedCall(200, () => scene.scene.start(target));
+        scene.time.delayedCall(200, () => scene.scene.start(target, opts.data));
         return;
       }
       const label = scene.add
@@ -69,7 +69,7 @@ export function fadeToScene(
           targets: label,
           alpha: 0,
           duration: 140,
-          onComplete: () => scene.scene.start(target),
+          onComplete: () => scene.scene.start(target, opts.data),
         });
       });
     },
