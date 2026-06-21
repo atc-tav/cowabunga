@@ -38,6 +38,8 @@ export class MainMenu extends Phaser.Scene {
   private screenMask!: Phaser.Display.Masks.GeometryMask;
   private previewLayer?: Phaser.GameObjects.Container;
   private preview?: Preview;
+  private knobs: Phaser.GameObjects.Container[] = [];
+  private noiseKeys: string[] = [];
 
   constructor() {
     super({ key: 'MainMenu' });
@@ -78,8 +80,41 @@ export class MainMenu extends Phaser.Scene {
       callback: () => this.coinText.setVisible(!this.coinText.visible),
     });
 
+    this.buildNoiseTextures();
     this.loadPreview();
     this.refresh();
+  }
+
+  /** Pre-generate a few frames of true per-pixel TV static (white/grey/black). */
+  private buildNoiseTextures(): void {
+    const { SCREEN } = MainMenu;
+    const nw = Math.ceil(SCREEN.w / 2);
+    const nh = Math.ceil(SCREEN.h / 2);
+    this.noiseKeys = [];
+    for (let f = 0; f < 6; f++) {
+      const key = `menu-static-${f}`;
+      this.noiseKeys.push(key);
+      if (this.textures.exists(key)) {
+        continue;
+      }
+      const tex = this.textures.createCanvas(key, nw, nh);
+      if (!tex) {
+        continue;
+      }
+      const ctx = tex.getContext();
+      const img = ctx.createImageData(nw, nh);
+      for (let i = 0; i < nw * nh; i++) {
+        const r = Math.random();
+        const v = r < 0.45 ? 0 : r < 0.9 ? 255 : 128;
+        const o = i * 4;
+        img.data[o] = v;
+        img.data[o + 1] = v;
+        img.data[o + 2] = v;
+        img.data[o + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+      tex.refresh();
+    }
   }
 
   update(time: number, delta: number): void {
@@ -111,29 +146,26 @@ export class MainMenu extends Phaser.Scene {
     g.lineStyle(2, 0x0c2c18, 1);
     g.strokeRoundedRect(SCREEN.x, SCREEN.y, SCREEN.w, SCREEN.h, SCREEN.r);
 
-    // Control panel on the right: two knobs, a power LED, a speaker grille.
+    // Control panel on the right: two (rotatable) knobs, a power LED, a grille.
     const panelX = SCREEN.x + SCREEN.w + 26;
-    const knobs = this.add.graphics().setDepth(1);
-    for (const ky of [SCREEN.y + 20, SCREEN.y + 48]) {
-      knobs.fillStyle(0x2a2a2a, 1);
-      knobs.fillCircle(panelX, ky, 9);
-      knobs.lineStyle(2, 0x111111, 1);
-      knobs.strokeCircle(panelX, ky, 9);
-      knobs.lineStyle(2, 0x888888, 1);
-      knobs.beginPath();
-      knobs.moveTo(panelX, ky);
-      knobs.lineTo(panelX + 6, ky - 5);
-      knobs.strokePath();
-    }
-    knobs.fillStyle(0x00ff66, 1);
-    knobs.fillCircle(panelX, SCREEN.y + 72, 3);
-    knobs.lineStyle(2, 0x222222, 1);
+    this.knobs = [SCREEN.y + 20, SCREEN.y + 48].map((ky) => {
+      const face = this.add.circle(0, 0, 9, 0x2a2a2a).setStrokeStyle(2, 0x111111);
+      // Pointer from the centre to the rim, so rotation is visible.
+      const pointer = this.add.rectangle(0, 0, 2, 7, 0x888888).setOrigin(0.5, 1);
+      const knob = this.add.container(panelX, ky, [face, pointer]).setDepth(1);
+      knob.angle = Math.random() * 360;
+      return knob;
+    });
+    const panel = this.add.graphics().setDepth(1);
+    panel.fillStyle(0x00ff66, 1);
+    panel.fillCircle(panelX, SCREEN.y + 72, 3);
+    panel.lineStyle(2, 0x222222, 1);
     for (let i = 0; i < 4; i++) {
       const gy = SCREEN.y + 82 + i * 4;
-      knobs.beginPath();
-      knobs.moveTo(panelX - 9, gy);
-      knobs.lineTo(panelX + 9, gy);
-      knobs.strokePath();
+      panel.beginPath();
+      panel.moveTo(panelX - 9, gy);
+      panel.lineTo(panelX + 9, gy);
+      panel.strokePath();
     }
 
     // Masked overlay: CRT scanlines + a slow shimmer band.
@@ -207,6 +239,21 @@ export class MainMenu extends Phaser.Scene {
       duration: 160,
       onComplete: () => arrow.setFillStyle(UI_COLORS.cyan),
     });
+    this.tuneKnob();
+  }
+
+  /** Tune a random TV knob a quarter-turn clockwise — purely cosmetic. */
+  private tuneKnob(): void {
+    const knob = this.knobs[Math.floor(Math.random() * this.knobs.length)];
+    if (!knob) {
+      return;
+    }
+    this.tweens.add({
+      targets: knob,
+      angle: knob.angle + 90, // always clockwise, regardless of L/R
+      duration: 260,
+      ease: 'Back.Out',
+    });
   }
 
   /** Swap the TV channel: tear down the old vignette, build the selected one. */
@@ -226,18 +273,35 @@ export class MainMenu extends Phaser.Scene {
     });
     this.previewLayer = layer;
 
-    // Brief "channel change" static flash.
-    const flash = this.add
-      .rectangle(SCREEN.x, SCREEN.y, SCREEN.w, SCREEN.h, 0xffffff, 0.7)
-      .setOrigin(0)
-      .setDepth(7);
-    flash.setMask(this.screenMask);
-    this.tweens.add({
-      targets: flash,
-      alpha: 0,
-      duration: 150,
-      onComplete: () => flash.destroy(),
-    });
+    // Brief "channel change" burst of TV static that fades in then out, with
+    // the noise frames swapped rapidly so it reads as live random snow.
+    if (this.noiseKeys.length > 0) {
+      const noise = this.add
+        .image(SCREEN.x, SCREEN.y, this.noiseKeys[0])
+        .setOrigin(0)
+        .setScale(2)
+        .setDepth(7)
+        .setAlpha(0);
+      noise.setMask(this.screenMask);
+      const swap = this.time.addEvent({
+        delay: 45,
+        loop: true,
+        callback: () =>
+          noise.setTexture(this.noiseKeys[Math.floor(Math.random() * this.noiseKeys.length)]),
+      });
+      this.tweens.add({
+        targets: noise,
+        alpha: { from: 0, to: 0.9 },
+        duration: 90,
+        hold: 70,
+        yoyo: true,
+        ease: 'Quad.Out',
+        onComplete: () => {
+          swap.remove();
+          noise.destroy();
+        },
+      });
+    }
   }
 
   private refresh(): void {

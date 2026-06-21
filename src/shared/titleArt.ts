@@ -100,6 +100,7 @@ export function drawArcTitle(
     topY: geom.topY,
     baseY: geom.baseY,
     half: geom.half,
+    radius: geom.radius,
     endBottom: geom.endBottom,
     colors: spec.starColors,
   });
@@ -143,6 +144,7 @@ export interface WordmarkGeometry {
   topY: number;
   baseY: number;
   half: number;
+  radius: number;
   /** Lowest point of the (largest) end letters — no stars below this. */
   endBottom: number;
 }
@@ -169,7 +171,10 @@ export function drawArcWordmark(
   const baseH = sample.length * spec.pixelSize;
   const endAngle = (spec.endAngleDeg * Math.PI) / 180;
 
-  const tiltAt = (i: number) => Math.abs((i - mid) / mid);
+  // Tilt is floored at one step from centre so the single middle letter never
+  // ends up smaller than its immediate neighbours (e.g. the B matches the A/U).
+  const minTilt = 1 / mid;
+  const tiltAt = (i: number) => Math.max(Math.abs((i - mid) / mid), minTilt);
   const growth = Array.from({ length: n }, (_, i) => 1 + spec.grow * tiltAt(i) ** spec.growExp);
 
   // Lay out in unscaled units, scale to the arc-length budget, then bend.
@@ -203,13 +208,14 @@ export function drawArcWordmark(
     }
   }
 
-  return { topY, baseY, half: arcLen / 2, endBottom };
+  return { topY, baseY, half: arcLen / 2, radius, endBottom };
 }
 
 interface StarfieldOptions {
   topY: number;
   baseY: number;
   half: number;
+  radius: number;
   endBottom: number;
   colors: number[];
 }
@@ -227,27 +233,41 @@ export function drawTwinkleStars(
 ): void {
   const key = `ta_star_${starKeyCounter++}`;
   drawPixelArt(scene, key, STAR_SHAPE, { '#': 0xffffff }, 1);
-  const { topY, baseY, half, endBottom, colors } = opts;
-  const spots: { fx: number; y: number; s: number }[] = [
-    { fx: -0.8, y: topY + 5, s: 0.9 },
-    { fx: 0.8, y: topY + 5, s: 0.9 },
-    { fx: -0.5, y: baseY + 16, s: 0.8 },
-    { fx: -0.18, y: baseY + 21, s: 1.0 },
-    { fx: 0.18, y: baseY + 21, s: 0.7 },
-    { fx: 0.5, y: baseY + 16, s: 0.9 },
-  ];
-  spots.forEach((spot, i) => {
+  const { topY, baseY, half, radius, endBottom, colors } = opts;
+  const bannerBottom = topY + 1;
+  // y of the wordmark's bottom edge (the arc) at horizontal offset dx.
+  const arcY = (dx: number) => baseY + radius * (1 - Math.cos(dx / radius));
+
+  // Pick a fresh random point inside a guaranteed-black zone:
+  //  - 'upper': just under the banner, above the deeply-dipped C / A.
+  //  - 'lower': the concave pocket below the arc, never below the C/A bottoms.
+  const pick = (zone: 'upper' | 'lower') => {
+    if (zone === 'upper') {
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const dx = side * (0.8 + Math.random() * 0.12) * half;
+      return { x: cx + dx, y: bannerBottom + 2 + Math.random() * 6 };
+    }
+    const dx = (Math.random() * 2 - 1) * 0.5 * half;
+    const top = arcY(dx) + 5;
+    const bot = endBottom - 3;
+    return { x: cx + dx, y: bot > top ? top + Math.random() * (bot - top) : top };
+  };
+
+  const zones: ('upper' | 'lower')[] = ['upper', 'upper', 'lower', 'lower', 'lower', 'lower'];
+  zones.forEach((zone, i) => {
+    const s = 0.7 + Math.random() * 0.5;
+    const p = pick(zone);
     const star = scene.add
-      .image(cx + spot.fx * half, Math.min(spot.y, endBottom - 2), key)
+      .image(p.x, p.y, key)
       .setOrigin(0.5)
       .setTint(colors[i % colors.length])
-      .setScale(spot.s)
+      .setScale(s)
       .setAlpha(0)
       .setDepth(DEPTH_STARS);
     scene.tweens.add({
       targets: star,
       alpha: { from: 0, to: 1 },
-      scale: { from: spot.s * 0.3, to: spot.s },
+      scale: { from: s * 0.3, to: s },
       ease: 'Sine.InOut',
       duration: 520 + Math.random() * 520,
       hold: 160 + Math.random() * 320,
@@ -255,6 +275,11 @@ export function drawTwinkleStars(
       repeat: -1,
       repeatDelay: 700 + Math.random() * 1700,
       delay: Math.random() * 2400,
+      // Relocate (invisibly, at the cycle's start) so the field never repeats.
+      onRepeat: () => {
+        const q = pick(zone);
+        star.setPosition(q.x, q.y);
+      },
     });
   });
 }

@@ -84,8 +84,10 @@ Stars must read as sitting in empty space, so they're confined to:
   letters' bottoms** (`endBottom`, which `drawArcWordmark` returns).
 
 Each star fades + scales in and out on a **staggered** loop (random delay /
-duration) so the field shimmers instead of blinking in unison. Tint from a small
-palette (we use yellow / white / UI light-blue).
+duration) so the field shimmers instead of blinking in unison, and is
+**re-placed to a fresh random point** in its zone at the start of each cycle so
+the field never repeats. Tint from a small palette (we use yellow / white / UI
+light-blue).
 
 ## Constraints (this is Cowabunga)
 
