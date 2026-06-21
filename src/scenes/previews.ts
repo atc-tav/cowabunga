@@ -4,6 +4,7 @@ import { buildGalagaTextures, TX as GAL, enemyFrame } from '../games/galaga/spri
 import { buildDKTextures, TX as DK, BARREL_KEYS } from '../games/donkeykong/sprites';
 import { buildMarioBrosTextures, TX as MB } from '../games/mariobros/sprites';
 import { buildArkanoidTextures, TX as AK, brickTexture } from '../games/arkanoid/sprites';
+import { buildHydraTextures, TX as HY } from '../games/hydra/sprites';
 
 /**
  * Animated "TV channel" previews for the title-screen carousel. Each preview is
@@ -245,6 +246,42 @@ const arkanoid: PreviewFactory = (scene, layer, b) => {
   };
 };
 
+const hydra: PreviewFactory = (scene, layer, b) => {
+  buildHydraTextures(scene);
+  background(scene, layer, b, 0x0a0a14);
+  const SEG = 7;
+  const body = Array.from({ length: 6 }, (_, i) =>
+    add(layer, scene.add.image(-i * SEG, b.height * 0.4, i === 0 ? HY.snakeHead : HY.snakeBody)),
+  );
+  const pellet = add(layer, scene.add.image(b.width * 0.7, b.height * 0.4, HY.pellet));
+  const ship = add(layer, scene.add.image(b.width / 2, b.height - 8, HY.ship));
+  const bullet = add(layer, scene.add.image(b.width / 2, b.height - 8, HY.bullet)).setVisible(false);
+
+  let t = 0;
+  let bulletY = -10;
+  return {
+    update(_time, delta) {
+      t += delta;
+      // Head weaves toward the pellet; body trails behind in a sine wave.
+      const hx = (t * 0.04) % (b.width + 40);
+      body.forEach((seg, i) => {
+        seg.x = hx - i * SEG;
+        seg.y = b.height * 0.4 + Math.sin(t * 0.005 - i * 0.6) * 10;
+        if (i === 0) seg.setAngle(90);
+      });
+      pellet.setVisible(Math.abs(body[0].x - pellet.x) > 6);
+      bulletY -= delta * 0.16;
+      if (bulletY < 0) {
+        bulletY = b.height - 14;
+        bullet.x = ship.x;
+        bullet.setVisible(true);
+      }
+      bullet.y = bulletY;
+    },
+    destroy() {},
+  };
+};
+
 const fallback: PreviewFactory = (scene, layer, b) => {
   background(scene, layer, b, 0x101020);
   const palette = [0xd82800, 0xffd000, 0x3cbcfc, 0x00b050, 0xff4dd2];
@@ -272,6 +309,7 @@ const FACTORIES: Record<string, PreviewFactory> = {
   donkeykong,
   mariobros,
   arkanoid,
+  hydra,
 };
 
 /** Build the animated preview for a game id, falling back to a generic card. */
