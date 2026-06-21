@@ -76,6 +76,10 @@ export const GAME = {
   dohHitsRequired: 16,
   dohHitPoints: 1000, // per hit
   dohProjectileSpeed: 2.0,
+  dohFireMs: 1500, // gap between mouth projectiles
+  dohHitCooldownMs: 220, // per-ball debounce so one contact = one hit
+  dohStage: 33,
+  victoryMs: 4200,
 
   // Scoring
   capsuleCollectPoints: 1000, // any capsule caught = 1000 pts
