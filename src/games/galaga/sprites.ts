@@ -143,6 +143,9 @@ export function enemyFrame(type: EnemyType, frame: 0 | 1): string {
   return `galaga-${type}-${frame}`;
 }
 
+/** Boss Galaga after its first hit — same shape, red-tinted body. */
+export const BOSS_HIT_KEY = 'galaga-boss-hit';
+
 export const TX = {
   ship: 'galaga-ship',
   bullet: 'galaga-bullet',
@@ -178,6 +181,14 @@ export function buildGalagaTextures(scene: Phaser.Scene): void {
   };
   drawPixelArt(scene, enemyFrame('boss', 0), BOSS_A, bossPal);
   drawPixelArt(scene, enemyFrame('boss', 1), BOSS_B, bossPal);
+  // Damaged variant: red body, same wings/crown/eyes.
+  drawPixelArt(scene, BOSS_HIT_KEY, BOSS_A, {
+    G: 0xd83020,
+    B: COLORS.bossWing,
+    Y: COLORS.bossCrown,
+    W: COLORS.eye,
+    A: COLORS.bossAccent,
+  });
 
   makeExplosionFrames(scene);
 }

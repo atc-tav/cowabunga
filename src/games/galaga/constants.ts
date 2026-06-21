@@ -38,11 +38,23 @@ export const FORM_ROW_GAP = 18;
 export const FORM_TOP = 46;
 export const FLAP_MS = 420; // wing-flap cadence (whole formation in unison)
 
-export const ENEMY_SCORE: Record<EnemyType, number> = {
+export const ENEMY_SCORE_FORMATION: Record<EnemyType, number> = {
   bee: 50,
   butterfly: 80,
   boss: 150,
 };
+
+// Diving / flying-in (i.e. not seated in formation) is worth more.
+export const ENEMY_SCORE_ATTACK: Record<EnemyType, number> = {
+  bee: 100,
+  butterfly: 160,
+  boss: 400,
+};
+
+/** Alias used by the challenge stage, where enemies are always "attacking". */
+export const ENEMY_SCORE = ENEMY_SCORE_FORMATION;
+
+export const BOSS_HITS = 2; // Boss Galaga takes two hits (color change after one)
 
 export const EXPLOSION_FRAME_MS = 55;
 export const WAVE_RESPAWN_MS = 1200;
@@ -67,6 +79,11 @@ export const ENEMY_FIRE_MS = 800; // per-diver fire cadence
 export const ENEMY_FIRE_MIN_MS = 440; // floor at high waves
 
 export const LIVES_START = 3;
+export const MAX_LIVES = 18;
+// Extra fighter at 20k, then every 70k (70k, 140k, ...); none past 1,000,000.
+export const EXTRA_LIFE_FIRST = 20000;
+export const EXTRA_LIFE_REPEAT = 70000;
+export const EXTRA_LIFE_MAX_SCORE = 1000000;
 export const READY_MS = 1500;
 export const DEATH_PAUSE_MS = 1100;
 export const GAMEOVER_MS = 2500;
