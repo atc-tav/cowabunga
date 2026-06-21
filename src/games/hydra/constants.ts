@@ -16,7 +16,6 @@ export const PLAY_ROW_MAX = 33;
 
 // --- Player ship ------------------------------------------------------------
 export const PLAYER_SPEED = 84; // px/sec (glides one tile in ~95ms — agile)
-export const PLAYER_RANGE_TILES = 6; // bullet travel distance
 export const MAX_BULLETS = 3;
 export const BULLET_SPEED = 240; // px/sec
 export const SMOKE_MAX_TILES = 5; // cosmetic trail cap
@@ -39,7 +38,7 @@ export const SNAKE_RESPAWN_MS = 1600; // delay to spawn a fresh snake when board
 export const MAX_SNAKES = 4; // global cap incl. cut-spawned
 
 // --- Snake: venom (ranged) --------------------------------------------------
-export const VENOM_RANGE_TILES = 3; // must be < PLAYER_RANGE_TILES
+// Venom and bullets fly the full screen; only the cooldown throttles firing.
 export const VENOM_SPEED = 120; // px/sec
 export const VENOM_COOLDOWN_MS = 600;
 export const VENOM_GREEN = 0.6;

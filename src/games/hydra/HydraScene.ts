@@ -44,8 +44,6 @@ interface Projectile {
   img: Phaser.GameObjects.Image;
   vx: number;
   vy: number;
-  dist: number;
-  maxDist: number;
 }
 
 interface Venom extends Projectile {
@@ -178,6 +176,7 @@ export class HydraScene extends BaseGameScene {
     }
 
     this.updatePlayer(delta);
+    this.checkPlayerPelletPickup();
     this.updateBullets(delta);
     for (const snake of this.snakes) this.updateSnake(snake, delta);
     this.updateSevered(delta);
@@ -251,8 +250,6 @@ export class HydraScene extends BaseGameScene {
       img,
       vx: this.facing.x * C.BULLET_SPEED,
       vy: this.facing.y * C.BULLET_SPEED,
-      dist: 0,
-      maxDist: C.PLAYER_RANGE_TILES * C.TILE,
     });
   }
 
@@ -262,8 +259,8 @@ export class HydraScene extends BaseGameScene {
       const b = this.bullets[i];
       b.img.x += b.vx * dt;
       b.img.y += b.vy * dt;
-      b.dist += Math.hypot(b.vx, b.vy) * dt;
-      if (b.dist >= b.maxDist || !this.inWorld(b.img.x, b.img.y)) {
+      // Bullets fly until they leave the screen or hit something.
+      if (!this.inWorld(b.img.x, b.img.y)) {
         b.img.destroy();
         this.bullets.splice(i, 1);
         continue;
@@ -287,9 +284,7 @@ export class HydraScene extends BaseGameScene {
     // Pellet?
     const pkey = `${col},${row}`;
     if (this.pellets.has(pkey)) {
-      this.destroyPellet(pkey);
-      this.popScore(b.img.x, b.img.y, C.SCORE_PELLET_DENIED, { color: '#ffd23c', fontSize: '8px' });
-      this.enrageNearestSnake();
+      this.consumePelletAsPlayer(pkey, b.img.x, b.img.y);
       return true;
     }
 
@@ -587,14 +582,12 @@ export class HydraScene extends BaseGameScene {
     const pt = this.mover.currentTile();
     const f = snake.facing;
     // Player must be on the straight line ahead, within venom range.
+    // Fire if the player is anywhere on the straight line directly ahead — the
+    // venom travels the full screen, so there's no range cap on detection.
     const onLine =
       (f.x !== 0 && pt.row === head.row && Math.sign(pt.col - head.col) === f.x) ||
       (f.y !== 0 && pt.col === head.col && Math.sign(pt.row - head.row) === f.y);
     if (!onLine) {
-      return;
-    }
-    const dist = Math.abs(pt.col - head.col) + Math.abs(pt.row - head.row);
-    if (dist > C.VENOM_RANGE_TILES) {
       return;
     }
     this.spitVenom(snake);
@@ -613,8 +606,6 @@ export class HydraScene extends BaseGameScene {
       type,
       vx: snake.facing.x * C.VENOM_SPEED,
       vy: snake.facing.y * C.VENOM_SPEED,
-      dist: 0,
-      maxDist: C.VENOM_RANGE_TILES * C.TILE,
     });
   }
 
@@ -631,7 +622,6 @@ export class HydraScene extends BaseGameScene {
       const v = this.venoms[i];
       v.img.x += v.vx * dt;
       v.img.y += v.vy * dt;
-      v.dist += Math.hypot(v.vx, v.vy) * dt;
       const hit =
         this.invulnTimer <= 0 &&
         Phaser.Math.Distance.Between(v.img.x, v.img.y, this.mover.x, this.mover.y) < C.TILE * 0.7;
@@ -641,7 +631,8 @@ export class HydraScene extends BaseGameScene {
         this.venoms.splice(i, 1);
         continue;
       }
-      if (v.dist >= v.maxDist || !this.inWorld(v.img.x, v.img.y)) {
+      // Venom flies until it leaves the screen.
+      if (!this.inWorld(v.img.x, v.img.y)) {
         v.img.destroy();
         this.venoms.splice(i, 1);
       }
@@ -692,6 +683,23 @@ export class HydraScene extends BaseGameScene {
       img.destroy();
       this.pellets.delete(key);
     }
+  }
+
+  /** The player driving over a pellet eats it — identical effect to shooting it. */
+  private checkPlayerPelletPickup(): void {
+    const pt = this.mover.currentTile();
+    const key = `${pt.col},${pt.row}`;
+    if (this.pellets.has(key)) {
+      this.consumePelletAsPlayer(key, this.mover.x, this.mover.y);
+    }
+  }
+
+  /** Shared "player removed a pellet" path: deny the snake, enrage it, respawn. */
+  private consumePelletAsPlayer(key: string, x: number, y: number): void {
+    this.destroyPellet(key);
+    this.popScore(x, y, C.SCORE_PELLET_DENIED, { color: '#ffd23c', fontSize: '8px' });
+    this.enrageNearestSnake();
+    this.time.delayedCall(C.PELLET_RESPAWN_MS, () => this.spawnPellet());
   }
 
   private randomFreeTile(): Cell | null {

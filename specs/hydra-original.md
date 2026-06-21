@@ -139,15 +139,18 @@ shoot the last-faced direction. This also defines aim under status effects (§3.
 - `PELLET_COUNT` pellets exist on the play area at once; eaten/destroyed pellets
   respawn at random free tiles after `PELLET_RESPAWN_MS`.
 - **Snake eats a pellet:** snake length +1 (see §4), pellet respawns elsewhere.
-- **Player shoots a pellet:** the pellet is **destroyed** (denying the snake that
-  growth) **and** the snake is immediately **enraged** — it learns the pellet's
-  position and chases the player at `ENRAGE_SPEED_MULT` for a random
-  `EFFECT_MIN..EFFECT_MAX`. Risk/reward: stunt its growth, draw its aggro.
+- **Player removes a pellet** — by **shooting it OR driving over (eating) it**;
+  both have the **identical effect**: the pellet is **destroyed** (denying the
+  snake that growth), points are awarded, the pellet respawns after
+  `PELLET_RESPAWN_MS`, **and** the nearest snake is immediately **enraged** — it
+  learns the pellet's position and chases at `ENRAGE_SPEED_MULT` for a random
+  `EFFECT_MIN..EFFECT_MAX`. Risk/reward: stunt its growth, draw its aggro. The
+  player has two ways to deny a pellet, both equivalent.
 
-> ✅ **CHECK — Pellet denial + enrage:** Shoot a pellet — it disappears, the
-> snake's `length` does not increase from it, and the snake enters enraged chase
-> for a randomized duration. Verify the destroyed pellet later respawns so the
-> board never runs dry.
+> ✅ **CHECK — Pellet denial + enrage:** Shoot a pellet, then (separately) drive
+> over one — both disappear, award the same points, enrage the nearest snake, and
+> later respawn so the board never runs dry. Verify eating and shooting are
+> indistinguishable in effect.
 
 ### 3.5 Arena walls
 
@@ -222,26 +225,19 @@ The snake has **two layered health systems**:
 Independent of the awareness radius, the snake spits venom when it **sees** the
 player straight ahead:
 
-- "Sees" = the player occupies **any tile directly in front of the head**, along
-  its current `facing`, within `VENOM_RANGE_TILES`.
-- `VENOM_RANGE_TILES` is **shorter than the player's range** — it is
-  `clamp(PLAYER_RANGE_TILES * 1/3 .. PLAYER_RANGE_TILES * 1/2)`. You out-range
-  the snake head-on, so disciplined sniping from beyond venom reach is rewarded.
+- "Sees" = the player occupies **any tile directly in front of the head** along
+  its current `facing` — the **full line to the screen edge**, no distance cap
+  (matching the original "any square directly in front" brief).
 - On sight, and if `venomCooldownMs` has elapsed, the snake fires one venom
   projectile down its facing line; type is the weighted roll from §3.6.
+- **Range:** both venom and the player's bullets travel the **full screen** until
+  they hit something or leave the playfield — neither has a tile range cap. Fire
+  *rate* is throttled by `venomCooldownMs`.
 
 > ✅ **CHECK — LOS gating:** Place the player one tile to the side of the snake's
-> facing line — no venom. Place the player directly ahead within range — venom
-> fires (subject to cooldown). Verify venom only travels straight along facing.
-
-> ✅ **CHECK — Out-ranging:** With the snake facing the player, verify the player
-> can sit at a distance > `VENOM_RANGE_TILES` but ≤ `PLAYER_RANGE_TILES` and land
-> head shots without being hit by venom.
-
-> **Open interpretation flag:** The brief said venom at "1/2 to 1/3 the player's
-> shooting range." This spec reads that as **range** (distance), and adds a
-> separate `VENOM_COOLDOWN_MS` for fire *rate*. If "rate" was meant instead, move
-> the 1/3–1/2 factor onto the cooldown. Both are tunable (§13); confirm intent.
+> facing line — no venom. Place the player anywhere directly ahead (near or far)
+> — venom fires (subject to cooldown) and travels straight along facing to the
+> edge. Verify it fires regardless of distance, not just point-blank.
 
 ### 4.4 Player bullets vs. the snake
 
@@ -539,8 +535,8 @@ export const GAME = {
   awarenessMin:       2,      // tiles, floor for short snakes
   loseInterestMs:     1500,   // out-of-radius time before chase -> forage
 
-  // Snake — venom (ranged)
-  venomRangeTiles:    3,      // ~ playerRangeTiles * (1/3..1/2); must be < player range
+  // Snake — venom (ranged). Venom and bullets fly the full screen (no range
+  // cap); fire rate is throttled by the cooldown.
   venomSpeed:         120,    // px per second
   venomCooldownMs:    600,    // min time between venom shots
   venomWeights:       { green: 0.6, red: 0.3, black: 0.1 }, // sums to 1.0
@@ -580,8 +576,9 @@ export const GAME = {
 } as const;
 ```
 
-> ✅ **CHECK — Range relationship:** Assert `venomRangeTiles < playerRangeTiles`
-> at startup. If this ever flips, the "out-range the snake" design breaks.
+> ✅ **CHECK — Full-screen projectiles:** A bullet fired into open space travels
+> until it leaves the playfield (it is not capped at a tile range); the same holds
+> for venom. Verify neither despawns mid-flight over empty tiles.
 
 ---
 
@@ -599,7 +596,7 @@ free to adjust, defaults given.)
 | Player hunts the snake; grid-locked 4-dir for both | yes |
 | Two-layer snake health: head HP = kill, length = power | yes |
 | Awareness radius grows with length | yes |
-| Venom range strictly shorter than player range | yes |
+| Bullets and venom travel the full screen; venom fires on any forward-line alignment | yes |
 | Venom types & weights: GREEN 60 / RED 30 / BLACK 10 | yes |
 | GREEN paralyzes, RED inverts+speeds, BLACK costs a life | yes |
 | Severing by length: 1/2/3 fates; ≥ main → new snake | yes |
@@ -704,7 +701,7 @@ Cut-spawned snakes inherit the *current* ramped `snakeBaseStepMs`.
 - [ ] `awarenessRadius = max(awarenessMin, length*0.5)`; grows as it eats
 - [ ] Player in radius → `chase`; out for `loseInterestMs` → `forage`
 - [ ] Venom fires only on straight LOS within `venomRangeTiles`, off cooldown
-- [ ] `venomRangeTiles < playerRangeTiles` (out-ranging works)
+- [ ] Bullets and venom fly the full screen (no tile range cap)
 - [ ] Venom weights resolve ≈ 60/30/10; GREEN/RED/BLACK effects correct
 - [ ] Effects mutually exclusive; new effect refreshes timer
 - [ ] Paralyzed player eaten on head contact = death
