@@ -160,17 +160,22 @@ export abstract class BaseGameScene extends Phaser.Scene {
   }
 
   private createHud(): void {
+    // scrollFactor(0) pins the HUD to the viewport so it survives a scrolling
+    // camera (shared/world). A no-op for the fixed-camera single-screen games.
     this.scoreText = this.add
       .text(4, 4, 'SCORE 0', HUD_STYLE)
+      .setScrollFactor(0)
       .setDepth(1000);
     this.highText = this.add
       .text(this.nativeWidth - 4, 4, `HI ${this.scores.high}`, HUD_STYLE)
       .setOrigin(1, 0)
+      .setScrollFactor(0)
       .setDepth(1000);
     this.pauseText = this.add
       .text(this.nativeWidth / 2, this.nativeHeight / 2, 'PAUSE', LABEL_STYLE)
       .setOrigin(0.5)
       .setColor('#ffffff')
+      .setScrollFactor(0)
       .setDepth(2000)
       .setVisible(false);
   }

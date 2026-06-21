@@ -54,7 +54,8 @@ src/
 │   ├── textures.ts         drawPixelArt() — the programmatic-sprite primitive
 │   ├── titleArt.ts         Arc title logos (banner + arc wordmark + stars); see docs/title-art.md
 │   ├── transition.ts       Fade scene transitions (home<->game, with title card)
-│   └── ui.ts               Shared colors + text styles
+│   ├── ui.ts               Shared colors + text styles
+│   └── world/              Scrolling-game foundation (camera platformers/adventures); see world/README.md
 └── games/
     └── <name>/             Self-contained; imports only from shared/
         ├── <Name>Scene.ts  extends BaseGameScene
@@ -88,3 +89,4 @@ Mario Bros. → Dig Dug**, each one slice at a time.
 - `npm run dev` — dev server (HMR)
 - `npm run build` — typecheck + production build
 - `npm run typecheck` — types only
+- `npm test` — Vitest mode-1 unit tests (pure logic; e.g. `shared/world`)
