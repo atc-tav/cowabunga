@@ -5,6 +5,7 @@ import { UI_COLORS, HINT_STYLE } from '../shared/ui';
 import { buildPreview, Preview } from './previews';
 import { drawCowabungaLogo } from './logo';
 import { TouchControls } from '../shared/TouchControls';
+import { fadeToScene, fadeSceneIn } from '../shared/transition';
 
 /**
  * The arcade launcher. A single "channel" carousel: the selected game animates
@@ -40,6 +41,7 @@ export class MainMenu extends Phaser.Scene {
   private preview?: Preview;
   private knobs: Phaser.GameObjects.Container[] = [];
   private noiseKeys: string[] = [];
+  private transitioning = false;
 
   constructor() {
     super({ key: 'MainMenu' });
@@ -49,6 +51,8 @@ export class MainMenu extends Phaser.Scene {
     const { W, H } = MainMenu;
     this.scale.resize(W, H);
     this.cameras.main.setBackgroundColor('#000000');
+    fadeSceneIn(this);
+    this.transitioning = false;
     this.controls = new InputManager(this);
     this.games = GAMES.filter((g) => !g.hidden);
     this.selected = 0;
@@ -119,13 +123,18 @@ export class MainMenu extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     this.controls.update();
+    if (this.transitioning) {
+      return;
+    }
     if (this.controls.justPressed('left')) {
       this.move(-1);
     } else if (this.controls.justPressed('right')) {
       this.move(1);
     }
     if (this.controls.justPressed('confirm') && this.games.length > 0) {
-      this.scene.start(this.games[this.selected].key);
+      const game = this.games[this.selected];
+      this.transitioning = true;
+      fadeToScene(this, game.key, { title: game.title });
       return;
     }
     this.preview?.update(time, delta);

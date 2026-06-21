@@ -7,6 +7,7 @@ import { screenShake, ImpactPreset } from './juice';
 import { floatingText, FloatingTextOptions } from './popups';
 import { HUD_STYLE, LABEL_STYLE } from './ui';
 import { TouchControls } from './TouchControls';
+import { fadeToScene, fadeSceneIn } from './transition';
 
 export interface BaseGameSceneConfig {
   /** Phaser scene key (must be unique + match the registry entry). */
@@ -38,6 +39,7 @@ export abstract class BaseGameScene extends Phaser.Scene {
   private highText?: Phaser.GameObjects.Text;
   private pauseText?: Phaser.GameObjects.Text;
   private paused = false;
+  private transitioning = false;
 
   constructor(config: BaseGameSceneConfig) {
     super({ key: config.key });
@@ -60,6 +62,8 @@ export abstract class BaseGameScene extends Phaser.Scene {
     this.controls.onFirstInput(() => this.audio.unlock());
 
     this.paused = false;
+    this.transitioning = false;
+    fadeSceneIn(this);
     // Touch overlay: a game shows the Home (exit-to-menu) button.
     TouchControls.shared?.setHomeVisible(true);
     this.createHud();
@@ -70,6 +74,9 @@ export abstract class BaseGameScene extends Phaser.Scene {
   /** Phaser lifecycle — concrete games override `updateGame()` instead. */
   update(time: number, delta: number): void {
     this.controls.update();
+    if (this.transitioning) {
+      return;
+    }
     if (this.controls.justPressed('pause')) {
       this.togglePause();
     }
@@ -144,7 +151,11 @@ export abstract class BaseGameScene extends Phaser.Scene {
   }
 
   protected returnToMenu(): void {
-    this.scene.start('MainMenu');
+    if (this.transitioning) {
+      return;
+    }
+    this.transitioning = true;
+    fadeToScene(this, 'MainMenu');
   }
 
   private createHud(): void {
