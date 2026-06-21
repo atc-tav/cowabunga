@@ -3,6 +3,7 @@ import { GAMES, GameEntry } from '../registry';
 import { InputManager } from '../shared/InputManager';
 import { UI_COLORS, HINT_STYLE } from '../shared/ui';
 import { buildPreview, Preview } from './previews';
+import { drawCowabungaLogo } from './logo';
 import { TouchControls } from '../shared/TouchControls';
 
 /**
@@ -17,12 +18,12 @@ export class MainMenu extends Phaser.Scene {
   private static readonly W = 256;
   private static readonly H = 288;
 
-  // 80s-TV geometry (bezel outer, recessed screen inner).
-  private static readonly BEZEL = { x: 16, y: 36, w: 224, h: 150, r: 14 };
-  private static readonly SCREEN = { x: 28, y: 50, w: 160, h: 120, r: 8 };
+  // 80s-TV geometry (bezel outer, recessed screen inner). Sits below the logo.
+  private static readonly BEZEL = { x: 16, y: 64, w: 224, h: 126, r: 14 };
+  private static readonly SCREEN = { x: 28, y: 78, w: 160, h: 98, r: 8 };
 
-  private static readonly TITLE_Y = 200;
-  private static readonly SELECTOR_Y = 226;
+  private static readonly TITLE_Y = 204;
+  private static readonly SELECTOR_Y = 228;
 
   private controls!: InputManager;
   private games: GameEntry[] = [];
@@ -52,13 +53,7 @@ export class MainMenu extends Phaser.Scene {
     // The menu is "home" — hide the touch Home button here.
     TouchControls.shared?.setHomeVisible(false);
 
-    this.add
-      .text(W / 2, 16, 'COWABUNGA ARCADE', {
-        fontFamily: 'monospace',
-        fontSize: '17px',
-        color: '#fcfc00',
-      })
-      .setOrigin(0.5);
+    drawCowabungaLogo(this, W / 2, 6);
 
     this.buildTV();
     this.buildSelector();
@@ -119,7 +114,7 @@ export class MainMenu extends Phaser.Scene {
     // Control panel on the right: two knobs, a power LED, a speaker grille.
     const panelX = SCREEN.x + SCREEN.w + 26;
     const knobs = this.add.graphics().setDepth(1);
-    for (const ky of [SCREEN.y + 22, SCREEN.y + 56]) {
+    for (const ky of [SCREEN.y + 20, SCREEN.y + 48]) {
       knobs.fillStyle(0x2a2a2a, 1);
       knobs.fillCircle(panelX, ky, 9);
       knobs.lineStyle(2, 0x111111, 1);
@@ -131,10 +126,10 @@ export class MainMenu extends Phaser.Scene {
       knobs.strokePath();
     }
     knobs.fillStyle(0x00ff66, 1);
-    knobs.fillCircle(panelX, SCREEN.y + 88, 3);
+    knobs.fillCircle(panelX, SCREEN.y + 72, 3);
     knobs.lineStyle(2, 0x222222, 1);
     for (let i = 0; i < 4; i++) {
-      const gy = SCREEN.y + 100 + i * 4;
+      const gy = SCREEN.y + 82 + i * 4;
       knobs.beginPath();
       knobs.moveTo(panelX - 9, gy);
       knobs.lineTo(panelX + 9, gy);
