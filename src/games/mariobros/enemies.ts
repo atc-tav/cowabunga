@@ -18,6 +18,14 @@ import {
   CRAB_ANGRY_SPEED,
   CRAB_RECOVER_SPEED,
   CRAB_SCORE,
+  FLY_W,
+  FLY_H,
+  FLY_SPEED,
+  FLY_RECOVER_SPEED,
+  FLY_SCORE,
+  FLY_HOP_SPEED,
+  FLY_GROUND_MS,
+  FLY_FRAME_MS,
 } from './constants';
 import { COLORS } from './palette';
 import { TX } from './sprites';
@@ -41,10 +49,12 @@ export interface EnemyKind {
   becomesShell: boolean; // kicked while flipped → sliding projectile (else dies)
   score: number;
   tex: { walk: [string, string]; flip: string };
+  frameMs: number; // walk/flap animation cadence
   angryTint?: number;
+  hops?: boolean; // moves by hopping; only flippable during the grounded window
 }
 
-export const KINDS: Record<'turtle' | 'crab', EnemyKind> = {
+export const KINDS: Record<'turtle' | 'crab' | 'fly', EnemyKind> = {
   turtle: {
     id: 'turtle',
     w: SHELL_W,
@@ -57,6 +67,7 @@ export const KINDS: Record<'turtle' | 'crab', EnemyKind> = {
     becomesShell: true,
     score: SHELL_SCORE,
     tex: { walk: [TX.shellWalk0, TX.shellWalk1], flip: TX.shellFlip },
+    frameMs: SHELL_FRAME_MS,
   },
   crab: {
     id: 'crab',
@@ -70,7 +81,23 @@ export const KINDS: Record<'turtle' | 'crab', EnemyKind> = {
     becomesShell: false,
     score: CRAB_SCORE,
     tex: { walk: [TX.crabWalk0, TX.crabWalk1], flip: TX.crabFlip },
+    frameMs: SHELL_FRAME_MS,
     angryTint: COLORS.crabAngry,
+  },
+  fly: {
+    id: 'fly',
+    w: FLY_W,
+    h: FLY_H,
+    walkSpeed: FLY_SPEED,
+    angrySpeed: FLY_SPEED,
+    recoverSpeed: FLY_RECOVER_SPEED,
+    flipsToStun: 1,
+    canStomp: true,
+    becomesShell: false,
+    score: FLY_SCORE,
+    tex: { walk: [TX.flyWalk0, TX.flyWalk1], flip: TX.flyFlip },
+    frameMs: FLY_FRAME_MS,
+    hops: true,
   },
 };
 
@@ -94,6 +121,8 @@ export class Enemy {
   private speed: number;
   private frameTimer = 0;
   private frame = 0;
+  private hopTimer = 0;
+  private wasGround = false;
 
   constructor(scene: Phaser.Scene, kind: EnemyKind, x: number, y: number, dir: 1 | -1) {
     this.kind = kind;
@@ -117,9 +146,34 @@ export class Enemy {
 
     this.body.update(deltaMs, GRAVITY, floors);
     this.floorSeg = this.body.onGround ? this.findFloor(floors) : null;
+    if (this.kind.hops) {
+      this.hop(deltaMs);
+    }
 
     this.sprite.setPosition(this.body.x, this.body.y);
     this.animate(deltaMs);
+  }
+
+  /**
+   * Hopping movement (the fly): launch upward after a brief grounded dwell. The
+   * dwell is the only window it's grounded — and so the only time it's flippable
+   * (platform/POW bumps require it to be on a floor).
+   */
+  private hop(deltaMs: number): void {
+    if (!this.isActive) {
+      return;
+    }
+    if (this.body.onGround) {
+      if (!this.wasGround) {
+        this.hopTimer = FLY_GROUND_MS; // just landed — pause before the next hop
+      } else {
+        this.hopTimer -= deltaMs;
+        if (this.hopTimer <= 0) {
+          this.body.jump(FLY_HOP_SPEED);
+        }
+      }
+    }
+    this.wasGround = this.body.onGround;
   }
 
   /**
@@ -142,10 +196,19 @@ export class Enemy {
     return false;
   }
 
-  /** Directly flip it for `ms` (e.g. stomping a speeding shell to stop it). */
+  /** Directly flip it for `ms` (a stomped speeding shell, or a POW slam). */
   flipFor(ms: number): void {
     this.state = 'flipped';
     this.stun = ms;
+  }
+
+  /** A sliding shell bumped from below pops up, keeping its horizontal slide. */
+  bumpHop(speed: number): void {
+    if (this.state !== 'shell') {
+      return;
+    }
+    this.body.vy = -speed;
+    this.body.onGround = false;
   }
 
   /** Recover from a flip: back on its feet, faster, a fresh direction. */
@@ -217,7 +280,7 @@ export class Enemy {
       this.sprite.clearTint();
     }
     this.frameTimer += deltaMs;
-    if (this.frameTimer >= SHELL_FRAME_MS) {
+    if (this.frameTimer >= this.kind.frameMs) {
       this.frameTimer = 0;
       this.frame ^= 1;
     }

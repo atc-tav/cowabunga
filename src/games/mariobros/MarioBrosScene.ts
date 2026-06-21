@@ -22,6 +22,7 @@ import {
   BUMP_RECOVER,
   SHELL_STUN_MS,
   SHELL_STOP_WAKE_MS,
+  SHELL_BUMP_HOP,
   STOMP_BOUNCE,
   ENEMY_TARGET,
   ENEMY_RESPAWN_MS,
@@ -155,6 +156,7 @@ export class MarioBrosScene extends BaseGameScene {
     }
     this.recoverEnemies();
     this.shellsHitEnemies();
+    this.handleEnemyCollisions();
     this.handleEnemyBounds();
     this.maintainEnemies(delta);
 
@@ -260,7 +262,7 @@ export class MarioBrosScene extends BaseGameScene {
 
   private spawnEnemy(): void {
     const spawn = Phaser.Utils.Array.GetRandom(topPipeSpawns());
-    const kind = Math.random() < 0.5 ? KINDS.turtle : KINDS.crab;
+    const kind = Phaser.Utils.Array.GetRandom([KINDS.turtle, KINDS.crab, KINDS.fly]);
     const e = new Enemy(this, kind, spawn.x, spawn.feetY - kind.h / 2, spawn.dir);
     e.body.onGround = true; // walks out horizontally onto the top floor
     this.enemies.push(e);
@@ -275,8 +277,13 @@ export class MarioBrosScene extends BaseGameScene {
       this.impact('light'); // the bump's the core verb — let it land
     }
     for (const e of this.enemies) {
-      if (e.isActive && e.floorSeg === seg) {
+      if (e.floorSeg !== seg) {
+        continue;
+      }
+      if (e.isActive) {
         e.bump(SHELL_STUN_MS);
+      } else if (e.isShell) {
+        e.bumpHop(SHELL_BUMP_HOP); // pops up but keeps sliding
       }
     }
   }
@@ -294,7 +301,7 @@ export class MarioBrosScene extends BaseGameScene {
     this.flashPow();
     for (const e of this.enemies) {
       if (e.isActive && e.body.onGround) {
-        e.bump(SHELL_STUN_MS);
+        e.flipFor(SHELL_STUN_MS); // POW flips outright — even a crab skips its angry step
       }
     }
     this.drawPow();
@@ -397,6 +404,40 @@ export class MarioBrosScene extends BaseGameScene {
         if (Phaser.Geom.Intersects.RectangleToRectangle(sb, e.sprite.getBounds())) {
           this.defeat(e, e.sprite.x, e.sprite.y);
         }
+      }
+    }
+  }
+
+  /**
+   * Enemies are solid to each other: two active ones that bump turn around and
+   * push apart. Sliding shells (which mow through) and helpless flipped ones are
+   * left out.
+   */
+  private handleEnemyCollisions(): void {
+    for (let i = 0; i < this.enemies.length; i++) {
+      const a = this.enemies[i];
+      if (!a.isActive) {
+        continue;
+      }
+      for (let j = i + 1; j < this.enemies.length; j++) {
+        const b = this.enemies[j];
+        if (!b.isActive) {
+          continue;
+        }
+        const dx = Math.abs(a.body.x - b.body.x);
+        const dy = Math.abs(a.body.y - b.body.y);
+        const minX = (a.kind.w + b.kind.w) / 2;
+        const minY = (a.kind.h + b.kind.h) / 2;
+        if (dx >= minX || dy >= minY) {
+          continue;
+        }
+        const left = a.body.x <= b.body.x ? a : b;
+        const right = left === a ? b : a;
+        left.dir = -1;
+        right.dir = 1;
+        const push = (minX - dx) / 2 + 0.5;
+        left.body.x -= push;
+        right.body.x += push;
       }
     }
   }

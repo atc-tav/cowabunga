@@ -22,6 +22,9 @@ export const COLORS = {
   crabEye: 0xffffff,
   crabClaw: 0xfca044,
   crabAngry: 0xff9090, // tint when sped-up after the first bump
+  fly: 0x6868f8, // Fighter Fly body
+  flyEye: 0xffffff,
+  flyWing: 0xc0c0ff,
 } as const;
 
 export const MARIO_PALETTE: PixelPalette = {
