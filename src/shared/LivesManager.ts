@@ -24,6 +24,12 @@ export class LivesManager {
     return this._count;
   }
 
+  /** Award extra lives (e.g. a score-threshold bonus or a 1-up pickup). */
+  gain(n = 1): number {
+    this._count += n;
+    return this._count;
+  }
+
   reset(): void {
     this._count = this.initial;
   }
