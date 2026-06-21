@@ -71,6 +71,11 @@ import { buildGalagaTextures, enemyFrame, EXPLOSION_KEYS, TX, BOSS_HIT_KEY } fro
 import { Starfield } from './starfield';
 import { buildFormation, Enemy } from './enemies';
 import { makeEntryPath, makeDivePath, makeApproachPath, makeChallengePath } from './entryPaths';
+import {
+  GameTestSurface,
+  InvariantViolation,
+  registerTestSurface,
+} from '../../shared/testkit/surface';
 
 interface ChainSpec {
   type: EnemyType;
@@ -192,6 +197,11 @@ export class GalagaScene extends BaseGameScene {
       .add('dying', { enter: () => this.enterDying() })
       .add('gameover', { enter: () => this.enterGameOver() });
     this.flow.transition('ready');
+
+    // Expose the deterministic test surface (dev/test builds only).
+    if (import.meta.env.DEV) {
+      registerTestSurface(this.buildTestSurface());
+    }
   }
 
   protected updateGame(_time: number, delta: number): void {
@@ -549,6 +559,11 @@ export class GalagaScene extends BaseGameScene {
     if (!this.controls.justPressed('fire')) {
       return;
     }
+    this.fireVolley();
+  }
+
+  /** Spawn a shot from each active ship, respecting the on-screen bullet cap. */
+  private fireVolley(): void {
     const shipXs = this.dual && this.wingman ? [this.player.x, this.wingman.x] : [this.player.x];
     const cap = this.dual ? MAX_BULLETS * 2 : MAX_BULLETS;
     // Fire the whole volley atomically so both ships always shoot together
@@ -1045,5 +1060,99 @@ export class GalagaScene extends BaseGameScene {
       obj.destroy();
     }
     list.length = 0;
+  }
+
+  // --- test surface (dev/test only) ---------------------------------------
+
+  private buildTestSurface(): GameTestSurface {
+    return {
+      gameId: 'galaga',
+      sceneKey: 'game-galaga',
+      snapshot: () => ({
+        score: this.scores.score,
+        lives: this.lives.count,
+        wave: this.wave,
+        flow: this.flow.state ?? '',
+        enemyCount: this.enemies.length,
+        bulletCount: this.bullets.length,
+        dual: this.dual,
+        isChallenge: this.isChallenge,
+        nextExtraLife: this.nextExtraLife,
+      }),
+      invariants: (): InvariantViolation[] => {
+        const v: InvariantViolation[] = [];
+        const cap = this.dual ? MAX_BULLETS * 2 : MAX_BULLETS;
+        if (this.bullets.length > cap) {
+          v.push({ rule: 'bullet-cap', detail: `${this.bullets.length} > ${cap}` });
+        }
+        if (this.lives.count < 0 || this.lives.count > MAX_LIVES) {
+          v.push({ rule: 'lives-range', detail: `${this.lives.count}` });
+        }
+        if (this.enemies.some((e) => e.hits < 0)) {
+          v.push({ rule: 'enemy-hits-nonneg', detail: 'an enemy has negative hits' });
+        }
+        return v;
+      },
+      hooks: {
+        composition: () => {
+          const by: Record<string, number> = { boss: 0, butterfly: 0, bee: 0 };
+          for (const e of this.enemies) by[e.type] = (by[e.type] ?? 0) + 1;
+          return { ...by, total: this.enemies.length };
+        },
+        firstBoss: () => {
+          const i = this.enemies.findIndex((e) => e.type === 'boss');
+          if (i < 0) return null;
+          const e = this.enemies[i];
+          return { index: i, x: e.sprite.x, y: e.sprite.y };
+        },
+        /** Drop every enemy except one Boss, so a hit test can't be intercepted. */
+        isolateBoss: () => {
+          const boss = this.enemies.find((e) => e.type === 'boss');
+          if (!boss) return null;
+          for (const e of this.enemies) {
+            if (e !== boss) e.sprite.destroy();
+          }
+          this.enemies = [boss];
+          return { x: boss.sprite.x, y: boss.sprite.y };
+        },
+        setEnemyPos: (i: number, x: number, y: number) => {
+          this.enemies[i]?.sprite.setPosition(x, y);
+        },
+        enemyInfo: (i: number) => {
+          const e = this.enemies[i];
+          if (!e) return { alive: false };
+          return {
+            alive: true,
+            type: e.type,
+            hits: e.hits,
+            damaged: e.damaged,
+            tex: e.sprite.texture.key,
+            state: e.state,
+          };
+        },
+        injectBullet: (x: number, y: number) => {
+          this.bullets.push(this.add.image(x, y, TX.bullet).setDepth(9));
+        },
+        runCheckHits: () => this.checkHits(),
+        scoreCheck: (type: EnemyType) => {
+          const e = this.enemies.find((x) => x.type === type);
+          if (!e) return null;
+          const save = e.state;
+          e.state = 'formed';
+          const formed = this.scoreFor(e);
+          e.state = 'diving';
+          const diving = this.scoreFor(e);
+          e.state = save;
+          return { formed, diving };
+        },
+        setScore: (n: number) => this.scores.setScore(n),
+        forceExtraLifeCheck: () => this.checkExtraLife(),
+        fire: () => this.fireVolley(),
+        clearBullets: () => this.destroyAll(this.bullets),
+        bulletXs: () => this.bullets.map((b) => b.x),
+        setDual: (on: boolean) => this.setDual(on),
+        enemyCount: () => this.enemies.length,
+      },
+    };
   }
 }
