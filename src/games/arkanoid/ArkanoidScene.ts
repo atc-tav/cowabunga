@@ -27,6 +27,7 @@ import {
   buildEnemyTextures,
   enemyTexture,
 } from './enemies';
+import { DOH_TX, buildDohTextures } from './doh';
 
 interface Ball {
   img: Phaser.GameObjects.Image;
@@ -37,6 +38,7 @@ interface Ball {
   caught: boolean;
   caughtOffset: number;
   caughtTimer: number;
+  dohCd: number; // per-ball debounce for DOH hits
 }
 
 interface Brick {
@@ -58,6 +60,14 @@ interface Laser {
   img: Phaser.GameObjects.Image;
   x: number;
   y: number;
+}
+
+interface Projectile {
+  img: Phaser.GameObjects.Image;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
 }
 
 interface Enemy {
@@ -111,6 +121,13 @@ export class ArkanoidScene extends BaseGameScene {
   private readonly lasers: Laser[] = [];
   private readonly enemies: Enemy[] = [];
   private enemySpawnTimer = 0;
+
+  private dohActive = false;
+  private doh?: Phaser.GameObjects.Image;
+  private dohHits = 0;
+  private dohFireTimer = 0;
+  private readonly dohProjectiles: Projectile[] = [];
+
   private readonly lifeIcons: Phaser.GameObjects.Image[] = [];
   private grid: (Brick | null)[][] = [];
   private capsule?: Capsule;
@@ -145,7 +162,9 @@ export class ArkanoidScene extends BaseGameScene {
   protected createGame(): void {
     buildArkanoidTextures(this);
     buildEnemyTextures(this);
+    buildDohTextures(this);
     this.buildExplosion();
+    this.dohActive = false;
 
     this.drawWalls();
 
@@ -178,6 +197,7 @@ export class ArkanoidScene extends BaseGameScene {
       .add('playing', { update: (_c, dt) => this.updatePlaying(dt) })
       .add('dying', { enter: () => this.enterDying() })
       .add('cleared', { enter: () => this.enterCleared() })
+      .add('victory', { enter: () => this.enterVictory() })
       .add('gameover', { enter: () => this.enterGameOver() });
     this.flow.transition('ready');
   }
@@ -193,6 +213,7 @@ export class ArkanoidScene extends BaseGameScene {
     this.clearCapsule();
     this.clearBalls();
     this.clearEnemies();
+    this.clearProjectiles();
     this.vaus.setPosition(GAME.screenWidth / 2, GAME.vausY);
     this.spawnBall(this.vaus.x, VAUS_TOP - R, 0, -1, true);
     this.banner.setText('READY').setVisible(true);
@@ -227,6 +248,7 @@ export class ArkanoidScene extends BaseGameScene {
     this.updateCapsule(delta);
     this.updateLasers(delta);
     this.updateEnemies(delta);
+    this.updateDoh(delta);
     this.updateSlow(delta);
     this.updateCatchTimers(delta);
     this.checkExtraLife();
@@ -240,6 +262,7 @@ export class ArkanoidScene extends BaseGameScene {
     this.clearLasers();
     this.clearCapsule();
     this.clearEnemies();
+    this.clearProjectiles();
     this.time.delayedCall(GAME.deathPauseMs, () => this.afterDeath());
   }
 
@@ -338,6 +361,7 @@ export class ArkanoidScene extends BaseGameScene {
       caught,
       caughtOffset: caught ? x - this.vaus.x : 0,
       caughtTimer: GAME.catchAutoReleaseMs,
+      dohCd: 0,
     };
     this.balls.push(ball);
     return ball;
@@ -373,6 +397,7 @@ export class ArkanoidScene extends BaseGameScene {
     const dist = (this.ballSpeed * delta) / FRAME_MS;
     for (let i = this.balls.length - 1; i >= 0; i--) {
       const b = this.balls[i];
+      b.dohCd = Math.max(0, b.dohCd - delta);
       if (b.caught) {
         continue;
       }
@@ -396,6 +421,7 @@ export class ArkanoidScene extends BaseGameScene {
       this.resolveWalls(b);
       this.resolveBricks(b);
       this.resolveEnemies(b);
+      this.resolveDoh(b);
       this.resolvePaddle(b);
       if (b.y - R > GAME.screenHeight) {
         return true; // fell out the bottom
@@ -562,6 +588,12 @@ export class ArkanoidScene extends BaseGameScene {
         brick?.img.destroy();
       }
     }
+    this.grid = [];
+    if (stage === GAME.dohStage) {
+      this.setupDoh(stage);
+      return;
+    }
+    this.teardownDoh();
     const layout = stageLayout(stage);
     const parsed = parseStage(layout);
     const silverMax = silverHitsForStage(stage);
@@ -806,6 +838,19 @@ export class ArkanoidScene extends BaseGameScene {
     for (let i = this.lasers.length - 1; i >= 0; i--) {
       const beam = this.lasers[i];
       beam.y -= step;
+      // Lasers can shoot down DOH's projectiles...
+      const projIdx = this.projectileAtPoint(beam.x, beam.y);
+      if (projIdx >= 0) {
+        this.dohProjectiles[projIdx].img.destroy();
+        this.dohProjectiles.splice(projIdx, 1);
+        this.removeLaser(i);
+        continue;
+      }
+      // ...but have NO effect on DOH himself (Section 7) — absorbed on contact.
+      if (this.dohActive && this.doh && this.pointInDoh(beam.x, beam.y)) {
+        this.removeLaser(i);
+        continue;
+      }
       const enemyIdx = this.enemyAtPoint(beam.x, beam.y);
       if (enemyIdx >= 0) {
         this.killEnemy(enemyIdx);
@@ -950,6 +995,9 @@ export class ArkanoidScene extends BaseGameScene {
   }
 
   private spawnEnemies(delta: number): void {
+    if (this.dohActive) {
+      return; // no bricks-stage enemies during the boss fight
+    }
     this.enemySpawnTimer -= delta;
     if (this.enemySpawnTimer > 0 || this.enemies.length >= GAME.enemyMaxOnscreen) {
       return;
@@ -1051,6 +1099,165 @@ export class ArkanoidScene extends BaseGameScene {
       e.img.destroy();
     }
     this.enemies.length = 0;
+  }
+
+  // --- DOH boss (stage 33) ------------------------------------------------
+
+  private setupDoh(stage: number): void {
+    this.dohActive = true;
+    this.destroyableRemaining = 0;
+    this.dohHits = GAME.dohHitsRequired;
+    this.dohFireTimer = GAME.dohFireMs;
+    this.clearProjectiles();
+    this.doh?.destroy();
+    this.doh = this.add.image(GAME.screenWidth / 2, 0, DOH_TX.body).setDepth(5);
+    this.doh.y = GAME.headerHeight + 6 + this.doh.displayHeight / 2;
+    this.doh.clearTint();
+    this.stageText.setText(`STAGE ${stage}  DOH`);
+  }
+
+  private teardownDoh(): void {
+    this.dohActive = false;
+    this.doh?.destroy();
+    this.doh = undefined;
+    this.clearProjectiles();
+  }
+
+  private updateDoh(delta: number): void {
+    if (!this.dohActive || !this.doh) {
+      return;
+    }
+    this.dohFireTimer -= delta;
+    if (this.dohFireTimer <= 0) {
+      this.dohFireTimer = GAME.dohFireMs;
+      this.spawnProjectile();
+    }
+    this.moveProjectiles(delta);
+  }
+
+  private spawnProjectile(): void {
+    if (!this.doh) {
+      return;
+    }
+    const x = this.doh.x + Phaser.Math.Between(-14, 14);
+    const y = this.doh.y + this.doh.displayHeight * 0.18;
+    this.dohProjectiles.push({
+      img: this.add.image(x, y, DOH_TX.projectile).setDepth(8),
+      x,
+      y,
+      vx: Phaser.Math.FloatBetween(-0.7, 0.7),
+      vy: GAME.dohProjectileSpeed,
+    });
+  }
+
+  private moveProjectiles(delta: number): void {
+    const f = delta / FRAME_MS;
+    for (let i = this.dohProjectiles.length - 1; i >= 0; i--) {
+      const p = this.dohProjectiles[i];
+      p.x += p.vx * f;
+      p.y += p.vy * f;
+      p.img.setPosition(p.x, p.y);
+      // A projectile touching the Vaus is an instant kill (Section 7).
+      if (
+        p.y + 3 >= VAUS_TOP &&
+        p.y - 3 <= VAUS_BOTTOM &&
+        p.x >= this.vausLeft - 3 &&
+        p.x <= this.vausLeft + this.vausWidth + 3
+      ) {
+        this.flow.transition('dying');
+        return;
+      }
+      if (p.y - 3 > GAME.screenHeight) {
+        p.img.destroy();
+        this.dohProjectiles.splice(i, 1);
+      }
+    }
+  }
+
+  private projectileAtPoint(x: number, y: number): number {
+    for (let i = 0; i < this.dohProjectiles.length; i++) {
+      const p = this.dohProjectiles[i];
+      if (Math.abs(p.x - x) <= 4 && Math.abs(p.y - y) <= 4) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private pointInDoh(x: number, y: number): boolean {
+    return this.doh ? Phaser.Geom.Rectangle.Contains(this.doh.getBounds(), x, y) : false;
+  }
+
+  /** Ball ↔ DOH: reflect like a wall and register one hit per contact. */
+  private resolveDoh(b: Ball): void {
+    if (!this.dohActive || !this.doh) {
+      return;
+    }
+    const r = this.doh.getBounds();
+    const overlapX = Math.min(b.x + R, r.right) - Math.max(b.x - R, r.left);
+    const overlapY = Math.min(b.y + R, r.bottom) - Math.max(b.y - R, r.top);
+    if (overlapX <= 0 || overlapY <= 0) {
+      return;
+    }
+    if (overlapX < overlapY) {
+      b.dirx = -b.dirx;
+      b.x += b.x < r.centerX ? -overlapX : overlapX;
+    } else {
+      b.diry = -b.diry;
+      b.y += b.y < r.centerY ? -overlapY : overlapY;
+    }
+    this.applyDir(b);
+    if (b.dohCd <= 0) {
+      this.registerDohHit(b);
+    }
+  }
+
+  private registerDohHit(b: Ball): void {
+    if (!this.doh) {
+      return;
+    }
+    b.dohCd = GAME.dohHitCooldownMs;
+    this.dohHits--;
+    this.popScore(b.x, b.y, GAME.dohHitPoints, { color: '#ff6060', fontSize: '8px' });
+    this.audio.play('dohHit');
+    // Tint from neutral (white) toward red as health drops.
+    const level = Math.max(0, this.dohHits) / GAME.dohHitsRequired;
+    const g = Math.floor(60 + 195 * level);
+    this.doh.setTint((0xff << 16) | (g << 8) | g);
+    this.impact('light');
+    if (this.dohHits <= 0) {
+      this.defeatDoh();
+    }
+  }
+
+  private defeatDoh(): void {
+    const cx = this.doh?.x ?? GAME.screenWidth / 2;
+    const cy = this.doh?.y ?? 80;
+    this.dohActive = false;
+    this.doh?.destroy();
+    this.doh = undefined;
+    this.clearProjectiles();
+    this.clearBalls();
+    this.clearLasers();
+    this.cameras.main.flash(600, 255, 220, 120);
+    this.impact('heavy');
+    for (const [dx, dy] of [[0, 0], [-30, -10], [30, -10], [-18, 18], [18, 18]]) {
+      playFrames(this, cx + dx, cy + dy, EXPLODE_KEYS, 80);
+    }
+    this.flow.transition('victory');
+  }
+
+  private clearProjectiles(): void {
+    for (const p of this.dohProjectiles) {
+      p.img.destroy();
+    }
+    this.dohProjectiles.length = 0;
+  }
+
+  private enterVictory(): void {
+    this.audio.play('victory');
+    this.banner.setText('CONGRATULATIONS!').setColor('#fcfc00').setVisible(true);
+    this.time.delayedCall(GAME.victoryMs, () => this.returnToMenu());
   }
 
   // --- scoring / lives ----------------------------------------------------
