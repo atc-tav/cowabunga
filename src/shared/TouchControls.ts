@@ -3,7 +3,8 @@ import type { InputAction } from './InputManager';
 /**
  * On-screen touch controls for phones, laid out into the letterbox gaps that a
  * portrait-ish arcade canvas leaves on a landscape phone: a D-pad on the left,
- * A/B + Start/Select on the right.
+ * A/B + Start/Select on the right, and a small system cluster (home +
+ * fullscreen) pinned top-right.
  *
  * It is a DOM overlay (not a Phaser scene) on purpose — the gaps sit OUTSIDE
  * the FIT-scaled canvas, so only HTML can reach them. The overlay is a process-
@@ -13,18 +14,19 @@ import type { InputAction } from './InputManager';
  * Critically, it only mounts on touch devices (`(hover: none) and (pointer:
  * coarse)`), so desktop never sees it. Force on/off in dev with `?touch=1|0`.
  */
-type Control = 'up' | 'down' | 'left' | 'right' | 'a' | 'b' | 'start' | 'select';
+type Control = 'up' | 'down' | 'left' | 'right' | 'a' | 'b' | 'start' | 'select' | 'home';
 
-// Which on-screen controls feed each normalized action. Mirrors the gamepad
-// mapping in InputManager so all three input sources behave identically.
+// Which on-screen controls feed each normalized action. A/B are both game
+// action buttons (B is freed up for a distinct per-game role later); exiting to
+// the menu lives on the dedicated Home button + Select, never on B.
 const ACTION_CONTROLS: Record<InputAction, Control[]> = {
   up: ['up'],
   down: ['down'],
   left: ['left'],
   right: ['right'],
-  fire: ['a'],
+  fire: ['a', 'b'],
   confirm: ['a', 'start'],
-  cancel: ['b', 'select'],
+  cancel: ['select', 'home'],
   pause: ['start'],
 };
 
@@ -34,12 +36,27 @@ interface ButtonSpec {
   cls: string;
 }
 
+// Vendor-prefixed Fullscreen API (Safari) on top of the standard surface.
+type FsElement = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void };
+type FsDocument = Document & {
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => Promise<void> | void;
+};
+
+const ICON_EXPAND =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/></svg>';
+const ICON_COMPRESS =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v5H4"/><path d="M15 4v5h5"/><path d="M9 20v-5H4"/><path d="M15 20v-5h5"/></svg>';
+const ICON_HOME =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg>';
+
 export class TouchControls {
   /** The single live overlay, or null on desktop / before init. */
   static shared: TouchControls | null = null;
 
   private readonly pressed = new Set<Control>();
-  private readonly elements = new Map<Control, HTMLElement>();
+  private homeEl?: HTMLElement;
+  private fullscreenEl?: HTMLElement;
 
   /** Mount the overlay once, if this is a touch device. No-op otherwise. */
   static init(): void {
@@ -64,20 +81,27 @@ export class TouchControls {
     return ACTION_CONTROLS[action].some((c) => this.pressed.has(c));
   }
 
+  /** Show the Home (exit-to-menu) button. Hidden on the menu itself. */
+  setHomeVisible(visible: boolean): void {
+    if (this.homeEl) {
+      this.homeEl.style.display = visible ? 'flex' : 'none';
+    }
+  }
+
   private constructor() {
     this.injectStyles();
     this.buildDom();
     // Safety net: never leave a button stuck if focus/visibility is lost.
     const clearAll = () => {
       this.pressed.clear();
-      for (const el of this.elements.values()) {
-        el.classList.remove('tc-on');
-      }
+      document.querySelectorAll('#tc-root .tc-on').forEach((el) => el.classList.remove('tc-on'));
     };
     window.addEventListener('blur', clearAll);
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) clearAll();
     });
+    document.addEventListener('fullscreenchange', () => this.syncFullscreenIcon());
+    document.addEventListener('webkitfullscreenchange', () => this.syncFullscreenIcon());
   }
 
   private buildDom(): void {
@@ -87,15 +111,15 @@ export class TouchControls {
     const pad = document.createElement('div');
     pad.className = 'tc-pad';
     const dirs: ButtonSpec[] = [
-      { control: 'up', label: '▲', cls: 'tc-dir tc-up' },
-      { control: 'left', label: '◀', cls: 'tc-dir tc-left' },
-      { control: 'right', label: '▶', cls: 'tc-dir tc-right' },
-      { control: 'down', label: '▼', cls: 'tc-dir tc-down' },
+      { control: 'up', label: '▲', cls: 'tc-dir tc-d-up' },
+      { control: 'left', label: '◀', cls: 'tc-dir tc-d-left' },
+      { control: 'right', label: '▶', cls: 'tc-dir tc-d-right' },
+      { control: 'down', label: '▼', cls: 'tc-dir tc-d-down' },
     ];
     dirs.forEach((d) => pad.appendChild(this.makeButton(d)));
 
-    const right = document.createElement('div');
-    right.className = 'tc-right';
+    const cluster = document.createElement('div');
+    cluster.className = 'tc-cluster';
     const menu = document.createElement('div');
     menu.className = 'tc-menu';
     [
@@ -109,13 +133,32 @@ export class TouchControls {
       { control: 'b' as Control, label: 'B', cls: 'tc-ab tc-b' },
       { control: 'a' as Control, label: 'A', cls: 'tc-ab tc-a' },
     ].forEach((b) => face.appendChild(this.makeButton(b)));
-    right.append(menu, face);
+    cluster.append(menu, face);
 
     const rotate = document.createElement('div');
     rotate.className = 'tc-rotate';
     rotate.innerHTML = '<div>↻</div><div>ROTATE TO PLAY</div>';
 
-    root.append(pad, right, rotate);
+    // System cluster (top-right, present on every screen). Home is hidden until
+    // a game shows it; fullscreen is always available.
+    const sys = document.createElement('div');
+    sys.className = 'tc-sys';
+    const home = document.createElement('div');
+    home.className = 'tc-sys-btn tc-home';
+    home.setAttribute('aria-label', 'Home');
+    home.innerHTML = ICON_HOME;
+    home.style.display = 'none';
+    this.bindHold(home, 'home');
+    this.homeEl = home;
+    const full = document.createElement('div');
+    full.className = 'tc-sys-btn tc-full';
+    full.setAttribute('aria-label', 'Fullscreen');
+    full.innerHTML = ICON_EXPAND;
+    this.bindTap(full, () => this.toggleFullscreen());
+    this.fullscreenEl = full;
+    sys.append(home, full);
+
+    root.append(pad, cluster, rotate, sys);
     document.body.appendChild(root);
   }
 
@@ -124,16 +167,20 @@ export class TouchControls {
     el.className = spec.cls;
     el.textContent = spec.label;
     el.setAttribute('role', 'button');
-    this.elements.set(spec.control, el);
+    this.bindHold(el, spec.control);
+    return el;
+  }
 
+  /** Bind an element as a momentary control: held = pressed. */
+  private bindHold(el: HTMLElement, control: Control): void {
     const press = (e: PointerEvent) => {
       e.preventDefault();
       el.setPointerCapture?.(e.pointerId);
-      this.pressed.add(spec.control);
+      this.pressed.add(control);
       el.classList.add('tc-on');
     };
     const release = () => {
-      this.pressed.delete(spec.control);
+      this.pressed.delete(control);
       el.classList.remove('tc-on');
     };
     el.addEventListener('pointerdown', press);
@@ -141,7 +188,40 @@ export class TouchControls {
     el.addEventListener('pointercancel', release);
     el.addEventListener('lostpointercapture', release);
     el.addEventListener('contextmenu', (e) => e.preventDefault());
-    return el;
+  }
+
+  /** Bind an element as a one-shot action (UI, not a game input). */
+  private bindTap(el: HTMLElement, fn: () => void): void {
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      el.classList.add('tc-on');
+    });
+    const fire = () => {
+      el.classList.remove('tc-on');
+      fn();
+    };
+    el.addEventListener('pointerup', fire);
+    el.addEventListener('pointercancel', () => el.classList.remove('tc-on'));
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  private toggleFullscreen(): void {
+    const doc = document as FsDocument;
+    const el = document.documentElement as FsElement;
+    const active = doc.fullscreenElement ?? doc.webkitFullscreenElement;
+    const run = active
+      ? doc.exitFullscreen?.bind(doc) ?? doc.webkitExitFullscreen?.bind(doc)
+      : el.requestFullscreen?.bind(el) ?? el.webkitRequestFullscreen?.bind(el);
+    // May reject (e.g. iOS Safari doesn't allow element fullscreen) — ignore.
+    Promise.resolve(run?.()).catch(() => {});
+  }
+
+  private syncFullscreenIcon(): void {
+    const doc = document as FsDocument;
+    const active = Boolean(doc.fullscreenElement ?? doc.webkitFullscreenElement);
+    if (this.fullscreenEl) {
+      this.fullscreenEl.innerHTML = active ? ICON_COMPRESS : ICON_EXPAND;
+    }
   }
 
   private injectStyles(): void {
@@ -158,7 +238,7 @@ export class TouchControls {
   box-sizing: border-box; -webkit-user-select: none; user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
-#tc-root .tc-dir, #tc-root .tc-ab, #tc-root .tc-pill {
+#tc-root .tc-dir, #tc-root .tc-ab, #tc-root .tc-pill, #tc-root .tc-sys-btn {
   pointer-events: auto; touch-action: none; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   background: rgba(255, 255, 255, 0.05);
@@ -180,11 +260,11 @@ export class TouchControls {
   grid-template-rows: repeat(3, var(--d));
 }
 .tc-dir { width: var(--d); height: var(--d); font-size: calc(var(--d) * 0.42); }
-.tc-up { grid-area: 1 / 2; border-radius: 8px 8px 0 0; }
-.tc-left { grid-area: 2 / 1; border-radius: 8px 0 0 8px; }
-.tc-right { grid-area: 2 / 3; border-radius: 0 8px 8px 0; }
-.tc-down { grid-area: 3 / 2; border-radius: 0 0 8px 8px; }
-.tc-right {
+.tc-d-up { grid-area: 1 / 2; border-radius: 8px 8px 0 0; }
+.tc-d-left { grid-area: 2 / 1; border-radius: 8px 0 0 8px; }
+.tc-d-right { grid-area: 2 / 3; border-radius: 0 8px 8px 0; }
+.tc-d-down { grid-area: 3 / 2; border-radius: 0 0 8px 8px; }
+.tc-cluster {
   position: absolute; top: 50%;
   right: calc(env(safe-area-inset-right, 0px) + 3vmin);
   transform: translateY(-50%);
@@ -205,6 +285,17 @@ export class TouchControls {
 .tc-b { align-self: flex-end; border-color: rgba(216, 40, 0, 0.5); color: rgba(255, 120, 90, 0.75); }
 .tc-a.tc-on { border-color: rgba(60, 188, 252, 1); color: #fff; }
 .tc-b.tc-on { border-color: rgba(255, 90, 60, 1); color: #fff; }
+.tc-sys {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 2vmin);
+  right: calc(env(safe-area-inset-right, 0px) + 2vmin);
+  display: flex; gap: 1.6vmin;
+}
+.tc-sys-btn {
+  width: clamp(30px, 6.5vmin, 42px); height: clamp(30px, 6.5vmin, 42px);
+  border-radius: 8px;
+}
+.tc-sys-btn svg { width: 62%; height: 62%; }
 .tc-rotate {
   position: absolute; inset: 0; display: none;
   flex-direction: column; align-items: center; justify-content: center;
@@ -212,7 +303,7 @@ export class TouchControls {
   color: #fcfc00; font-size: 5vmin; text-align: center; pointer-events: auto;
 }
 @media (orientation: portrait) {
-  .tc-pad, .tc-right { display: none !important; }
+  .tc-pad, .tc-cluster { display: none !important; }
   .tc-rotate { display: flex; }
 }
 `;

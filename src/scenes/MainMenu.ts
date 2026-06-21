@@ -3,6 +3,7 @@ import { GAMES, GameEntry } from '../registry';
 import { InputManager } from '../shared/InputManager';
 import { UI_COLORS, HINT_STYLE } from '../shared/ui';
 import { buildPreview, Preview } from './previews';
+import { TouchControls } from '../shared/TouchControls';
 
 /**
  * The arcade launcher. A single "channel" carousel: the selected game animates
@@ -48,6 +49,8 @@ export class MainMenu extends Phaser.Scene {
     this.controls = new InputManager(this);
     this.games = GAMES.filter((g) => !g.hidden);
     this.selected = 0;
+    // The menu is "home" — hide the touch Home button here.
+    TouchControls.shared?.setHomeVisible(false);
 
     this.add
       .text(W / 2, 16, 'COWABUNGA ARCADE', {
