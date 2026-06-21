@@ -7,7 +7,7 @@ import {
   PLAYER_ONE_KEYS,
   PLAYER_TWO_KEYS,
 } from '../../shared/InputManager';
-import { LABEL_STYLE, HINT_STYLE } from '../../shared/ui';
+import { LABEL_STYLE, HINT_STYLE, TITLE_STYLE } from '../../shared/ui';
 import { floatingText } from '../../shared/popups';
 import {
   WIDTH,
@@ -29,17 +29,41 @@ import {
   POW_W,
   POW_H,
   GameMode,
+  SLIPICE_H,
+  SLIPICE_SCORE,
+  SLIPICE_SPAWN_MS,
+  SLIPICE_PER_PHASE,
+  ICE_FRICTION_SCALE,
+  ICICLE_SPAWN_MS,
+  ICICLE_MAX,
+  COIN_SCORE,
+  BONUS_TIME_MS,
+  BONUS_COMPLETE_FIRST,
+  BONUS_COMPLETE_REPEAT,
 } from './constants';
 import { COLORS } from './palette';
 import { buildMarioBrosTextures, TX } from './sprites';
-import { FLOORS, PIPES, POW, MARIO_START, LUIGI_START, topPipeSpawns, bottomPipeZones } from './levels';
+import {
+  FLOORS,
+  PIPES,
+  POW,
+  MARIO_START,
+  LUIGI_START,
+  topPipeSpawns,
+  bottomPipeZones,
+  icicleAnchors,
+  bonusCoinSpots,
+} from './levels';
 import { Enemy, EnemyKind, EnemyKindId, KINDS } from './enemies';
+import { Slipice } from './slipice';
+import { Icicle } from './icicle';
 import { PHASES } from './phases';
 import { Player } from './player';
 
 interface Floor {
   seg: PlatformSegment;
   nudge: number;
+  iced: boolean;
 }
 
 const P1_COLOR = '#ff5030';
@@ -73,6 +97,12 @@ export class MarioBrosScene extends BaseGameScene {
 
   private selectIndex = 0;
   private selectGfx: Phaser.GameObjects.Text[] = [];
+  private titleText!: Phaser.GameObjects.Text;
+  private promptText!: Phaser.GameObjects.Text;
+  private panelGfx!: Phaser.GameObjects.Graphics;
+  private blinkTimer = 0;
+  private demoSpawnTimer = 0;
+  private demoKindIdx = 0;
   private hudTexts: Phaser.GameObjects.Text[] = [];
   private hiText!: Phaser.GameObjects.Text;
   private readonly lifeIcons: Phaser.GameObjects.Image[] = [];
@@ -85,6 +115,14 @@ export class MarioBrosScene extends BaseGameScene {
   private loopCount = 0;
   private phaseTimer = 0;
   private phaseText!: Phaser.GameObjects.Text;
+  private readonly slipices: Slipice[] = [];
+  private slipiceSpawnTimer = 0;
+  private slipiceCount = 0;
+  private readonly icicles: Icicle[] = [];
+  private icicleSpawnTimer = 0;
+  private readonly coins: Phaser.GameObjects.Image[] = [];
+  private bonusTimer = 0;
+  private bonusCompletions = 0;
 
   private powUses = POW_USES;
   private powSeg!: PlatformSegment;
@@ -99,7 +137,7 @@ export class MarioBrosScene extends BaseGameScene {
     buildMarioBrosTextures(this);
     this.showDefaultHud(false);
 
-    this.floors = FLOORS.map((f) => ({ seg: { ...f, thickness: PLATFORM_THICKNESS }, nudge: 0 }));
+    this.floors = FLOORS.map((f) => ({ seg: { ...f, thickness: PLATFORM_THICKNESS }, nudge: 0, iced: false }));
     this.groundSeg = this.floors.find((f) => f.seg.x1 === 0 && f.seg.x2 === WIDTH)!.seg;
     this.drawStatics();
     this.platformGfx = this.add.graphics().setDepth(1);
@@ -129,13 +167,28 @@ export class MarioBrosScene extends BaseGameScene {
       .setColor('#fcfc00')
       .setDepth(1000);
 
+    // Attract / title-screen furniture (shown only on the front end).
+    this.panelGfx = this.add.graphics().setDepth(1500).setVisible(false);
+    this.titleText = this.add
+      .text(WIDTH / 2, 30, 'MARIO BROS', { ...TITLE_STYLE, fontSize: '20px' })
+      .setOrigin(0.5)
+      .setDepth(1600)
+      .setVisible(false);
+    this.promptText = this.add
+      .text(WIDTH / 2, 132, 'PRESS START', LABEL_STYLE)
+      .setOrigin(0.5)
+      .setDepth(1600)
+      .setVisible(false);
+
     this.flow = new StateMachine<MarioBrosScene>(this)
-      .add('select', { enter: () => this.enterSelect(), update: () => this.updateSelect() })
+      .add('attract', { enter: () => this.enterAttract(), update: (_c, dt) => this.updateAttract(dt) })
+      .add('modeselect', { enter: () => this.enterModeSelect(), update: (_c, dt) => this.updateModeSelect(dt) })
       .add('ready', { enter: () => this.enterReady(), update: (_c, dt) => this.updateReady(dt) })
       .add('phaseintro', { enter: () => this.enterPhaseIntro(), update: (_c, dt) => this.updatePhaseIntro(dt) })
+      .add('bonus', { enter: () => this.enterBonus(), update: (_c, dt) => this.updateBonus(dt) })
       .add('playing', { update: (_c, dt) => this.updatePlaying(dt) })
       .add('gameover', { enter: () => this.enterGameOver() });
-    this.flow.transition('select');
+    this.flow.transition('attract');
   }
 
   protected updateGame(_time: number, delta: number): void {
@@ -144,31 +197,65 @@ export class MarioBrosScene extends BaseGameScene {
     this.flow.update(delta);
   }
 
-  // --- mode select --------------------------------------------------------
+  // --- attract / title ----------------------------------------------------
 
-  private enterSelect(): void {
+  private enterAttract(): void {
     this.powUses = 0;
     this.drawPow();
     this.clearEnemies();
+    this.clearSlipices();
+    this.clearIcicles();
+    this.clearCoins();
+    this.demoSpawnTimer = 0;
+    this.demoKindIdx = 0;
+    this.blinkTimer = 0;
+    this.banner.setVisible(false);
+    this.phaseText.setText('');
+    this.panelGfx.setVisible(false);
+    this.titleText.setVisible(true);
+    this.promptText.setVisible(true);
+  }
+
+  private updateAttract(delta: number): void {
+    this.runDemo(delta);
+    this.blinkTimer += delta;
+    this.promptText.setVisible(Math.floor(this.blinkTimer / 400) % 2 === 0);
+    // SPACE / Z / gamepad A start (ENTER is the pause key, handled by the base).
+    if (this.controls.justPressed('confirm') || this.controls.justPressed('fire')) {
+      this.promptText.setVisible(false);
+      this.flow.transition('modeselect');
+    }
+  }
+
+  // --- mode select --------------------------------------------------------
+
+  private enterModeSelect(): void {
     this.selectIndex = 0;
-    this.banner.setText('MARIO BROS').setColor('#fcfc00').setVisible(true);
-    const baseY = HEIGHT / 2 - 6;
+    // A dark panel so the options read clearly over the busy demo level.
+    this.panelGfx.clear();
+    this.panelGfx.fillStyle(0x000000, 0.72);
+    this.panelGfx.fillRect(24, 86, WIDTH - 48, 96);
+    this.panelGfx.lineStyle(1, 0xffffff, 0.5);
+    this.panelGfx.strokeRect(24, 86, WIDTH - 48, 96);
+    this.panelGfx.setVisible(true);
+    const baseY = 104;
     this.selectGfx = MODES.map((m, i) =>
       this.add
-        .text(WIDTH / 2, baseY + i * 16, m.label, { ...LABEL_STYLE, fontSize: '10px' })
+        .text(WIDTH / 2, baseY + i * 18, m.label, { ...LABEL_STYLE, fontSize: '10px' })
         .setOrigin(0.5)
-        .setDepth(1500),
+        .setDepth(1600),
     );
     this.selectGfx.push(
       this.add
-        .text(WIDTH / 2, baseY + MODES.length * 16 + 8, 'UP/DOWN + JUMP TO SELECT', HINT_STYLE)
+        .text(WIDTH / 2, baseY + MODES.length * 18 + 6, 'UP / DOWN + JUMP', HINT_STYLE)
         .setOrigin(0.5)
-        .setDepth(1500),
+        .setDepth(1600),
     );
     this.refreshSelect();
   }
 
-  private updateSelect(): void {
+  private updateModeSelect(delta: number): void {
+    this.runDemo(delta);
     if (this.controls.justPressed('up')) {
       this.selectIndex = (this.selectIndex + MODES.length - 1) % MODES.length;
       this.refreshSelect();
@@ -179,6 +266,8 @@ export class MarioBrosScene extends BaseGameScene {
       this.mode = MODES[this.selectIndex].mode;
       this.selectGfx.forEach((t) => t.destroy());
       this.selectGfx = [];
+      this.panelGfx.setVisible(false);
+      this.titleText.setVisible(false);
       this.createPlayers();
       this.flow.transition('ready');
     }
@@ -187,8 +276,24 @@ export class MarioBrosScene extends BaseGameScene {
   private refreshSelect(): void {
     MODES.forEach((_, i) => {
       const on = i === this.selectIndex;
-      this.selectGfx[i].setColor(on ? '#ffffff' : '#888888').setText(`${on ? '> ' : '  '}${MODES[i].label}`);
+      this.selectGfx[i].setColor(on ? '#ffffff' : '#9a9a9a').setText(`${on ? '▸ ' : '  '}${MODES[i].label}`);
     });
+  }
+
+  /** Attract demo: every enemy type roams the level (no players, no scoring). */
+  private runDemo(delta: number): void {
+    for (const e of this.enemies) {
+      e.update(delta, this.floorSegments());
+    }
+    this.handleEnemyCollisions();
+    this.handleEnemyBounds();
+    this.demoSpawnTimer -= delta;
+    if (this.enemies.length < 5 && this.demoSpawnTimer <= 0) {
+      const kinds = [KINDS.turtle, KINDS.crab, KINDS.fly];
+      this.spawnEnemy(kinds[this.demoKindIdx % kinds.length]);
+      this.demoKindIdx += 1;
+      this.demoSpawnTimer = 850;
+    }
   }
 
   private createPlayers(): void {
@@ -245,7 +350,8 @@ export class MarioBrosScene extends BaseGameScene {
       this.loopCount += 1;
     }
     this.startPhase(this.phaseIndex);
-    this.banner.setText(`PHASE ${this.phaseNumber()}`).setColor('#fcfc00').setVisible(true);
+    const bonus = PHASES[this.phaseIndex].bonus;
+    this.banner.setText(bonus ? 'BONUS PHASE' : `PHASE ${this.phaseNumber()}`).setColor('#fcfc00').setVisible(true);
     this.phaseTimer = PHASE_INTRO_MS;
   }
 
@@ -253,7 +359,7 @@ export class MarioBrosScene extends BaseGameScene {
     this.phaseTimer -= delta;
     if (this.phaseTimer <= 0) {
       this.banner.setVisible(false);
-      this.flow.transition('playing');
+      this.flow.transition(PHASES[this.phaseIndex].bonus ? 'bonus' : 'playing');
     }
   }
 
@@ -262,15 +368,80 @@ export class MarioBrosScene extends BaseGameScene {
     return this.loopCount * PHASES.length + this.phaseIndex + 1;
   }
 
-  /** Load a phase: queue its roster, refill the POW, reset the spawn cadence. */
+  /** Load a phase: queue its roster, thaw the platforms, refill the POW. */
   private startPhase(index: number): void {
     this.clearEnemies();
+    this.clearSlipices();
+    this.clearIcicles();
+    this.clearCoins();
+    this.floors.forEach((f) => (f.iced = false));
+    this.drawPlatforms();
     this.spawnQueue = Phaser.Utils.Array.Shuffle([...PHASES[index].roster]);
     this.spawnTimer = 500;
     this.pipeToggle = 0;
-    this.powUses = POW_USES;
+    this.slipiceCount = 0;
+    this.slipiceSpawnTimer = SLIPICE_SPAWN_MS;
+    this.icicleSpawnTimer = ICICLE_SPAWN_MS;
+    this.powUses = PHASES[index].bonus ? 0 : POW_USES; // no POW in bonus phases
     this.drawPow();
     this.phaseText.setText(`PHASE ${this.phaseNumber()}`);
+  }
+
+  // --- bonus phase --------------------------------------------------------
+
+  private enterBonus(): void {
+    this.bonusTimer = BONUS_TIME_MS;
+    this.players.forEach((p) => p.placeAtStart());
+    for (const spot of bonusCoinSpots()) {
+      this.coins.push(this.add.image(spot.x, spot.y, TX.coin).setDepth(8));
+    }
+  }
+
+  private updateBonus(delta: number): void {
+    this.bonusTimer = Math.max(0, this.bonusTimer - delta);
+    this.players.forEach((p) => {
+      p.update(delta, this.playerFloors(), this.iceScaleFor(p));
+      if (p.alive) {
+        this.collectCoins(p);
+      }
+    });
+    this.phaseText.setText(`BONUS  ${Math.ceil(this.bonusTimer / 1000)}`);
+    this.refreshHud();
+
+    if (this.coins.length === 0 || this.bonusTimer <= 0) {
+      this.phaseText.setText('');
+      this.flow.transition('phaseintro');
+    }
+  }
+
+  private collectCoins(p: Player): void {
+    const mb = p.getBounds();
+    for (let i = this.coins.length - 1; i >= 0; i--) {
+      const coin = this.coins[i];
+      if (!Phaser.Geom.Intersects.RectangleToRectangle(mb, coin.getBounds())) {
+        continue;
+      }
+      p.score += COIN_SCORE;
+      this.addScore(COIN_SCORE);
+      floatingText(this, coin.x, coin.y, String(COIN_SCORE), { color: p.color, fontSize: '8px' });
+      coin.destroy();
+      this.coins.splice(i, 1);
+      if (this.coins.length === 0) {
+        // grabbed them all: completion bonus to the finisher
+        const reward = this.bonusCompletions === 0 ? BONUS_COMPLETE_FIRST : BONUS_COMPLETE_REPEAT;
+        this.bonusCompletions += 1;
+        p.score += reward;
+        this.addScore(reward);
+        floatingText(this, p.body.x, p.body.y - 10, `${reward}!`, { color: p.color, fontSize: '10px' });
+      }
+    }
+  }
+
+  private clearCoins(): void {
+    for (const coin of this.coins) {
+      coin.destroy();
+    }
+    this.coins.length = 0;
   }
 
   private updatePlaying(delta: number): void {
@@ -281,7 +452,7 @@ export class MarioBrosScene extends BaseGameScene {
     }
 
     this.players.forEach((p, i) => {
-      p.update(delta, this.playerFloors());
+      p.update(delta, this.playerFloors(), this.iceScaleFor(p));
       if (p.alive) {
         this.handlePlayerBump(p, i);
       }
@@ -292,10 +463,12 @@ export class MarioBrosScene extends BaseGameScene {
     this.handleEnemyCollisions();
     this.handleEnemyBounds();
     this.spawnFromQueue(delta);
+    this.updateSlipice(delta);
+    this.updateIcicles(delta);
 
     this.players.forEach((p, i) => {
       p.tickCombo(delta);
-      if (p.alive && !p.safe && this.resolveEnemyContact(p, i)) {
+      if (p.alive && !p.safe && (this.resolveEnemyContact(p, i) || this.touchedSlipice(p) || this.touchedIcicle(p))) {
         p.die();
       }
     });
@@ -352,6 +525,11 @@ export class MarioBrosScene extends BaseGameScene {
         e.bump(SHELL_STUN_MS);
       } else if (e.isShell) {
         e.bumpHop(SHELL_BUMP_HOP);
+      }
+    }
+    for (const s of [...this.slipices]) {
+      if (s.floorSeg === seg) {
+        this.killSlipice(s, p); // a single bump shatters a Slipice (no kick)
       }
     }
     // Versus: knock any rival standing on the bumped platform off their feet.
@@ -461,6 +639,156 @@ export class MarioBrosScene extends BaseGameScene {
     if (this.spawnQueue.length === 0 && this.enemies.length === 1) {
       this.enemies[0].makeLast();
     }
+  }
+
+  // --- Slipice / ice ------------------------------------------------------
+
+  private updateSlipice(delta: number): void {
+    const phase = PHASES[this.phaseIndex];
+    if (phase.slipice && this.slipices.length === 0 && this.slipiceCount < SLIPICE_PER_PHASE) {
+      this.slipiceSpawnTimer -= delta;
+      if (this.slipiceSpawnTimer <= 0) {
+        this.spawnSlipice();
+        this.slipiceSpawnTimer = SLIPICE_SPAWN_MS;
+      }
+    }
+
+    const zones = bottomPipeZones();
+    for (let i = this.slipices.length - 1; i >= 0; i--) {
+      const s = this.slipices[i];
+      s.update(delta, this.floorSegments());
+      // Reverse only on contact with an enemy (never the player).
+      for (const e of this.enemies) {
+        if (e.isActive && Phaser.Geom.Intersects.RectangleToRectangle(s.sprite.getBounds(), e.sprite.getBounds())) {
+          s.reverse();
+          break;
+        }
+      }
+      if (this.tryIce(s)) {
+        this.shatter(s.sprite.x, s.sprite.y);
+        s.sprite.destroy();
+        this.slipices.splice(i, 1);
+      } else if (s.floorSeg === this.groundSeg && zones.some(([a, b]) => s.body.x >= a && s.body.x <= b)) {
+        s.sprite.destroy(); // gave up — left through a bottom pipe
+        this.slipices.splice(i, 1);
+      } else if (s.floorSeg !== this.groundSeg) {
+        if (s.body.x < 0) {
+          s.body.x += WIDTH;
+        } else if (s.body.x > WIDTH) {
+          s.body.x -= WIDTH;
+        }
+      }
+    }
+  }
+
+  /** Freeze the (non-ground) platform a Slipice has reached the centre of. */
+  private tryIce(s: Slipice): boolean {
+    const seg = s.floorSeg;
+    if (!seg || seg === this.groundSeg) {
+      return false;
+    }
+    const floor = this.floors.find((f) => f.seg === seg);
+    if (!floor || floor.iced) {
+      return false;
+    }
+    if (Math.abs(s.body.x - (seg.x1 + seg.x2) / 2) < 6) {
+      floor.iced = true;
+      this.drawPlatforms();
+      return true;
+    }
+    return false;
+  }
+
+  private spawnSlipice(): void {
+    const spawn = Phaser.Utils.Array.GetRandom(topPipeSpawns());
+    const s = new Slipice(this, spawn.x, spawn.feetY - SLIPICE_H / 2, spawn.dir);
+    s.body.onGround = true;
+    this.slipices.push(s);
+    this.slipiceCount += 1;
+  }
+
+  private killSlipice(s: Slipice, by: Player): void {
+    by.score += SLIPICE_SCORE;
+    this.addScore(SLIPICE_SCORE);
+    floatingText(this, s.sprite.x, s.sprite.y, String(SLIPICE_SCORE), { color: by.color, fontSize: '8px' });
+    this.shatter(s.sprite.x, s.sprite.y);
+    s.sprite.destroy();
+    const idx = this.slipices.indexOf(s);
+    if (idx >= 0) {
+      this.slipices.splice(idx, 1);
+    }
+  }
+
+  private touchedSlipice(p: Player): boolean {
+    const mb = p.getBounds();
+    return this.slipices.some((s) =>
+      Phaser.Geom.Intersects.RectangleToRectangle(mb, s.sprite.getBounds()),
+    );
+  }
+
+  /** Friction multiplier for whichever platform this player stands on. */
+  private iceScaleFor(p: Player): number {
+    const seg = this.segmentUnder(p.body);
+    const floor = seg ? this.floors.find((f) => f.seg === seg) : undefined;
+    return floor?.iced ? ICE_FRICTION_SCALE : 1;
+  }
+
+  private shatter(x: number, y: number): void {
+    const burst = this.add.circle(x, y, 6, 0xffffff).setDepth(11);
+    this.tweens.add({ targets: burst, scale: 2, alpha: 0, duration: 260, onComplete: () => burst.destroy() });
+  }
+
+  private clearSlipices(): void {
+    for (const s of this.slipices) {
+      s.sprite.destroy();
+    }
+    this.slipices.length = 0;
+  }
+
+  // --- icicles ------------------------------------------------------------
+
+  private updateIcicles(delta: number): void {
+    const phase = PHASES[this.phaseIndex];
+    if (phase.icicles && this.icicles.length < ICICLE_MAX) {
+      this.icicleSpawnTimer -= delta;
+      if (this.icicleSpawnTimer <= 0) {
+        this.spawnIcicle();
+        this.icicleSpawnTimer = ICICLE_SPAWN_MS;
+      }
+    }
+    for (let i = this.icicles.length - 1; i >= 0; i--) {
+      const ic = this.icicles[i];
+      ic.update(delta, this.groundSeg.y1);
+      if (ic.done) {
+        this.shatter(ic.sprite.x, ic.sprite.y);
+        ic.sprite.destroy();
+        this.icicles.splice(i, 1);
+      }
+    }
+  }
+
+  private spawnIcicle(): void {
+    const taken = new Set(this.icicles.map((ic) => ic.anchorX));
+    const free = icicleAnchors().filter((a) => !taken.has(a.x));
+    if (free.length === 0) {
+      return;
+    }
+    const a = Phaser.Utils.Array.GetRandom(free);
+    this.icicles.push(new Icicle(this, a.x, a.y));
+  }
+
+  private touchedIcicle(p: Player): boolean {
+    const mb = p.getBounds();
+    return this.icicles.some(
+      (ic) => ic.lethal && Phaser.Geom.Intersects.RectangleToRectangle(mb, ic.sprite.getBounds()),
+    );
+  }
+
+  private clearIcicles(): void {
+    for (const ic of this.icicles) {
+      ic.sprite.destroy();
+    }
+    this.icicles.length = 0;
   }
 
   // --- POW block ----------------------------------------------------------
@@ -686,9 +1014,9 @@ export class MarioBrosScene extends BaseGameScene {
     g.clear();
     for (const f of this.floors) {
       const y = f.seg.y1 + f.nudge;
-      g.fillStyle(COLORS.platform, 1);
+      g.fillStyle(f.iced ? COLORS.iceBody : COLORS.platform, 1);
       g.fillRect(f.seg.x1, y, f.seg.x2 - f.seg.x1, PLATFORM_THICKNESS);
-      g.fillStyle(COLORS.platformTop, 1);
+      g.fillStyle(f.iced ? COLORS.iceTop : COLORS.platformTop, 1);
       g.fillRect(f.seg.x1, y, f.seg.x2 - f.seg.x1, 2);
     }
   }

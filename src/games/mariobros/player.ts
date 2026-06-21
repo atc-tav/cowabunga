@@ -98,8 +98,9 @@ export class Player {
       .setPosition(this.body.x, this.body.y);
   }
 
-  /** Per-frame: handle respawn timing while dead, else move. */
-  update(delta: number, floors: PlatformSegment[]): void {
+  /** Per-frame: handle respawn timing while dead, else move. `iceScale` shrinks
+   *  ground friction when standing on a frozen platform (1 = normal). */
+  update(delta: number, floors: PlatformSegment[], iceScale = 1): void {
     if (!this.alive) {
       if (this.lives.isGameOver) {
         return;
@@ -111,10 +112,10 @@ export class Player {
       }
       return;
     }
-    this.move(delta, floors);
+    this.move(delta, floors, iceScale);
   }
 
-  private move(delta: number, floors: PlatformSegment[]): void {
+  private move(delta: number, floors: PlatformSegment[], iceScale: number): void {
     const dt = delta / 1000;
     if (this.invuln > 0) {
       this.invuln -= delta;
@@ -133,7 +134,10 @@ export class Player {
       this.vx += dir * accel * dt;
       this.facing = dir > 0 ? 1 : -1;
     } else {
-      const friction = (this.body.onGround ? GROUND_FRICTION : AIR_FRICTION) * dt;
+      let friction = (this.body.onGround ? GROUND_FRICTION : AIR_FRICTION) * dt;
+      if (this.body.onGround) {
+        friction *= iceScale; // frozen platforms barely slow you down
+      }
       this.vx = this.vx > 0 ? Math.max(0, this.vx - friction) : Math.min(0, this.vx + friction);
     }
     this.vx = Phaser.Math.Clamp(this.vx, -RUN_MAX, RUN_MAX);

@@ -59,6 +59,34 @@ export const FLY_HOP_SPEED = 210; // px/sec launch of each hop
 export const FLY_GROUND_MS = 200; // grounded (flippable) dwell between hops
 export const FLY_FRAME_MS = 90; // wing flap
 
+// Slipice (Freezie): non-target hazard. Walks to a platform's centre and ices
+// it. Killed by a single bump from below (no kick). Touching it kills you.
+export const SLIPICE_W = 12;
+export const SLIPICE_H = 10;
+export const SLIPICE_SPEED = 34;
+export const SLIPICE_SCORE = 500;
+export const SLIPICE_FRAME_MS = 180;
+export const SLIPICE_SPAWN_MS = 4500; // gap between Slipice emerging in an ice phase
+export const SLIPICE_PER_PHASE = 3; // how many a phase will send out
+export const ICE_FRICTION_SCALE = 0.12; // an iced platform keeps ~12% of normal friction
+
+// Icicles: form on the underside of the top platform, then drop. Lethal only
+// while falling; not enemies (can't be flipped).
+export const ICICLE_W = 6;
+export const ICICLE_H = 12;
+export const ICICLE_FORM_MS = 2600; // hidden nub → full spike
+export const ICICLE_FULL_MS = 500; // hangs full for a beat before it drops
+export const ICICLE_SPAWN_MS = 1700; // gap between new icicles forming
+export const ICICLE_MAX = 3; // concurrent icicles in an icicle phase
+
+// Bonus phases: no enemies — grab all the coins before the clock runs out.
+export const COIN_W = 6;
+export const COIN_H = 6;
+export const COIN_SCORE = 300; // per coin
+export const BONUS_TIME_MS = 20000; // 20 seconds to collect them all
+export const BONUS_COMPLETE_FIRST = 3000; // grabbing every coin (first time)
+export const BONUS_COMPLETE_REPEAT = 5000; // ...and on later bonus phases
+
 export const STOMP_BOUNCE = 160; // Mario's hop after a stomp
 export const ENEMY_TARGET = 2; // baseline number on the board at once
 export const ENEMY_LAST_MULT = 2.0; // the final enemy of a phase turns blue & super-fast

@@ -63,6 +63,28 @@ export function bottomPipeZones(): [number, number][] {
   return PIPES.filter((p) => p.role === 'bottom').map((p) => [p.x1, p.x2]);
 }
 
+/** Coin positions for bonus phases, scattered across the platform surfaces. */
+export function bonusCoinSpots(): { x: number; y: number }[] {
+  return [
+    { x: 40, y: 60 },
+    { x: 84, y: 60 },
+    { x: 172, y: 60 },
+    { x: 216, y: 60 },
+    { x: 112, y: 100 },
+    { x: 148, y: 100 },
+    { x: 52, y: 156 },
+    { x: 204, y: 156 },
+    { x: 96, y: 204 },
+    { x: 160, y: 204 },
+  ];
+}
+
+/** Anchor points for icicles on the underside of the top floor (y 64 + 10). */
+export function icicleAnchors(): { x: number; y: number }[] {
+  const y = 74;
+  return [40, 70, 100, 156, 186, 216].map((x) => ({ x, y }));
+}
+
 export const POW = { x: 128, y: 152 };
 
 export const MARIO_START = { x: 40, y: 208 } as const;

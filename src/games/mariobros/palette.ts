@@ -26,6 +26,13 @@ export const COLORS = {
   fly: 0x6868f8, // Fighter Fly body
   flyEye: 0xffffff,
   flyWing: 0xc0c0ff,
+  slipice: 0x90d0f0, // Freezie ice body
+  slipiceCrystal: 0xffffff,
+  slipiceEye: 0x103048,
+  iceTop: 0xe0f4ff, // iced-platform highlight
+  iceBody: 0x68b0e0, // iced-platform body
+  coin: 0xfcd000, // bonus-phase coin
+  coinHi: 0xfff080,
 } as const;
 
 export const MARIO_PALETTE: PixelPalette = {
