@@ -11,6 +11,10 @@ to build (or validate) a faithful clone.
 > conventions still live in the root `CLAUDE.md`; product strategy lives in
 > `docs/`.
 
+> **Writing a new spec?** Read [`AUTHORING.md`](./AUTHORING.md) first — it's the
+> house style guide (structure, conventions, required sections, standing
+> decisions) for producing specs consistent with the ones already here.
+
 ## Index
 
 | Spec | Platform / Source | File |
@@ -31,5 +35,7 @@ to build (or validate) a faithful clone.
 
 ## Adding a spec
 
-Drop the consultant's markdown here with a clear, lowercase-kebab filename
-(e.g. `pac-man-arcade.md`) and add a row to the index table above.
+Drop the markdown here with a clear, lowercase-kebab filename
+(e.g. `pac-man-arcade.md`) and add a row to the index table above. New specs
+should follow [`AUTHORING.md`](./AUTHORING.md) so they stay consistent with the
+existing set.
