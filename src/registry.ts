@@ -4,6 +4,7 @@ import { GalagaScene } from './games/galaga/GalagaScene';
 import { DKScene } from './games/donkeykong/DKScene';
 import { MarioBrosScene } from './games/mariobros/MarioBrosScene';
 import { ArkanoidScene } from './games/arkanoid/ArkanoidScene';
+import { KirbyScene } from './games/kirby/KirbyScene';
 import { PrivacyPolicyScene } from './games/privacypolicy/PrivacyPolicyScene';
 import { SandboxScene } from './games/sandbox/SandboxScene';
 
@@ -66,6 +67,13 @@ export const GAMES: GameEntry[] = [
     key: 'game-arkanoid',
     resolution: { width: 224, height: 256 },
     SceneClass: ArkanoidScene,
+  },
+  {
+    id: 'kirby',
+    title: "KIRBY'S ADVENTURE",
+    key: 'game-kirby',
+    resolution: { width: 256, height: 224 },
+    SceneClass: KirbyScene,
   },
   {
     id: 'privacypolicy',
