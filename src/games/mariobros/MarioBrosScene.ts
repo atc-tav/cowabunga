@@ -20,7 +20,9 @@ import {
   SHELL_BUMP_HOP,
   STOMP_BOUNCE,
   ENEMY_TARGET,
-  ENEMY_RESPAWN_MS,
+  SPAWN_STAGGER_MS,
+  PHASE_INTRO_MS,
+  LOOP_SPEED_STEP,
   READY_MS,
   GAMEOVER_MS,
   POW_USES,
@@ -31,7 +33,8 @@ import {
 import { COLORS } from './palette';
 import { buildMarioBrosTextures, TX } from './sprites';
 import { FLOORS, PIPES, POW, MARIO_START, LUIGI_START, topPipeSpawns, bottomPipeZones } from './levels';
-import { Enemy, KINDS } from './enemies';
+import { Enemy, EnemyKind, EnemyKindId, KINDS } from './enemies';
+import { PHASES } from './phases';
 import { Player } from './player';
 
 interface Floor {
@@ -76,6 +79,12 @@ export class MarioBrosScene extends BaseGameScene {
 
   private readonly enemies: Enemy[] = [];
   private spawnTimer = 0;
+  private spawnQueue: EnemyKindId[] = [];
+  private pipeToggle = 0;
+  private phaseIndex = 0;
+  private loopCount = 0;
+  private phaseTimer = 0;
+  private phaseText!: Phaser.GameObjects.Text;
 
   private powUses = POW_USES;
   private powSeg!: PlatformSegment;
@@ -110,6 +119,10 @@ export class MarioBrosScene extends BaseGameScene {
       .text(WIDTH / 2, 4, `HI ${this.scores.high}`, { ...LABEL_STYLE, fontSize: '8px' })
       .setOrigin(0.5, 0)
       .setDepth(1000);
+    this.phaseText = this.add
+      .text(WIDTH / 2, 14, '', { ...HINT_STYLE, color: '#cccccc' })
+      .setOrigin(0.5, 0)
+      .setDepth(1000);
     this.banner = this.add
       .text(WIDTH / 2, HEIGHT / 2, '', LABEL_STYLE)
       .setOrigin(0.5)
@@ -119,6 +132,7 @@ export class MarioBrosScene extends BaseGameScene {
     this.flow = new StateMachine<MarioBrosScene>(this)
       .add('select', { enter: () => this.enterSelect(), update: () => this.updateSelect() })
       .add('ready', { enter: () => this.enterReady(), update: (_c, dt) => this.updateReady(dt) })
+      .add('phaseintro', { enter: () => this.enterPhaseIntro(), update: (_c, dt) => this.updatePhaseIntro(dt) })
       .add('playing', { update: (_c, dt) => this.updatePlaying(dt) })
       .add('gameover', { enter: () => this.enterGameOver() });
     this.flow.transition('select');
@@ -211,10 +225,9 @@ export class MarioBrosScene extends BaseGameScene {
     const tag = this.mode === 'versus' ? 'VERSUS!' : this.mode === 'coop' ? 'CO-OP!' : 'READY!';
     this.banner.setText(tag).setColor('#fcfc00').setVisible(true);
     this.players.forEach((p) => p.placeAtStart());
-    this.powUses = POW_USES;
-    this.drawPow();
-    this.clearEnemies();
-    this.spawnTimer = 600;
+    this.phaseIndex = 0;
+    this.loopCount = 0;
+    this.startPhase(this.phaseIndex);
   }
 
   private updateReady(delta: number): void {
@@ -223,6 +236,41 @@ export class MarioBrosScene extends BaseGameScene {
       this.banner.setVisible(false);
       this.flow.transition('playing');
     }
+  }
+
+  private enterPhaseIntro(): void {
+    this.phaseIndex += 1;
+    if (this.phaseIndex >= PHASES.length) {
+      this.phaseIndex = 0;
+      this.loopCount += 1;
+    }
+    this.startPhase(this.phaseIndex);
+    this.banner.setText(`PHASE ${this.phaseNumber()}`).setColor('#fcfc00').setVisible(true);
+    this.phaseTimer = PHASE_INTRO_MS;
+  }
+
+  private updatePhaseIntro(delta: number): void {
+    this.phaseTimer -= delta;
+    if (this.phaseTimer <= 0) {
+      this.banner.setVisible(false);
+      this.flow.transition('playing');
+    }
+  }
+
+  /** Global phase number (1-based) across loops, for the banner/HUD. */
+  private phaseNumber(): number {
+    return this.loopCount * PHASES.length + this.phaseIndex + 1;
+  }
+
+  /** Load a phase: queue its roster, refill the POW, reset the spawn cadence. */
+  private startPhase(index: number): void {
+    this.clearEnemies();
+    this.spawnQueue = Phaser.Utils.Array.Shuffle([...PHASES[index].roster]);
+    this.spawnTimer = 500;
+    this.pipeToggle = 0;
+    this.powUses = POW_USES;
+    this.drawPow();
+    this.phaseText.setText(`PHASE ${this.phaseNumber()}`);
   }
 
   private updatePlaying(delta: number): void {
@@ -243,17 +291,21 @@ export class MarioBrosScene extends BaseGameScene {
     this.shellsHitEnemies();
     this.handleEnemyCollisions();
     this.handleEnemyBounds();
-    this.maintainEnemies(delta);
+    this.spawnFromQueue(delta);
 
     this.players.forEach((p, i) => {
+      p.tickCombo(delta);
       if (p.alive && !p.safe && this.resolveEnemyContact(p, i)) {
         p.die();
       }
     });
+    this.updateLastEnemy();
     this.refreshHud();
 
     if (this.players.every((p) => p.isOut)) {
       this.flow.transition('gameover');
+    } else if (this.spawnQueue.length === 0 && this.enemies.length === 0) {
+      this.flow.transition('phaseintro');
     }
   }
 
@@ -347,6 +399,7 @@ export class MarioBrosScene extends BaseGameScene {
 
       if (e.isFlipped) {
         if (e.kick(e.body.x >= p.body.x ? 1 : -1, index)) {
+          this.award(e, p); // kicking scores; it slides off as a lethal shell
           this.audio.play('kick');
         } else {
           this.defeat(e, p);
@@ -383,21 +436,31 @@ export class MarioBrosScene extends BaseGameScene {
 
   // --- enemies ------------------------------------------------------------
 
-  private maintainEnemies(delta: number): void {
+  /** Drip enemies out of the pipes (alternating sides) until the roster's empty. */
+  private spawnFromQueue(delta: number): void {
     this.spawnTimer -= delta;
-    const target = ENEMY_TARGET + (this.players.length - 1);
-    if (this.enemies.length < target && this.spawnTimer <= 0) {
-      this.spawnEnemy();
-      this.spawnTimer = ENEMY_RESPAWN_MS;
+    const maxOnScreen = ENEMY_TARGET + (this.players.length - 1) + 1;
+    if (this.spawnQueue.length > 0 && this.enemies.length < maxOnScreen && this.spawnTimer <= 0) {
+      this.spawnEnemy(KINDS[this.spawnQueue.shift()!]);
+      this.spawnTimer = SPAWN_STAGGER_MS;
     }
   }
 
-  private spawnEnemy(): void {
-    const spawn = Phaser.Utils.Array.GetRandom(topPipeSpawns());
-    const kind = Phaser.Utils.Array.GetRandom([KINDS.turtle, KINDS.crab, KINDS.fly]);
+  private spawnEnemy(kind: EnemyKind): void {
+    const spawns = topPipeSpawns();
+    const spawn = spawns[this.pipeToggle % spawns.length];
+    this.pipeToggle += 1;
     const e = new Enemy(this, kind, spawn.x, spawn.feetY - kind.h / 2, spawn.dir);
     e.body.onGround = true;
+    e.speedScale = 1 + this.loopCount * LOOP_SPEED_STEP;
     this.enemies.push(e);
+  }
+
+  /** When the roster's exhausted and one enemy is left, it goes super-fast/blue. */
+  private updateLastEnemy(): void {
+    if (this.spawnQueue.length === 0 && this.enemies.length === 1) {
+      this.enemies[0].makeLast();
+    }
   }
 
   // --- POW block ----------------------------------------------------------
@@ -496,15 +559,24 @@ export class MarioBrosScene extends BaseGameScene {
     }
   }
 
-  /** Bottom floor: no wrap — walk into a corner pipe and leave. Upper: wrap. */
+  /**
+   * Bottom floor has no wrap. A spent shell that reaches a corner pipe is out of
+   * the game; a live enemy that walks in is recycled back to a top pipe (so it
+   * must actually be defeated to clear the phase). Upper floors wrap edge-to-edge.
+   */
   private handleEnemyBounds(): void {
     const zones = bottomPipeZones();
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
       if (e.floorSeg === this.groundSeg) {
-        if (zones.some(([a, b]) => e.body.x >= a && e.body.x <= b)) {
+        if (!zones.some(([a, b]) => e.body.x >= a && e.body.x <= b)) {
+          continue;
+        }
+        if (e.isShell) {
           e.sprite.destroy();
           this.enemies.splice(i, 1);
+        } else if (e.isActive) {
+          this.recycleEnemy(e);
         }
       } else if (e.body.x < 0) {
         e.body.x += WIDTH;
@@ -514,13 +586,30 @@ export class MarioBrosScene extends BaseGameScene {
     }
   }
 
-  private defeat(e: Enemy, by?: Player): void {
+  /** Teleport an enemy that exited a bottom pipe back out of a top pipe. */
+  private recycleEnemy(e: Enemy): void {
+    const s = Phaser.Utils.Array.GetRandom(topPipeSpawns());
+    e.body.x = s.x;
+    e.body.setFeet(s.feetY);
+    e.body.vy = 0;
+    e.body.onGround = true;
+    e.dir = s.dir;
+  }
+
+  /** Bank an enemy's points (with combo) and float them — without removing it. */
+  private award(e: Enemy, by?: Player): void {
     const color = by?.color ?? '#ffffff';
+    let points = e.kind.score;
     if (by) {
-      by.score += e.kind.score;
-      this.addScore(e.kind.score); // keeps the persistent HI in sync
+      points *= by.registerKill(); // chained kicks double (combo)
+      by.score += points;
+      this.addScore(points); // keeps the persistent HI in sync
     }
-    floatingText(this, e.sprite.x, e.sprite.y, String(e.kind.score), { color, fontSize: '8px' });
+    floatingText(this, e.sprite.x, e.sprite.y, String(points), { color, fontSize: '8px' });
+  }
+
+  private defeat(e: Enemy, by?: Player): void {
+    this.award(e, by);
     this.audio.play('kick');
     e.sprite.destroy();
     const idx = this.enemies.indexOf(e);

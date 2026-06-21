@@ -17,6 +17,7 @@ import {
   LIVES_START,
   RESPAWN_MS,
   VS_STUN_MS,
+  COMBO_WINDOW_MS,
 } from './constants';
 
 export interface PlayerConfig {
@@ -49,10 +50,12 @@ export class Player {
   facing: 1 | -1 = 1;
   stun = 0; // versus knock-over: no control while > 0
   invuln = 0; // brief post-spawn immunity
+  comboCount = 0;
 
   private readonly cfg: PlayerConfig;
   private vx = 0;
   private respawnTimer = 0;
+  private comboTimer = 0;
   private walkTimer = 0;
   private walkFrame: 0 | 1 = 0;
 
@@ -189,6 +192,25 @@ export class Player {
         }
       },
     });
+  }
+
+  /**
+   * Register a defeat for the combo chain and return the score multiplier:
+   * kills within COMBO_WINDOW_MS of each other double (1×, 2×, 4×, …).
+   */
+  registerKill(): number {
+    this.comboCount = this.comboTimer > 0 ? this.comboCount + 1 : 1;
+    this.comboTimer = COMBO_WINDOW_MS;
+    return Math.pow(2, this.comboCount - 1);
+  }
+
+  tickCombo(delta: number): void {
+    if (this.comboTimer > 0) {
+      this.comboTimer -= delta;
+      if (this.comboTimer <= 0) {
+        this.comboCount = 0;
+      }
+    }
   }
 
   /** Versus: knocked over by another player's bump — briefly loses control. */

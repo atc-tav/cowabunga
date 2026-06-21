@@ -22,6 +22,7 @@ export const COLORS = {
   crabEye: 0xffffff,
   crabClaw: 0xfca044,
   crabAngry: 0xff9090, // tint when sped-up after the first bump
+  enemyLast: 0x4878ff, // the last enemy of a phase turns blue (super-fast)
   fly: 0x6868f8, // Fighter Fly body
   flyEye: 0xffffff,
   flyWing: 0xc0c0ff,
