@@ -22,6 +22,12 @@ export interface GameEntry {
   key: string;
   resolution: GameResolution;
   SceneClass: new () => Phaser.Scene;
+  /**
+   * Hidden entries are still registered as scenes (so they remain reachable /
+   * playable), but the MainMenu carousel skips them. Used for the `sandbox`
+   * smoke-test harness, which we keep in the repo but off the title screen.
+   */
+  hidden?: boolean;
 }
 
 export const GAMES: GameEntry[] = [
@@ -66,6 +72,7 @@ export const GAMES: GameEntry[] = [
     key: 'game-sandbox',
     resolution: { width: 224, height: 288 },
     SceneClass: SandboxScene,
+    hidden: true,
   },
   // More games land here one at a time: Mario Bros. -> Dig Dug.
 ];

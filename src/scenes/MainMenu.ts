@@ -1,26 +1,41 @@
 import Phaser from 'phaser';
-import { GAMES } from '../registry';
+import { GAMES, GameEntry } from '../registry';
 import { InputManager } from '../shared/InputManager';
-import { UI_COLORS, TITLE_STYLE, LABEL_STYLE, HINT_STYLE } from '../shared/ui';
+import { UI_COLORS, HINT_STYLE } from '../shared/ui';
+import { buildPreview, Preview } from './previews';
 
 /**
- * The arcade launcher. Builds a tile per registered game, supports arrow/WASD
- * + gamepad navigation, Enter/Space to launch, and a 1Hz "INSERT COIN" blink.
- * (Attract-mode mini animations per tile come later, per the brief.)
+ * The arcade launcher. A single "channel" carousel: the selected game animates
+ * inside an 80s-TV screen, its title sits above a left/right selector, and the
+ * scroll wraps infinitely so the cabinet scales past one screenful of games.
+ *
+ * Enter (START) or Space (ACTION) launches; both map to the `confirm` action,
+ * which also covers gamepad A / Start — so the controller works for free.
  */
 export class MainMenu extends Phaser.Scene {
   private static readonly W = 256;
   private static readonly H = 288;
-  private static readonly COLS = 2;
-  private static readonly TILE_W = 100;
-  private static readonly TILE_H = 52;
-  private static readonly GAP_X = 16;
-  private static readonly GAP_Y = 16;
+
+  // 80s-TV geometry (bezel outer, recessed screen inner).
+  private static readonly BEZEL = { x: 16, y: 36, w: 224, h: 150, r: 14 };
+  private static readonly SCREEN = { x: 28, y: 50, w: 160, h: 120, r: 8 };
+
+  private static readonly TITLE_Y = 200;
+  private static readonly SELECTOR_Y = 226;
 
   private controls!: InputManager;
+  private games: GameEntry[] = [];
   private selected = 0;
-  private tiles: Phaser.GameObjects.Container[] = [];
+
+  private gameTitle!: Phaser.GameObjects.Text;
   private coinText!: Phaser.GameObjects.Text;
+  private dots: Phaser.GameObjects.Arc[] = [];
+  private leftArrow!: Phaser.GameObjects.Triangle;
+  private rightArrow!: Phaser.GameObjects.Triangle;
+
+  private screenMask!: Phaser.Display.Masks.GeometryMask;
+  private previewLayer?: Phaser.GameObjects.Container;
+  private preview?: Preview;
 
   constructor() {
     super({ key: 'MainMenu' });
@@ -31,22 +46,32 @@ export class MainMenu extends Phaser.Scene {
     this.scale.resize(W, H);
     this.cameras.main.setBackgroundColor('#000000');
     this.controls = new InputManager(this);
+    this.games = GAMES.filter((g) => !g.hidden);
+    this.selected = 0;
 
-    this.add.text(W / 2, 24, 'COWABUNGA', TITLE_STYLE).setOrigin(0.5);
     this.add
-      .text(W / 2, 46, 'A R C A D E', LABEL_STYLE)
-      .setOrigin(0.5)
-      .setColor('#3cbcfc');
+      .text(W / 2, 16, 'COWABUNGA ARCADE', {
+        fontFamily: 'monospace',
+        fontSize: '17px',
+        color: '#fcfc00',
+      })
+      .setOrigin(0.5);
 
-    this.buildTiles();
+    this.buildTV();
+    this.buildSelector();
 
     this.coinText = this.add
-      .text(W / 2, H - 28, 'INSERT COIN', LABEL_STYLE)
+      .text(W / 2, H - 30, 'INSERT COIN', {
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        color: '#fcfc00',
+      })
       .setOrigin(0.5)
-      .setColor('#fcfc00');
+      .setDepth(20);
     this.add
-      .text(W / 2, H - 12, 'ARROWS: SELECT    ENTER: PLAY', HINT_STYLE)
-      .setOrigin(0.5);
+      .text(W / 2, H - 14, '< >: SELECT    ENTER/SPACE: PLAY', HINT_STYLE)
+      .setOrigin(0.5)
+      .setDepth(20);
 
     // 1Hz blink (toggle visibility twice per second).
     this.time.addEvent({
@@ -55,63 +80,176 @@ export class MainMenu extends Phaser.Scene {
       callback: () => this.coinText.setVisible(!this.coinText.visible),
     });
 
-    this.refreshSelection();
+    this.loadPreview();
+    this.refresh();
   }
 
-  update(): void {
+  update(time: number, delta: number): void {
     this.controls.update();
     if (this.controls.justPressed('left')) {
       this.move(-1);
     } else if (this.controls.justPressed('right')) {
       this.move(1);
-    } else if (this.controls.justPressed('up')) {
-      this.move(-MainMenu.COLS);
-    } else if (this.controls.justPressed('down')) {
-      this.move(MainMenu.COLS);
     }
-    if (this.controls.justPressed('confirm')) {
-      this.scene.start(GAMES[this.selected].key);
+    if (this.controls.justPressed('confirm') && this.games.length > 0) {
+      this.scene.start(this.games[this.selected].key);
+      return;
     }
+    this.preview?.update(time, delta);
   }
 
-  private buildTiles(): void {
-    const { W, COLS, TILE_W, TILE_H, GAP_X, GAP_Y } = MainMenu;
-    const rowWidth = COLS * TILE_W + (COLS - 1) * GAP_X;
-    const startX = (W - rowWidth) / 2 + TILE_W / 2;
-    const startY = 92;
+  /** Draw the TV cabinet: bezel, recessed screen, control knobs, scanlines. */
+  private buildTV(): void {
+    const { BEZEL, SCREEN } = MainMenu;
+    const g = this.add.graphics().setDepth(0);
+    // Bezel.
+    g.fillStyle(0x4a4a4a, 1);
+    g.fillRoundedRect(BEZEL.x, BEZEL.y, BEZEL.w, BEZEL.h, BEZEL.r);
+    g.lineStyle(2, 0x202020, 1);
+    g.strokeRoundedRect(BEZEL.x, BEZEL.y, BEZEL.w, BEZEL.h, BEZEL.r);
+    // Recessed dark screen (fills the rounded corners behind the preview).
+    g.fillStyle(0x05140a, 1);
+    g.fillRoundedRect(SCREEN.x, SCREEN.y, SCREEN.w, SCREEN.h, SCREEN.r);
+    g.lineStyle(2, 0x0c2c18, 1);
+    g.strokeRoundedRect(SCREEN.x, SCREEN.y, SCREEN.w, SCREEN.h, SCREEN.r);
 
-    this.tiles = GAMES.map((game, i) => {
-      const col = i % COLS;
-      const row = Math.floor(i / COLS);
-      const x = startX + col * (TILE_W + GAP_X);
-      const y = startY + row * (TILE_H + GAP_Y);
+    // Control panel on the right: two knobs, a power LED, a speaker grille.
+    const panelX = SCREEN.x + SCREEN.w + 26;
+    const knobs = this.add.graphics().setDepth(1);
+    for (const ky of [SCREEN.y + 22, SCREEN.y + 56]) {
+      knobs.fillStyle(0x2a2a2a, 1);
+      knobs.fillCircle(panelX, ky, 9);
+      knobs.lineStyle(2, 0x111111, 1);
+      knobs.strokeCircle(panelX, ky, 9);
+      knobs.lineStyle(2, 0x888888, 1);
+      knobs.beginPath();
+      knobs.moveTo(panelX, ky);
+      knobs.lineTo(panelX + 6, ky - 5);
+      knobs.strokePath();
+    }
+    knobs.fillStyle(0x00ff66, 1);
+    knobs.fillCircle(panelX, SCREEN.y + 88, 3);
+    knobs.lineStyle(2, 0x222222, 1);
+    for (let i = 0; i < 4; i++) {
+      const gy = SCREEN.y + 100 + i * 4;
+      knobs.beginPath();
+      knobs.moveTo(panelX - 9, gy);
+      knobs.lineTo(panelX + 9, gy);
+      knobs.strokePath();
+    }
 
-      const border = this.add
-        .rectangle(0, 0, TILE_W, TILE_H, UI_COLORS.black)
-        .setStrokeStyle(2, UI_COLORS.cyan);
-      const label = this.add
-        .text(0, 0, game.title, LABEL_STYLE)
-        .setOrigin(0.5);
+    // Masked overlay: CRT scanlines + a slow shimmer band.
+    const maskG = this.make.graphics({ x: 0, y: 0 }, false);
+    maskG.fillStyle(0xffffff, 1);
+    maskG.fillRoundedRect(SCREEN.x, SCREEN.y, SCREEN.w, SCREEN.h, SCREEN.r);
+    this.screenMask = maskG.createGeometryMask();
 
-      return this.add.container(x, y, [border, label]);
+    const fx = this.add.container(SCREEN.x, SCREEN.y).setDepth(8);
+    fx.setMask(this.screenMask);
+    const lines = this.add.graphics();
+    lines.fillStyle(0x000000, 0.18);
+    for (let y = 0; y < SCREEN.h; y += 2) {
+      lines.fillRect(0, y, SCREEN.w, 1);
+    }
+    fx.add(lines);
+    const band = this.add.rectangle(0, 0, SCREEN.w, 14, 0xffffff, 0.05).setOrigin(0, 0);
+    fx.add(band);
+    this.tweens.add({
+      targets: band,
+      y: SCREEN.h,
+      duration: 2600,
+      repeat: -1,
+      ease: 'Linear',
     });
   }
 
-  private move(delta: number): void {
-    const n = GAMES.length;
+  /** Build the game title + the left/right selector row with position dots. */
+  private buildSelector(): void {
+    const { W, TITLE_Y, SELECTOR_Y } = MainMenu;
+    this.gameTitle = this.add
+      .text(W / 2, TITLE_Y, '', {
+        fontFamily: 'monospace',
+        fontSize: '16px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5)
+      .setDepth(20);
+
+    // Triangle arrows flanking the dot strip.
+    this.leftArrow = this.add
+      .triangle(W / 2 - 70, SELECTOR_Y, 10, 0, 10, 12, 0, 6, UI_COLORS.cyan)
+      .setDepth(20);
+    this.rightArrow = this.add
+      .triangle(W / 2 + 70, SELECTOR_Y, 0, 0, 0, 12, 10, 6, UI_COLORS.cyan)
+      .setDepth(20);
+
+    const n = this.games.length;
+    const spacing = 10;
+    const startX = W / 2 - ((n - 1) * spacing) / 2;
+    this.dots = this.games.map((_, i) =>
+      this.add
+        .circle(startX + i * spacing, SELECTOR_Y, 2, UI_COLORS.gray)
+        .setDepth(20),
+    );
+  }
+
+  private move(dir: number): void {
+    const n = this.games.length;
     if (n === 0) {
       return;
     }
-    this.selected = (this.selected + delta + n) % n;
-    this.refreshSelection();
+    this.selected = (this.selected + dir + n) % n;
+    this.loadPreview();
+    this.refresh();
+    const arrow = dir < 0 ? this.leftArrow : this.rightArrow;
+    arrow.setFillStyle(UI_COLORS.yellow);
+    this.tweens.add({
+      targets: arrow,
+      scale: { from: 1.4, to: 1 },
+      duration: 160,
+      onComplete: () => arrow.setFillStyle(UI_COLORS.cyan),
+    });
   }
 
-  private refreshSelection(): void {
-    this.tiles.forEach((tile, i) => {
-      const border = tile.getAt(0) as Phaser.GameObjects.Rectangle;
-      const active = i === this.selected;
-      border.setStrokeStyle(active ? 3 : 2, active ? UI_COLORS.yellow : UI_COLORS.cyan);
-      tile.setScale(active ? 1.06 : 1);
+  /** Swap the TV channel: tear down the old vignette, build the selected one. */
+  private loadPreview(): void {
+    const { SCREEN } = MainMenu;
+    this.preview?.destroy();
+    this.previewLayer?.destroy();
+    if (this.games.length === 0) {
+      return;
+    }
+
+    const layer = this.add.container(SCREEN.x, SCREEN.y).setDepth(5);
+    layer.setMask(this.screenMask);
+    this.preview = buildPreview(this.games[this.selected].id, this, layer, {
+      width: SCREEN.w,
+      height: SCREEN.h,
     });
+    this.previewLayer = layer;
+
+    // Brief "channel change" static flash.
+    const flash = this.add
+      .rectangle(SCREEN.x, SCREEN.y, SCREEN.w, SCREEN.h, 0xffffff, 0.7)
+      .setOrigin(0)
+      .setDepth(7);
+    flash.setMask(this.screenMask);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 150,
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  private refresh(): void {
+    if (this.games.length === 0) {
+      this.gameTitle.setText('NO GAMES');
+      return;
+    }
+    this.gameTitle.setText(this.games[this.selected].title);
+    this.dots.forEach((dot, i) =>
+      dot.setFillStyle(i === this.selected ? UI_COLORS.yellow : UI_COLORS.gray),
+    );
   }
 }
