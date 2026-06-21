@@ -15,6 +15,13 @@ the decision in front of you.
 | 4 | **Modularity & Reuse** | ~80–90% shared primitives; behavior composes on top. | [modularity.md](./modularity.md) |
 | 5 | **Procedural Everything** | No asset files. Sprites drawn in code, sound synthesized in code. | [procedural-assets-and-audio.md](./procedural-assets-and-audio.md) |
 
+## Playbooks
+
+Reusable how-tos for cross-cutting features:
+
+- [title-art.md](./title-art.md) — building programmatic arcade title logos
+  (arc wordmark + banner + twinkling stars) and the screenshot-driven workflow.
+
 ## How we work
 
 Two agents, one repo:

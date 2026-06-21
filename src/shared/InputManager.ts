@@ -71,9 +71,11 @@ export const PLAYER_TWO_KEYS: Partial<Record<InputAction, number[]>> = {
 };
 
 // Standard-mapping gamepad button indices (Gamepad API "standard" / X-input).
-// Used for buttons Phaser doesn't expose by name (Start / Select).
+// Used for buttons Phaser doesn't expose by name (Start / Select / stick click).
 const PAD_START = 9;
 const PAD_SELECT = 8;
+// Left analog-stick click (L3) — mapped to mirror the A button.
+const PAD_L3 = 10;
 
 // Analog-stick travel past which we treat it as a directional press.
 const STICK_DEADZONE = 0.5;
@@ -226,12 +228,12 @@ export class InputManager {
         return pad.up || pad.leftStick.y < -STICK_DEADZONE;
       case 'down':
         return pad.down || pad.leftStick.y > STICK_DEADZONE;
-      // Primary action (jump / shoot): the south or west face button.
+      // Primary action (jump / shoot): the south or west face button, or L3.
       case 'fire':
-        return pad.A || pad.X;
-      // Menu confirm / launch: south face or Start.
+        return pad.A || pad.X || this.buttonDown(pad, PAD_L3);
+      // Menu confirm / launch: south face, Start, or L3.
       case 'confirm':
-        return pad.A || this.buttonDown(pad, PAD_START);
+        return pad.A || this.buttonDown(pad, PAD_START) || this.buttonDown(pad, PAD_L3);
       // Back out: east face or Select/Back.
       case 'cancel':
         return pad.B || this.buttonDown(pad, PAD_SELECT);
