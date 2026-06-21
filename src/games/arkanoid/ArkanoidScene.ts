@@ -21,6 +21,12 @@ import {
   capsuleTexture,
 } from './sprites';
 import { stageLayout, parseStage } from './stages';
+import {
+  EnemyKind,
+  ENEMY_SPECS,
+  buildEnemyTextures,
+  enemyTexture,
+} from './enemies';
 
 interface Ball {
   img: Phaser.GameObjects.Image;
@@ -52,6 +58,23 @@ interface Laser {
   img: Phaser.GameObjects.Image;
   x: number;
   y: number;
+}
+
+interface Enemy {
+  kind: EnemyKind;
+  img: Phaser.GameObjects.Image;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  points: number;
+  laneY: number; // convoy cruise lane
+  reroll: number; // unira re-aim / convoy dive-duration timer
+  swoop: number; // convoy time-to-next-dive
+  flap: number; // animation timer
+  frame: 0 | 1;
+  ballCd: number; // cooldown after deflecting a ball
 }
 
 type VausMode = 'normal' | 'laser';
@@ -86,6 +109,8 @@ export class ArkanoidScene extends BaseGameScene {
 
   private readonly balls: Ball[] = [];
   private readonly lasers: Laser[] = [];
+  private readonly enemies: Enemy[] = [];
+  private enemySpawnTimer = 0;
   private readonly lifeIcons: Phaser.GameObjects.Image[] = [];
   private grid: (Brick | null)[][] = [];
   private capsule?: Capsule;
@@ -119,6 +144,7 @@ export class ArkanoidScene extends BaseGameScene {
 
   protected createGame(): void {
     buildArkanoidTextures(this);
+    buildEnemyTextures(this);
     this.buildExplosion();
 
     this.drawWalls();
@@ -166,6 +192,7 @@ export class ArkanoidScene extends BaseGameScene {
     this.clearLasers();
     this.clearCapsule();
     this.clearBalls();
+    this.clearEnemies();
     this.vaus.setPosition(GAME.screenWidth / 2, GAME.vausY);
     this.spawnBall(this.vaus.x, VAUS_TOP - R, 0, -1, true);
     this.banner.setText('READY').setVisible(true);
@@ -199,6 +226,7 @@ export class ArkanoidScene extends BaseGameScene {
     }
     this.updateCapsule(delta);
     this.updateLasers(delta);
+    this.updateEnemies(delta);
     this.updateSlow(delta);
     this.updateCatchTimers(delta);
     this.checkExtraLife();
@@ -211,6 +239,7 @@ export class ArkanoidScene extends BaseGameScene {
     this.vaus.setVisible(false);
     this.clearLasers();
     this.clearCapsule();
+    this.clearEnemies();
     this.time.delayedCall(GAME.deathPauseMs, () => this.afterDeath());
   }
 
@@ -230,6 +259,7 @@ export class ArkanoidScene extends BaseGameScene {
     this.clearBalls();
     this.clearCapsule();
     this.clearLasers();
+    this.clearEnemies();
     this.cameras.main.flash(GAME.clearFlashMs, 255, 255, 255);
     this.time.delayedCall(GAME.clearFlashMs, () => {
       this.stage++;
@@ -365,6 +395,7 @@ export class ArkanoidScene extends BaseGameScene {
       b.y += b.diry * per;
       this.resolveWalls(b);
       this.resolveBricks(b);
+      this.resolveEnemies(b);
       this.resolvePaddle(b);
       if (b.y - R > GAME.screenHeight) {
         return true; // fell out the bottom
@@ -566,6 +597,7 @@ export class ArkanoidScene extends BaseGameScene {
       this.grid.push(gridRow);
     }
     this.stageText.setText(`STAGE ${stage}`);
+    this.enemySpawnTimer = Phaser.Math.Between(GAME.enemySpawnMinMs, GAME.enemySpawnMaxMs);
   }
 
   private brickAtPoint(x: number, y: number): { row: number; col: number; brick: Brick } | null {
@@ -774,6 +806,12 @@ export class ArkanoidScene extends BaseGameScene {
     for (let i = this.lasers.length - 1; i >= 0; i--) {
       const beam = this.lasers[i];
       beam.y -= step;
+      const enemyIdx = this.enemyAtPoint(beam.x, beam.y);
+      if (enemyIdx >= 0) {
+        this.killEnemy(enemyIdx);
+        this.removeLaser(i);
+        continue;
+      }
       const hit = this.brickAtPoint(beam.x, beam.y);
       if (hit) {
         if (hit.brick.code !== 'X') {
@@ -808,6 +846,211 @@ export class ArkanoidScene extends BaseGameScene {
       b.img.destroy();
     }
     this.balls.length = 0;
+  }
+
+  // --- enemies ------------------------------------------------------------
+
+  private updateEnemies(delta: number): void {
+    this.spawnEnemies(delta);
+    const f = delta / FRAME_MS;
+    const leftWall = GAME.wallThickness;
+    const rightWall = GAME.screenWidth - GAME.wallThickness;
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      e.ballCd = Math.max(0, e.ballCd - delta);
+      this.moveEnemy(e, f, leftWall, rightWall);
+      this.animateEnemy(e, delta);
+      e.img.setPosition(e.x, e.y);
+      // Killed by running into the Vaus, or gone off the bottom.
+      if (this.enemyHitsVaus(e)) {
+        this.killEnemy(i);
+        continue;
+      }
+      if (e.y - e.radius > GAME.screenHeight) {
+        e.img.destroy();
+        this.enemies.splice(i, 1);
+      }
+    }
+  }
+
+  private moveEnemy(e: Enemy, f: number, leftWall: number, rightWall: number): void {
+    e.x += e.vx * f;
+    e.y += e.vy * f;
+    // Side walls reflect every kind.
+    if (e.x < leftWall + e.radius) {
+      e.x = leftWall + e.radius;
+      e.vx = Math.abs(e.vx);
+    } else if (e.x > rightWall - e.radius) {
+      e.x = rightWall - e.radius;
+      e.vx = -Math.abs(e.vx);
+    }
+    if (e.kind === 'unira') {
+      if (e.y < TOP_WALL_Y + e.radius) {
+        e.y = TOP_WALL_Y + e.radius;
+        e.vy = Math.abs(e.vy);
+      }
+      e.reroll -= f * FRAME_MS;
+      if (e.reroll <= 0) {
+        this.aimUnira(e);
+      }
+    } else if (e.kind === 'molester') {
+      if (e.y < TOP_WALL_Y + e.radius) {
+        e.y = TOP_WALL_Y + e.radius;
+        e.vy = Math.abs(e.vy);
+      }
+    } else {
+      this.cruiseConvoy(e, f * FRAME_MS);
+    }
+  }
+
+  private aimUnira(e: Enemy): void {
+    const spec = ENEMY_SPECS.unira;
+    const ang = Phaser.Math.FloatBetween(0.3, Math.PI - 0.3); // bias downward
+    e.vx = Math.cos(ang) * spec.speed;
+    e.vy = Math.sin(ang) * spec.speed;
+    e.reroll = Phaser.Math.Between(900, 1800);
+  }
+
+  /** Convoy cruises in its lane and occasionally dives, then climbs back. */
+  private cruiseConvoy(e: Enemy, dtMs: number): void {
+    const spec = ENEMY_SPECS.convoy;
+    if (e.vy === 0) {
+      e.swoop -= dtMs;
+      if (e.swoop <= 0) {
+        e.vy = spec.speed; // start dive
+        e.reroll = GAME.convoyDiveMs;
+      }
+    } else if (e.vy > 0) {
+      e.reroll -= dtMs;
+      if (e.reroll <= 0) {
+        e.vy = -spec.speed; // climb back
+      }
+    } else if (e.y <= e.laneY) {
+      e.y = e.laneY;
+      e.vy = 0;
+      e.swoop = Phaser.Math.Between(2500, 4500);
+    }
+  }
+
+  private animateEnemy(e: Enemy, delta: number): void {
+    if (e.kind === 'molester') {
+      e.frame = e.vx < 0 ? 0 : 1;
+      e.img.setTexture(enemyTexture('molester', e.frame));
+      return;
+    }
+    if (e.kind !== 'convoy') {
+      return;
+    }
+    e.flap -= delta;
+    if (e.flap <= 0) {
+      e.flap = GAME.enemyFlapMs;
+      e.frame = e.frame === 0 ? 1 : 0;
+      e.img.setTexture(enemyTexture('convoy', e.frame));
+    }
+  }
+
+  private spawnEnemies(delta: number): void {
+    this.enemySpawnTimer -= delta;
+    if (this.enemySpawnTimer > 0 || this.enemies.length >= GAME.enemyMaxOnscreen) {
+      return;
+    }
+    this.enemySpawnTimer = Phaser.Math.Between(GAME.enemySpawnMinMs, GAME.enemySpawnMaxMs);
+    const eligible = (Object.keys(ENEMY_SPECS) as EnemyKind[]).filter(
+      (k) => this.stage >= ENEMY_SPECS[k].fromStage,
+    );
+    if (eligible.length === 0) {
+      return;
+    }
+    this.spawnEnemy(Phaser.Utils.Array.GetRandom(eligible));
+  }
+
+  private spawnEnemy(kind: EnemyKind): void {
+    const spec = ENEMY_SPECS[kind];
+    const x = Phaser.Math.Between(GAME.wallThickness + 12, GAME.screenWidth - GAME.wallThickness - 12);
+    const y = TOP_WALL_Y + 10;
+    const e: Enemy = {
+      kind,
+      img: this.add.image(x, y, enemyTexture(kind, 0)).setDepth(7),
+      x,
+      y,
+      vx: (Math.random() < 0.5 ? -1 : 1) * spec.speed,
+      vy: kind === 'convoy' ? 0 : spec.speed * 0.6,
+      radius: spec.radius,
+      points: spec.points,
+      laneY: y,
+      reroll: Phaser.Math.Between(900, 1800),
+      swoop: Phaser.Math.Between(2000, 3800),
+      flap: GAME.enemyFlapMs,
+      frame: 0,
+      ballCd: 0,
+    };
+    if (kind === 'unira') {
+      this.aimUnira(e);
+    }
+    if (kind === 'molester') {
+      e.vy = spec.speed; // committed diagonal
+    }
+    this.enemies.push(e);
+  }
+
+  /** Ball ↔ enemy: deflect the ball (invert BOTH components, Section 6 check). */
+  private resolveEnemies(b: Ball): void {
+    for (const e of this.enemies) {
+      if (e.ballCd > 0) {
+        continue;
+      }
+      const dx = b.x - e.x;
+      const dy = b.y - e.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist >= R + e.radius) {
+        continue;
+      }
+      b.dirx = -b.dirx;
+      b.diry = -b.diry;
+      this.applyDir(b);
+      const n = dist || 1;
+      const push = R + e.radius - dist + 0.5;
+      b.x += (dx / n) * push;
+      b.y += (dy / n) * push;
+      e.ballCd = GAME.enemyBallCooldownMs;
+      this.audio.play('enemyHit');
+      return;
+    }
+  }
+
+  private enemyAtPoint(x: number, y: number): number {
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      if (Math.abs(e.x - x) <= e.radius + 1 && Math.abs(e.y - y) <= e.radius + 3) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private enemyHitsVaus(e: Enemy): boolean {
+    return (
+      e.y + e.radius >= VAUS_TOP &&
+      e.y - e.radius <= VAUS_BOTTOM &&
+      e.x >= this.vausLeft - e.radius &&
+      e.x <= this.vausLeft + this.vausWidth + e.radius
+    );
+  }
+
+  private killEnemy(index: number): void {
+    const e = this.enemies[index];
+    playFrames(this, e.x, e.y, EXPLODE_KEYS, 70);
+    this.popScore(e.x, e.y, e.points, { color: '#ffffff', fontSize: '7px' });
+    this.audio.play('enemyKill');
+    e.img.destroy();
+    this.enemies.splice(index, 1);
+  }
+
+  private clearEnemies(): void {
+    for (const e of this.enemies) {
+      e.img.destroy();
+    }
+    this.enemies.length = 0;
   }
 
   // --- scoring / lives ----------------------------------------------------

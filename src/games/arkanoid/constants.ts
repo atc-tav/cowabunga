@@ -65,6 +65,12 @@ export const GAME = {
   uniraPoints: 100,
   convoyPoints: 200,
   molesterPoints: 300,
+  enemyMaxOnscreen: 2,
+  enemySpawnMinMs: 6000,
+  enemySpawnMaxMs: 10000,
+  enemyBallCooldownMs: 250,
+  enemyFlapMs: 220,
+  convoyDiveMs: 600,
 
   // DOH
   dohHitsRequired: 16,
