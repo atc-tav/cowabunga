@@ -60,13 +60,28 @@ export const FLY_GROUND_MS = 200; // grounded (flippable) dwell between hops
 export const FLY_FRAME_MS = 90; // wing flap
 
 export const STOMP_BOUNCE = 160; // Mario's hop after a stomp
-export const ENEMY_TARGET = 2; // keep this many on the board
-export const ENEMY_RESPAWN_MS = 1600;
+export const ENEMY_TARGET = 2; // baseline number on the board at once
+export const ENEMY_LAST_MULT = 2.0; // the final enemy of a phase turns blue & super-fast
+
+// --- phases & scoring ---------------------------------------------------
+
+export const SPAWN_STAGGER_MS = 1500; // gap between enemies emerging from pipes
+export const PHASE_INTRO_MS = 1500; // "PHASE n" banner before a phase begins
+export const LOOP_SPEED_STEP = 0.12; // enemy speed bump per completed loop of phases
+export const COMBO_WINDOW_MS = 1100; // chain kicks within this window to double points
 
 export const LIVES_START = 3;
 export const READY_MS = 1300;
 export const DEATH_PAUSE_MS = 1000;
-export const GAMEOVER_MS = 2500;
+export const RESPAWN_MS = 900; // a dead player (with lives left) returns after this
+export const GAMEOVER_MS = 2800;
+
+// --- two-player ---------------------------------------------------------
+
+export type GameMode = 'solo' | 'coop' | 'versus';
+
+// In versus, bumping the platform another player stands on knocks them over.
+export const VS_STUN_MS = 1400;
 
 // POW block: bonk from below to flip every grounded enemy; limited uses.
 export const POW_USES = 3;

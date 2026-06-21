@@ -37,6 +37,38 @@ const ALL_ACTIONS: InputAction[] = [
   'pause',
 ];
 
+/**
+ * Per-instance input configuration. Omit it for the default single-player
+ * scheme (arrows + WASD, gamepad 0). Pass a `keys` override and/or `padIndex`
+ * to bind a specific player — e.g. two InputManagers for local co-op/versus.
+ */
+export interface InputOptions {
+  /** Key-code overrides per action. If given, ONLY these actions get keys. */
+  keys?: Partial<Record<InputAction, number[]>>;
+  /** Which connected gamepad to read (default 0). */
+  padIndex?: number;
+}
+
+const K = Phaser.Input.Keyboard.KeyCodes;
+
+/** Player 1: arrow keys to move, Up/Space to jump. */
+export const PLAYER_ONE_KEYS: Partial<Record<InputAction, number[]>> = {
+  left: [K.LEFT],
+  right: [K.RIGHT],
+  up: [K.UP],
+  down: [K.DOWN],
+  fire: [K.UP, K.SPACE],
+};
+
+/** Player 2: WASD to move, W to jump. */
+export const PLAYER_TWO_KEYS: Partial<Record<InputAction, number[]>> = {
+  left: [K.A],
+  right: [K.D],
+  up: [K.W],
+  down: [K.S],
+  fire: [K.W],
+};
+
 // Standard-mapping gamepad button indices (Gamepad API "standard" / X-input).
 // Used for buttons Phaser doesn't expose by name (Start / Select).
 const PAD_START = 9;
@@ -56,13 +88,18 @@ export class InputManager {
   private readonly padPrev = new Map<InputAction, boolean>();
   private padPrimed = false;
 
-  constructor(private readonly scene: Phaser.Scene) {
+  constructor(
+    private readonly scene: Phaser.Scene,
+    private readonly options: InputOptions = {},
+  ) {
     const kb = scene.input.keyboard;
     if (kb) {
+      const custom = options.keys;
       for (const action of ALL_ACTIONS) {
+        const codes = custom ? custom[action] ?? [] : KEY_MAP[action];
         this.keys.set(
           action,
-          KEY_MAP[action].map((code) => kb.addKey(code, true, false)),
+          codes.map((code) => kb.addKey(code, true, false)),
         );
       }
     }
@@ -136,7 +173,7 @@ export class InputManager {
     if (!gp || gp.total === 0) {
       return null;
     }
-    return gp.getPad(0) ?? null;
+    return gp.getPad(this.options.padIndex ?? 0) ?? null;
   }
 
   /** True if a numbered standard-mapping button is currently pressed. */

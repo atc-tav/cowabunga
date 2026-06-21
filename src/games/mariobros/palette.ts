@@ -22,6 +22,7 @@ export const COLORS = {
   crabEye: 0xffffff,
   crabClaw: 0xfca044,
   crabAngry: 0xff9090, // tint when sped-up after the first bump
+  enemyLast: 0x4878ff, // the last enemy of a phase turns blue (super-fast)
   fly: 0x6868f8, // Fighter Fly body
   flyEye: 0xffffff,
   flyWing: 0xc0c0ff,
@@ -32,5 +33,14 @@ export const MARIO_PALETTE: PixelPalette = {
   S: COLORS.skin,
   N: COLORS.hair,
   O: COLORS.overalls,
+  B: COLORS.boots,
+};
+
+/** Player 2 — Luigi: green cap/shirt, white overalls to read distinctly. */
+export const LUIGI_PALETTE: PixelPalette = {
+  R: 0x00a800,
+  S: COLORS.skin,
+  N: COLORS.hair,
+  O: 0xe0e0e0,
   B: COLORS.boots,
 };

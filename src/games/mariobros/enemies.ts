@@ -12,6 +12,7 @@ import {
   SHELL_FRAME_MS,
   SHELL_STUN_BLINK_MS,
   SHELL_SCORE,
+  ENEMY_LAST_MULT,
   CRAB_W,
   CRAB_H,
   CRAB_SPEED,
@@ -31,6 +32,7 @@ import { COLORS } from './palette';
 import { TX } from './sprites';
 
 export type EnemyState = 'walk' | 'angry' | 'flipped' | 'shell';
+export type EnemyKindId = 'turtle' | 'crab' | 'fly';
 
 /**
  * Static description of an enemy species. Behavior is data: the same `Enemy`
@@ -54,7 +56,7 @@ export interface EnemyKind {
   hops?: boolean; // moves by hopping; only flippable during the grounded window
 }
 
-export const KINDS: Record<'turtle' | 'crab' | 'fly', EnemyKind> = {
+export const KINDS: Record<EnemyKindId, EnemyKind> = {
   turtle: {
     id: 'turtle',
     w: SHELL_W,
@@ -115,6 +117,9 @@ export class Enemy {
   dir: 1 | -1 = 1;
   stun = 0;
   grace = 0; // a freshly kicked shell ignores Mario this long
+  owner = -1; // which player kicked this into a shell (for versus score credit)
+  last = false; // the phase's final enemy: super-fast and blue
+  speedScale = 1; // per-loop speed ramp
   floorSeg: PlatformSegment | null = null;
 
   private bumps = 0;
@@ -140,7 +145,7 @@ export class Enemy {
     if (this.state === 'flipped') {
       this.stun -= deltaMs;
     } else {
-      const sp = this.state === 'shell' ? SHELL_PROJECTILE_SPEED : this.speed;
+      const sp = this.state === 'shell' ? SHELL_PROJECTILE_SPEED : this.effSpeed;
       this.body.x += this.dir * sp * dt;
     }
 
@@ -227,14 +232,36 @@ export class Enemy {
    * Kick a flipped enemy. A turtle slides off as a lethal projectile (returns
    * true); other species just die — the caller defeats them (returns false).
    */
-  kick(dir: 1 | -1): boolean {
+  kick(dir: 1 | -1, owner = -1): boolean {
     if (!this.kind.becomesShell) {
       return false;
     }
     this.state = 'shell';
     this.dir = dir;
     this.grace = SHELL_GRACE_MS;
+    this.owner = owner;
     return true;
+  }
+
+  /** Mark as the phase's final enemy: blue and super-fast (even if flipped). */
+  makeLast(): void {
+    this.last = true;
+  }
+
+  /** Walking speed after the per-loop ramp and any last-enemy multiplier. */
+  private get effSpeed(): number {
+    return this.speed * this.speedScale * (this.last ? ENEMY_LAST_MULT : 1);
+  }
+
+  /** Current body tint (or null to clear) based on last/angry state. */
+  private tintFor(): number | null {
+    if (this.last) {
+      return COLORS.enemyLast;
+    }
+    if (this.state === 'angry' && this.kind.angryTint !== undefined) {
+      return this.kind.angryTint;
+    }
+    return null;
   }
 
   get isActive(): boolean {
@@ -268,14 +295,20 @@ export class Enemy {
       this.sprite.angle += (SHELL_SPIN_DEG * deltaMs) / 1000;
       return;
     }
+    const tint = this.tintFor();
     if (this.state === 'flipped') {
       const blink = this.stun < SHELL_STUN_BLINK_MS && Math.floor(this.stun / 150) % 2 === 0;
-      this.sprite.setTexture(this.kind.tex.flip).clearTint().setAngle(0).setAlpha(blink ? 0.4 : 1);
+      this.sprite.setTexture(this.kind.tex.flip).setAngle(0).setAlpha(blink ? 0.4 : 1);
+      if (tint !== null) {
+        this.sprite.setTint(tint);
+      } else {
+        this.sprite.clearTint();
+      }
       return;
     }
     this.sprite.setAngle(0).setAlpha(1).setFlipX(this.dir < 0);
-    if (this.state === 'angry' && this.kind.angryTint !== undefined) {
-      this.sprite.setTint(this.kind.angryTint);
+    if (tint !== null) {
+      this.sprite.setTint(tint);
     } else {
       this.sprite.clearTint();
     }

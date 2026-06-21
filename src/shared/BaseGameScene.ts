@@ -131,6 +131,15 @@ export abstract class BaseGameScene extends Phaser.Scene {
     screenShake(this, preset);
   }
 
+  /**
+   * Hide (or show) the default single-score HUD. A game that draws its own HUD
+   * — e.g. a two-player split score — calls this with `false` in createGame().
+   */
+  protected showDefaultHud(show: boolean): void {
+    this.scoreText?.setVisible(show);
+    this.highText?.setVisible(show);
+  }
+
   protected returnToMenu(): void {
     this.scene.start('MainMenu');
   }
