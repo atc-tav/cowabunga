@@ -62,10 +62,12 @@ capsule drops.
   surface and a **13-scenario / 34-check suite that passes green** via
   `npm run test:game -- arkanoid`. This codifies the manual Arkanoid
   verification so it runs on demand.
+- **Also done:** Galaga surface + 6-scenario suite (`test:game -- galaga`,
+  19 checks), and a **fuzz/soak runner** (`fuzz:game -- <id> [secs]`) — a
+  game-specific bot drives live play while invariants are sampled each input
+  tick. Arkanoid (tracking bot) and Galaga (random bot) both run clean.
 - **Not yet done:** seeded RNG + fixed-step `tick` (deferred — see Decisions
-  log), the fuzz/invariant *driver* (invariants exist and are checked after
-  each scenario, but there's no random-play bot yet), pure-logic unit tests
-  (mode 1), and the human-pack generator.
+  log), pure-logic unit tests (mode 1), and the human-pack generator.
 - **Branch convention:** descriptive names, `claude/<topic>` (e.g.
   `claude/testkit-arkanoid-scenarios`).
 - **Workflow:** one PR per coherent slice; squash-merge; **re-sync to
@@ -109,6 +111,22 @@ smell in the game (logic tangled into rendering) — surface it, don't fight it.
 ---
 
 ## Decisions log (newest first)
+
+### 2026-06-21 — Galaga onboarded; fuzz/soak runner added
+Implemented mode 3 as a **live soak test** (`src/shared/testkit/fuzz-run.mjs`,
+`fuzz:game`): boots the game live, a per-game bot in `testing/fuzz.mjs` drives
+input, and invariants are sampled after **each input tick** (not per-frame).
+Arkanoid uses a paddle-tracking bot; Galaga a random bot. Both ran ~250 ticks /
+15s clean (no invariant violations, no exceptions). Validated the detector by
+injecting a deliberate always-true violation — reported as expected.
+
+Why per-tick, not per-frame: true per-frame + reproducible-by-seed fuzzing needs
+the deferred seeded-RNG + fixed-step `tick` seam. Per-tick sampling still catches
+exceptions and any state that stays broken longer than one input hold (~tens of
+ms), which is the bulk of the value. Upgrade to per-frame when the tick seam lands.
+
+Also onboarded Galaga (surface + 6 scenarios), confirming the adaptation
+checklist holds: implement `buildTestSurface()` + a `scenarios.mjs`.
 
 ### 2026-06-21 — testkit core built; Arkanoid verification locked in
 Implemented the reusable `testkit` (contract in `src/shared/testkit/surface.ts`;

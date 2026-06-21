@@ -49,6 +49,20 @@ function makeDriver(page, errors) {
       await page.waitForTimeout(450);
       await page.evaluate((k) => window.__testkit.game.scene.getScene(k).scene.pause(), sceneKey);
     },
+    /** Start a scene and let it run live — for the fuzz bot. */
+    async startLive(sceneKey) {
+      await page.evaluate((k) => window.__testkit.game.scene.start(k), sceneKey);
+      await page.waitForTimeout(500);
+    },
+    /** Hold a key down for `ms` (clears Phaser's edge-triggered-input gotcha). */
+    async hold(key, ms) {
+      await page.keyboard.down(key);
+      await page.waitForTimeout(ms);
+      await page.keyboard.up(key);
+    },
+    async tap(key) {
+      await this.hold(key, 60);
+    },
     async snapshot(gameId) {
       return page.evaluate((id) => window.__testkit.surfaces[id].snapshot(), gameId);
     },
