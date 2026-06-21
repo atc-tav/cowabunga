@@ -20,6 +20,7 @@ to build (or validate) a faithful clone.
 | Galaga | NES (Bandai, 1985; arcade Namco 1981) | [galaga-nes.md](./galaga-nes.md) |
 | Donkey Kong | NES (1983) | [donkey-kong-nes.md](./donkey-kong-nes.md) |
 | Arkanoid | Arcade (Taito, 1986) | [arkanoid.md](./arkanoid.md) |
+| Mario Bros. | Arcade (Nintendo, 1983) | [mario-bros-arcade.md](./mario-bros-arcade.md) |
 
 **Notes**
 - The **NES Dig Dug** spec is a *delta* on top of the **arcade Dig Dug** spec —
