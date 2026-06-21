@@ -204,39 +204,57 @@ function drawBanner(scene: Phaser.Scene, cx: number, topY: number): number {
 function drawWordmark(scene: Phaser.Scene, cx: number, topY: number): void {
   const word = 'COWABUNGA';
   const palette = { '#': GREEN, c: GREEN_CRACK, K: OUTLINE };
+  const n = word.length;
+  const mid = (n - 1) / 2;
 
-  // All glyphs share the same outlined footprint (8 body + 1px outline each
-  // side = 10 cols). Scale the whole wordmark up to roughly fill the width.
-  const cols = 10;
-  const baseW = cols * PX;
-  const naturalW = word.length * baseW + (word.length - 1) * PX;
-  const scale = Math.min(1.35, 224 / naturalW);
-  const letterW = baseW * scale;
-  const gap = PX * scale;
-  const totalW = word.length * letterW + (word.length - 1) * gap;
+  // Outlined glyphs share a 10-col x 11-row footprint.
+  const baseW = 10 * PX;
+  const baseH = 11 * PX;
+  const GAP = PX;
 
-  const mid = (word.length - 1) / 2;
-  const archDepth = 9 * scale;
-  let x = cx - totalW / 2;
-  for (let i = 0; i < word.length; i++) {
-    // Arch (frown): middle rides high, ends sweep down — like the reference.
-    const arch = Math.round(archDepth * ((i - mid) / mid) ** 2);
+  // Fan look: letters grow and tilt the further they sit from the centre
+  // ("ABU"). Tilt splays outward — left letters lean left, right lean right —
+  // tangent to the arch, like the reference.
+  const GROW = 0.26;
+  const MAX_ANGLE = 38;
+  const EXTRA = 5; // extra spacing between tilted letters so they don't crowd
+  const targetW = 230;
+
+  const tiltAt = (i: number) => Math.abs((i - mid) / mid);
+  const growth = Array.from({ length: n }, (_, i) => 1 + GROW * tiltAt(i));
+  const gapAt = (i: number) => GAP + EXTRA * ((tiltAt(i) + tiltAt(i + 1)) / 2);
+
+  // Lay everything out in unscaled units first, then scale to fit the width.
+  let raw = growth.reduce((s, g) => s + baseW * g, 0);
+  for (let i = 0; i < n - 1; i++) raw += gapAt(i);
+  const SC = targetW / raw;
+  const archDepth = 9 * SC;
+  const baseY = topY + (baseH * SC) / 2;
+
+  let x = cx - (raw * SC) / 2;
+  for (let i = 0; i < n; i++) {
+    const sc = SC * growth[i];
+    const w = baseW * sc;
+    const t = (i - mid) / mid; // -1 (far left) .. +1 (far right)
+    const arch = archDepth * t * t; // ends ride lower
     const key = `logo_${word[i]}`;
     drawPixelArt(scene, key, outlineGlyph(GLYPHS[word[i]]), palette, PX);
     scene.add
-      .image(x, topY + arch, key)
-      .setOrigin(0, 0)
-      .setScale(scale)
+      .image(x + w / 2, baseY + arch, key)
+      .setOrigin(0.5, 0.5)
+      .setScale(sc)
+      .setAngle(MAX_ANGLE * t)
       .setDepth(20);
-    x += letterW + gap;
+    x += w + (i < n - 1 ? gapAt(i) * SC : 0);
   }
+  const total = raw * SC;
 
   // Sparkle stars around the wordmark (one left, two right), like the artwork.
   drawPixelArt(scene, 'logo_star', STAR, { '#': 0xfcfc00 }, 1);
   const place = (sx: number, sy: number, s: number) =>
     scene.add.image(sx, sy, 'logo_star').setOrigin(0.5).setScale(s).setDepth(21);
-  place(cx - totalW / 2 - 1, topY + 12, 1.3);
-  place(cx + totalW / 2 + 2, topY - 1, 1.6);
-  place(cx + totalW / 2 - 1, topY + 25, 1.0);
+  place(cx - total / 2 - 2, baseY - 4, 1.3);
+  place(cx + total / 2 + 3, baseY - 9, 1.6);
+  place(cx + total / 2, baseY + 16, 1.0);
 }
 
