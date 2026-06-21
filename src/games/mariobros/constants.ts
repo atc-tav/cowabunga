@@ -66,7 +66,15 @@ export const ENEMY_RESPAWN_MS = 1600;
 export const LIVES_START = 3;
 export const READY_MS = 1300;
 export const DEATH_PAUSE_MS = 1000;
-export const GAMEOVER_MS = 2500;
+export const RESPAWN_MS = 900; // a dead player (with lives left) returns after this
+export const GAMEOVER_MS = 2800;
+
+// --- two-player ---------------------------------------------------------
+
+export type GameMode = 'solo' | 'coop' | 'versus';
+
+// In versus, bumping the platform another player stands on knocks them over.
+export const VS_STUN_MS = 1400;
 
 // POW block: bonk from below to flip every grounded enemy; limited uses.
 export const POW_USES = 3;

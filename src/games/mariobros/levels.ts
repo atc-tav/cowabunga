@@ -66,3 +66,4 @@ export function bottomPipeZones(): [number, number][] {
 export const POW = { x: 128, y: 152 };
 
 export const MARIO_START = { x: 40, y: 208 } as const;
+export const LUIGI_START = { x: 216, y: 208 } as const;

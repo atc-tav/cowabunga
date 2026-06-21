@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { drawPixelArt } from '../../shared/textures';
-import { MARIO_PALETTE, COLORS } from './palette';
+import { MARIO_PALETTE, LUIGI_PALETTE, COLORS } from './palette';
 
 // Mario, 10x14 (R=cap/shirt, S=skin, N=hair, O=overalls, B=boots).
 const MARIO_RUN_A: string[] = [
@@ -172,6 +172,9 @@ export const TX = {
   marioRun0: 'mb-mario-0',
   marioRun1: 'mb-mario-1',
   marioJump: 'mb-mario-jump',
+  luigiRun0: 'mb-luigi-0',
+  luigiRun1: 'mb-luigi-1',
+  luigiJump: 'mb-luigi-jump',
   shellWalk0: 'mb-shell-0',
   shellWalk1: 'mb-shell-1',
   shellFlip: 'mb-shell-flip',
@@ -187,6 +190,10 @@ export function buildMarioBrosTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, TX.marioRun0, MARIO_RUN_A, MARIO_PALETTE);
   drawPixelArt(scene, TX.marioRun1, MARIO_RUN_B, MARIO_PALETTE);
   drawPixelArt(scene, TX.marioJump, MARIO_JUMP, MARIO_PALETTE);
+
+  drawPixelArt(scene, TX.luigiRun0, MARIO_RUN_A, LUIGI_PALETTE);
+  drawPixelArt(scene, TX.luigiRun1, MARIO_RUN_B, LUIGI_PALETTE);
+  drawPixelArt(scene, TX.luigiJump, MARIO_JUMP, LUIGI_PALETTE);
 
   const shellPal = {
     G: COLORS.shell,

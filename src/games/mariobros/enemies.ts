@@ -115,6 +115,7 @@ export class Enemy {
   dir: 1 | -1 = 1;
   stun = 0;
   grace = 0; // a freshly kicked shell ignores Mario this long
+  owner = -1; // which player kicked this into a shell (for versus score credit)
   floorSeg: PlatformSegment | null = null;
 
   private bumps = 0;
@@ -227,13 +228,14 @@ export class Enemy {
    * Kick a flipped enemy. A turtle slides off as a lethal projectile (returns
    * true); other species just die — the caller defeats them (returns false).
    */
-  kick(dir: 1 | -1): boolean {
+  kick(dir: 1 | -1, owner = -1): boolean {
     if (!this.kind.becomesShell) {
       return false;
     }
     this.state = 'shell';
     this.dir = dir;
     this.grace = SHELL_GRACE_MS;
+    this.owner = owner;
     return true;
   }
 

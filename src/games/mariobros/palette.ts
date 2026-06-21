@@ -34,3 +34,12 @@ export const MARIO_PALETTE: PixelPalette = {
   O: COLORS.overalls,
   B: COLORS.boots,
 };
+
+/** Player 2 — Luigi: green cap/shirt, white overalls to read distinctly. */
+export const LUIGI_PALETTE: PixelPalette = {
+  R: 0x00a800,
+  S: COLORS.skin,
+  N: COLORS.hair,
+  O: 0xe0e0e0,
+  B: COLORS.boots,
+};

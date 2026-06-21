@@ -1,22 +1,17 @@
 import Phaser from 'phaser';
 import { BaseGameScene } from '../../shared/BaseGameScene';
-import { PlatformerBody, PlatformSegment } from '../../shared/Platformer';
+import { PlatformSegment, surfaceY } from '../../shared/Platformer';
 import { StateMachine } from '../../shared/StateMachine';
-import { LivesManager } from '../../shared/LivesManager';
-import { LABEL_STYLE } from '../../shared/ui';
+import {
+  InputManager,
+  PLAYER_ONE_KEYS,
+  PLAYER_TWO_KEYS,
+} from '../../shared/InputManager';
+import { LABEL_STYLE, HINT_STYLE } from '../../shared/ui';
+import { floatingText } from '../../shared/popups';
 import {
   WIDTH,
   HEIGHT,
-  GRAVITY,
-  JUMP_SPEED,
-  RUN_ACCEL,
-  AIR_ACCEL,
-  RUN_MAX,
-  GROUND_FRICTION,
-  AIR_FRICTION,
-  MARIO_W,
-  MARIO_H,
-  WALK_FRAME_MS,
   PLATFORM_THICKNESS,
   BUMP_AMP,
   BUMP_RECOVER,
@@ -26,47 +21,58 @@ import {
   STOMP_BOUNCE,
   ENEMY_TARGET,
   ENEMY_RESPAWN_MS,
-  LIVES_START,
   READY_MS,
-  DEATH_PAUSE_MS,
   GAMEOVER_MS,
   POW_USES,
   POW_W,
   POW_H,
+  GameMode,
 } from './constants';
 import { COLORS } from './palette';
 import { buildMarioBrosTextures, TX } from './sprites';
-import { FLOORS, PIPES, POW, MARIO_START, topPipeSpawns, bottomPipeZones } from './levels';
+import { FLOORS, PIPES, POW, MARIO_START, LUIGI_START, topPipeSpawns, bottomPipeZones } from './levels';
 import { Enemy, KINDS } from './enemies';
+import { Player } from './player';
 
 interface Floor {
   seg: PlatformSegment;
   nudge: number;
 }
 
+const P1_COLOR = '#ff5030';
+const P2_COLOR = '#30d030';
+
+const MODES: { mode: GameMode; label: string }[] = [
+  { mode: 'solo', label: '1 PLAYER' },
+  { mode: 'coop', label: '2 PLAYERS - CO-OP' },
+  { mode: 'versus', label: '2 PLAYERS - VERSUS' },
+];
+
 /**
- * Mario Bros. — slice 3: the Shellcreeper. Turtles spawn from the top pipes and
- * walk the floors; bumping the platform one stands on flips it, and you kick a
- * flipped one away for points. Touching an un-flipped one costs a life. Adds a
- * round flow (shared StateMachine) + lives (shared LivesManager).
+ * Mario Bros. — the single-screen battle. Turtles, crabs and flies climb out of
+ * the pipes; bump the floor beneath one to flip it, then kick it away. Supports
+ * solo, two-player co-op (you can't hurt each other) and versus (bump your
+ * rival off their feet; highest score wins).
  */
 export class MarioBrosScene extends BaseGameScene {
-  private mario!: PlatformerBody;
-  private sprite!: Phaser.GameObjects.Image;
-  private vx = 0;
-  private facing: 1 | -1 = 1;
-  private walkTimer = 0;
-  private walkFrame: 0 | 1 = 0;
-
   private floors: Floor[] = [];
   private groundSeg!: PlatformSegment;
   private platformGfx!: Phaser.GameObjects.Graphics;
 
   private flow!: StateMachine<MarioBrosScene>;
-  private lives!: LivesManager;
-  private readonly lifeIcons: Phaser.GameObjects.Image[] = [];
   private banner!: Phaser.GameObjects.Text;
   private readyTimer = 0;
+
+  private mode: GameMode = 'solo';
+  private players: Player[] = [];
+  private p1Controls!: InputManager;
+  private p2Controls!: InputManager;
+
+  private selectIndex = 0;
+  private selectGfx: Phaser.GameObjects.Text[] = [];
+  private hudTexts: Phaser.GameObjects.Text[] = [];
+  private hiText!: Phaser.GameObjects.Text;
+  private readonly lifeIcons: Phaser.GameObjects.Image[] = [];
 
   private readonly enemies: Enemy[] = [];
   private spawnTimer = 0;
@@ -82,6 +88,7 @@ export class MarioBrosScene extends BaseGameScene {
 
   protected createGame(): void {
     buildMarioBrosTextures(this);
+    this.showDefaultHud(false);
 
     this.floors = FLOORS.map((f) => ({ seg: { ...f, thickness: PLATFORM_THICKNESS }, nudge: 0 }));
     this.groundSeg = this.floors.find((f) => f.seg.x1 === 0 && f.seg.x2 === WIDTH)!.seg;
@@ -89,23 +96,20 @@ export class MarioBrosScene extends BaseGameScene {
     this.platformGfx = this.add.graphics().setDepth(1);
     this.drawPlatforms();
 
-    this.powUses = POW_USES;
     this.powSeg = { x1: POW.x - POW_W / 2, x2: POW.x + POW_W / 2, y1: POW.y, y2: POW.y, thickness: POW_H };
     this.powGfx = this.add.graphics().setDepth(1);
     this.powText = this.add
       .text(POW.x, POW.y + POW_H / 2, 'POW', { fontFamily: 'monospace', fontSize: '8px', color: '#ffffff' })
       .setOrigin(0.5)
       .setDepth(2);
-    this.drawPow();
 
-    this.enemies.length = 0;
-    this.lifeIcons.length = 0;
-    this.mario = new PlatformerBody(MARIO_START.x, 0, MARIO_W, MARIO_H);
-    this.sprite = this.add.image(0, 0, TX.marioRun0).setDepth(10);
+    this.p1Controls = new InputManager(this, { keys: PLAYER_ONE_KEYS, padIndex: 0 });
+    this.p2Controls = new InputManager(this, { keys: PLAYER_TWO_KEYS, padIndex: 1 });
 
-    this.lives = new LivesManager(LIVES_START);
-    this.refreshLives();
-
+    this.hiText = this.add
+      .text(WIDTH / 2, 4, `HI ${this.scores.high}`, { ...LABEL_STYLE, fontSize: '8px' })
+      .setOrigin(0.5, 0)
+      .setDepth(1000);
     this.banner = this.add
       .text(WIDTH / 2, HEIGHT / 2, '', LABEL_STYLE)
       .setOrigin(0.5)
@@ -113,23 +117,102 @@ export class MarioBrosScene extends BaseGameScene {
       .setDepth(1000);
 
     this.flow = new StateMachine<MarioBrosScene>(this)
+      .add('select', { enter: () => this.enterSelect(), update: () => this.updateSelect() })
       .add('ready', { enter: () => this.enterReady(), update: (_c, dt) => this.updateReady(dt) })
       .add('playing', { update: (_c, dt) => this.updatePlaying(dt) })
-      .add('dying', { enter: () => this.enterDying() })
       .add('gameover', { enter: () => this.enterGameOver() });
-    this.flow.transition('ready');
+    this.flow.transition('select');
   }
 
   protected updateGame(_time: number, delta: number): void {
+    this.p1Controls.update();
+    this.p2Controls.update();
     this.flow.update(delta);
+  }
+
+  // --- mode select --------------------------------------------------------
+
+  private enterSelect(): void {
+    this.powUses = 0;
+    this.drawPow();
+    this.clearEnemies();
+    this.selectIndex = 0;
+    this.banner.setText('MARIO BROS').setColor('#fcfc00').setVisible(true);
+    const baseY = HEIGHT / 2 - 6;
+    this.selectGfx = MODES.map((m, i) =>
+      this.add
+        .text(WIDTH / 2, baseY + i * 16, m.label, { ...LABEL_STYLE, fontSize: '10px' })
+        .setOrigin(0.5)
+        .setDepth(1500),
+    );
+    this.selectGfx.push(
+      this.add
+        .text(WIDTH / 2, baseY + MODES.length * 16 + 8, 'UP/DOWN + JUMP TO SELECT', HINT_STYLE)
+        .setOrigin(0.5)
+        .setDepth(1500),
+    );
+    this.refreshSelect();
+  }
+
+  private updateSelect(): void {
+    if (this.controls.justPressed('up')) {
+      this.selectIndex = (this.selectIndex + MODES.length - 1) % MODES.length;
+      this.refreshSelect();
+    } else if (this.controls.justPressed('down')) {
+      this.selectIndex = (this.selectIndex + 1) % MODES.length;
+      this.refreshSelect();
+    } else if (this.controls.justPressed('confirm') || this.controls.justPressed('fire')) {
+      this.mode = MODES[this.selectIndex].mode;
+      this.selectGfx.forEach((t) => t.destroy());
+      this.selectGfx = [];
+      this.createPlayers();
+      this.flow.transition('ready');
+    }
+  }
+
+  private refreshSelect(): void {
+    MODES.forEach((_, i) => {
+      const on = i === this.selectIndex;
+      this.selectGfx[i].setColor(on ? '#ffffff' : '#888888').setText(`${on ? '> ' : '  '}${MODES[i].label}`);
+    });
+  }
+
+  private createPlayers(): void {
+    this.players.forEach((p) => p.sprite.destroy());
+    this.players = [
+      new Player(this, {
+        controls: this.p1Controls,
+        tex: { run0: TX.marioRun0, run1: TX.marioRun1, jump: TX.marioJump },
+        start: { ...MARIO_START },
+        facing: 1,
+        color: P1_COLOR,
+        label: 'MARIO',
+      }),
+    ];
+    if (this.mode !== 'solo') {
+      this.players.push(
+        new Player(this, {
+          controls: this.p2Controls,
+          tex: { run0: TX.luigiRun0, run1: TX.luigiRun1, jump: TX.luigiJump },
+          start: { ...LUIGI_START },
+          facing: -1,
+          color: P2_COLOR,
+          label: 'LUIGI',
+        }),
+      );
+    }
+    this.buildHud();
   }
 
   // --- flow ---------------------------------------------------------------
 
   private enterReady(): void {
     this.readyTimer = READY_MS;
-    this.banner.setText('READY!').setColor('#fcfc00').setVisible(true);
-    this.placeMarioAtStart();
+    const tag = this.mode === 'versus' ? 'VERSUS!' : this.mode === 'coop' ? 'CO-OP!' : 'READY!';
+    this.banner.setText(tag).setColor('#fcfc00').setVisible(true);
+    this.players.forEach((p) => p.placeAtStart());
+    this.powUses = POW_USES;
+    this.drawPow();
     this.clearEnemies();
     this.spawnTimer = 600;
   }
@@ -143,118 +226,167 @@ export class MarioBrosScene extends BaseGameScene {
   }
 
   private updatePlaying(delta: number): void {
-    this.moveMario(delta);
     this.settleBumps(delta);
 
     for (const e of this.enemies) {
       e.update(delta, this.floorSegments());
     }
-    if (this.mario.bumped === this.powSeg) {
-      this.activatePow();
-    } else if (this.mario.bumped) {
-      this.onBump(this.mario.bumped);
-    }
+
+    this.players.forEach((p, i) => {
+      p.update(delta, this.playerFloors());
+      if (p.alive) {
+        this.handlePlayerBump(p, i);
+      }
+    });
+
     this.recoverEnemies();
     this.shellsHitEnemies();
     this.handleEnemyCollisions();
     this.handleEnemyBounds();
     this.maintainEnemies(delta);
 
-    if (this.resolveEnemyContact()) {
-      this.flow.transition('dying');
-    }
-  }
+    this.players.forEach((p, i) => {
+      if (p.alive && !p.safe && this.resolveEnemyContact(p, i)) {
+        p.die();
+      }
+    });
+    this.refreshHud();
 
-  private enterDying(): void {
-    this.audio.play('death');
-    this.cameras.main.flash(180, 255, 80, 80);
-    this.tweens.add({ targets: this.sprite, alpha: 0.2, duration: 120, yoyo: true, repeat: 3 });
-    this.time.delayedCall(DEATH_PAUSE_MS, () => this.afterDeath());
-  }
-
-  private afterDeath(): void {
-    this.sprite.setAlpha(1);
-    if (this.lives.lose() <= 0) {
+    if (this.players.every((p) => p.isOut)) {
       this.flow.transition('gameover');
-      return;
     }
-    this.refreshLives();
-    this.flow.transition('ready');
   }
 
   private enterGameOver(): void {
-    this.banner.setText('GAME OVER').setColor('#ff0000').setVisible(true);
+    this.banner.setText(`GAME OVER\n${this.resultLine()}`).setColor('#ff5050').setAlign('center').setVisible(true);
     this.time.delayedCall(GAMEOVER_MS, () => this.scene.restart());
   }
 
-  // --- mario --------------------------------------------------------------
-
-  private moveMario(delta: number): void {
-    const dt = delta / 1000;
-    const dir = (this.controls.isDown('left') ? -1 : 0) + (this.controls.isDown('right') ? 1 : 0);
-
-    const accel = this.mario.onGround ? RUN_ACCEL : AIR_ACCEL;
-    if (dir !== 0) {
-      this.vx += dir * accel * dt;
-      this.facing = dir > 0 ? 1 : -1;
-    } else {
-      const friction = (this.mario.onGround ? GROUND_FRICTION : AIR_FRICTION) * dt;
-      this.vx = this.vx > 0 ? Math.max(0, this.vx - friction) : Math.min(0, this.vx + friction);
+  private resultLine(): string {
+    if (this.mode === 'versus' && this.players.length === 2) {
+      const [a, b] = this.players;
+      if (a.score === b.score) {
+        return 'TIE';
+      }
+      return `${(a.score > b.score ? a : b).label} WINS`;
     }
-    this.vx = Phaser.Math.Clamp(this.vx, -RUN_MAX, RUN_MAX);
-    this.mario.x += this.vx * dt;
-    if (this.mario.x < 0) {
-      this.mario.x += WIDTH;
-    } else if (this.mario.x > WIDTH) {
-      this.mario.x -= WIDTH;
-    }
-
-    if (this.controls.justPressed('fire')) {
-      this.mario.jump(JUMP_SPEED);
-    }
-    this.mario.update(delta, GRAVITY, this.marioFloors());
-    this.sprite.setPosition(this.mario.x, this.mario.y).setFlipX(this.facing < 0);
-    this.animateMario(delta, dir !== 0);
+    const total = this.players.reduce((s, p) => s + p.score, 0);
+    return `SCORE ${total}`;
   }
 
-  /** Mario also collides with the POW block (enemies don't). */
-  private marioFloors(): PlatformSegment[] {
+  // --- per-player world interaction --------------------------------------
+
+  /** A player's head hit something this frame: the POW, or a floor (bump). */
+  private handlePlayerBump(p: Player, index: number): void {
+    const seg = p.body.bumped;
+    if (!seg) {
+      return;
+    }
+    if (seg === this.powSeg) {
+      this.activatePow();
+      return;
+    }
+    const floor = this.floors.find((f) => f.seg === seg);
+    if (floor) {
+      floor.nudge = -BUMP_AMP;
+      this.audio.play('bump');
+      this.impact('light');
+    }
+    for (const e of this.enemies) {
+      if (e.floorSeg !== seg) {
+        continue;
+      }
+      if (e.isActive) {
+        e.bump(SHELL_STUN_MS);
+      } else if (e.isShell) {
+        e.bumpHop(SHELL_BUMP_HOP);
+      }
+    }
+    // Versus: knock any rival standing on the bumped platform off their feet.
+    if (this.mode === 'versus') {
+      this.players.forEach((other, j) => {
+        if (j !== index && other.alive && other.body.onGround && this.segmentUnder(other.body) === seg) {
+          other.stunForVersus();
+        }
+      });
+    }
+  }
+
+  private segmentUnder(body: { x: number; feet: number }): PlatformSegment | null {
+    for (const f of this.floors) {
+      const s = f.seg;
+      if (body.x >= s.x1 && body.x <= s.x2 && Math.abs(body.feet - surfaceY(s, body.x)) < 4) {
+        return s;
+      }
+    }
+    return null;
+  }
+
+  /** Players also collide with the POW block (enemies don't). */
+  private playerFloors(): PlatformSegment[] {
     const segs = this.floorSegments();
     return this.powUses > 0 ? [...segs, this.powSeg] : segs;
   }
 
-  private placeMarioAtStart(): void {
-    this.vx = 0;
-    this.mario.x = MARIO_START.x;
-    this.mario.setFeet(MARIO_START.y);
-    this.mario.vy = 0;
-    this.mario.onGround = true;
-    this.facing = 1;
-    this.sprite.setAlpha(1).setFlipX(false).setTexture(TX.marioRun0).setPosition(this.mario.x, this.mario.y);
+  /**
+   * One player vs the enemies. Stomp a stompable enemy from above to defeat it;
+   * kick a flipped one (turtle → sliding shell); a side hit from an active enemy
+   * (or a lethal shell that can hurt this player) is fatal. Returns true if this
+   * player died.
+   */
+  private resolveEnemyContact(p: Player, index: number): boolean {
+    const mb = p.getBounds();
+    for (const e of [...this.enemies]) {
+      if (!this.enemies.includes(e)) {
+        continue; // already defeated earlier this frame
+      }
+      if (!Phaser.Geom.Intersects.RectangleToRectangle(mb, e.sprite.getBounds())) {
+        continue;
+      }
+      const fromAbove = p.body.feet <= e.body.y + 4;
+
+      if (e.isFlipped) {
+        if (e.kick(e.body.x >= p.body.x ? 1 : -1, index)) {
+          this.audio.play('kick');
+        } else {
+          this.defeat(e, p);
+        }
+        if (fromAbove) {
+          p.body.vy = -STOMP_BOUNCE;
+        }
+      } else if (e.isShell) {
+        if (fromAbove) {
+          e.flipFor(SHELL_STOP_WAKE_MS);
+          p.body.vy = -STOMP_BOUNCE;
+        } else if (e.lethalShell && this.shellHurts(e, index)) {
+          return true;
+        }
+      } else if (fromAbove && e.kind.canStomp) {
+        this.defeat(e, p);
+        p.body.vy = -STOMP_BOUNCE;
+      } else if (fromAbove) {
+        p.body.vy = -STOMP_BOUNCE; // can't be stomped — harmless bounce
+      } else {
+        return true;
+      }
+    }
+    return false;
   }
 
-  private animateMario(delta: number, moving: boolean): void {
-    if (!this.mario.onGround) {
-      this.sprite.setTexture(TX.marioJump);
-      return;
+  /** In co-op a kicked shell only endangers its own kicker, never the partner. */
+  private shellHurts(shell: Enemy, playerIndex: number): boolean {
+    if (this.mode === 'coop' && shell.owner >= 0 && shell.owner !== playerIndex) {
+      return false;
     }
-    if (!moving && Math.abs(this.vx) < 5) {
-      this.sprite.setTexture(TX.marioRun0);
-      return;
-    }
-    this.walkTimer += delta;
-    if (this.walkTimer >= WALK_FRAME_MS) {
-      this.walkTimer = 0;
-      this.walkFrame = this.walkFrame === 0 ? 1 : 0;
-    }
-    this.sprite.setTexture(this.walkFrame === 0 ? TX.marioRun0 : TX.marioRun1);
+    return true;
   }
 
   // --- enemies ------------------------------------------------------------
 
   private maintainEnemies(delta: number): void {
     this.spawnTimer -= delta;
-    if (this.enemies.length < ENEMY_TARGET && this.spawnTimer <= 0) {
+    const target = ENEMY_TARGET + (this.players.length - 1);
+    if (this.enemies.length < target && this.spawnTimer <= 0) {
       this.spawnEnemy();
       this.spawnTimer = ENEMY_RESPAWN_MS;
     }
@@ -264,33 +396,12 @@ export class MarioBrosScene extends BaseGameScene {
     const spawn = Phaser.Utils.Array.GetRandom(topPipeSpawns());
     const kind = Phaser.Utils.Array.GetRandom([KINDS.turtle, KINDS.crab, KINDS.fly]);
     const e = new Enemy(this, kind, spawn.x, spawn.feetY - kind.h / 2, spawn.dir);
-    e.body.onGround = true; // walks out horizontally onto the top floor
+    e.body.onGround = true;
     this.enemies.push(e);
-  }
-
-  /** A bumped platform pops up and flips any Shellcreeper standing on it. */
-  private onBump(seg: PlatformSegment): void {
-    const floor = this.floors.find((f) => f.seg === seg);
-    if (floor) {
-      floor.nudge = -BUMP_AMP;
-      this.audio.play('bump');
-      this.impact('light'); // the bump's the core verb — let it land
-    }
-    for (const e of this.enemies) {
-      if (e.floorSeg !== seg) {
-        continue;
-      }
-      if (e.isActive) {
-        e.bump(SHELL_STUN_MS);
-      } else if (e.isShell) {
-        e.bumpHop(SHELL_BUMP_HOP); // pops up but keeps sliding
-      }
-    }
   }
 
   // --- POW block ----------------------------------------------------------
 
-  /** Bonked from below: flip every grounded enemy, shake the screen, wear down. */
   private activatePow(): void {
     if (this.powUses <= 0) {
       return;
@@ -301,23 +412,17 @@ export class MarioBrosScene extends BaseGameScene {
     this.flashPow();
     for (const e of this.enemies) {
       if (e.isActive && e.body.onGround) {
-        e.flipFor(SHELL_STUN_MS); // POW flips outright — even a crab skips its angry step
+        e.flipFor(SHELL_STUN_MS);
       }
     }
     this.drawPow();
   }
 
-  /** A bright pulse on the POW block so the bonk reads unmistakably. */
   private flashPow(): void {
     const flash = this.add
       .rectangle(POW.x, POW.y + POW_H / 2, POW_W + 4, POW_H + 4, 0xffffff)
       .setDepth(3);
-    this.tweens.add({
-      targets: flash,
-      alpha: 0,
-      duration: 220,
-      onComplete: () => flash.destroy(),
-    });
+    this.tweens.add({ targets: flash, alpha: 0, duration: 220, onComplete: () => flash.destroy() });
   }
 
   private drawPow(): void {
@@ -326,7 +431,7 @@ export class MarioBrosScene extends BaseGameScene {
       this.powText.setVisible(false);
       return;
     }
-    const alpha = Math.min(1, 0.5 + 0.17 * this.powUses); // fades as it wears out
+    const alpha = Math.min(1, 0.5 + 0.17 * this.powUses);
     this.powGfx.fillStyle(COLORS.pow, alpha);
     this.powGfx.fillRect(this.powSeg.x1, this.powSeg.y1, POW_W, POW_H);
     this.powGfx.fillStyle(COLORS.platformTop, alpha);
@@ -342,77 +447,26 @@ export class MarioBrosScene extends BaseGameScene {
     }
   }
 
-  /**
-   * Mario vs enemies, by state and species. Landing on top ("from above") of a
-   * stompable enemy defeats it; on a non-stompable one (the crab) it's a
-   * harmless bounce. A flipped enemy is kicked — a turtle into a sliding shell,
-   * others to their death. A side hit from an active enemy (or any lethal shell)
-   * kills Mario. Returns true if Mario died.
-   */
-  private resolveEnemyContact(): boolean {
-    const mb = this.sprite.getBounds();
-    for (const e of this.enemies) {
-      if (!Phaser.Geom.Intersects.RectangleToRectangle(mb, e.sprite.getBounds())) {
-        continue;
-      }
-      const fromAbove = this.mario.feet <= e.body.y + 4;
-
-      if (e.isFlipped) {
-        if (e.kick(e.body.x >= this.mario.x ? 1 : -1)) {
-          this.audio.play('kick'); // turtle slid off as a shell
-        } else {
-          this.defeat(e, e.sprite.x, e.sprite.y); // crab/fly killed
-        }
-        if (fromAbove) {
-          this.mario.vy = -STOMP_BOUNCE;
-        }
-      } else if (e.isShell) {
-        // Stomp a speeding shell to stop it (re-kickable, or wakes after 3s); a
-        // side hit from a live shell kills Mario.
-        if (fromAbove) {
-          e.flipFor(SHELL_STOP_WAKE_MS);
-          this.mario.vy = -STOMP_BOUNCE;
-        } else if (e.lethalShell) {
-          return true;
-        }
-      } else {
-        // Active (walking/angry).
-        if (fromAbove && e.kind.canStomp) {
-          this.defeat(e, e.sprite.x, e.sprite.y);
-          this.mario.vy = -STOMP_BOUNCE;
-        } else if (fromAbove) {
-          this.mario.vy = -STOMP_BOUNCE; // can't be stomped — bounce off harmlessly
-        } else {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  /** A sliding shell mows down other turtles in its path. */
+  /** A sliding shell mows down other enemies in its path (credited to its kicker). */
   private shellsHitEnemies(): void {
-    for (const shell of this.enemies) {
-      if (!shell.isShell) {
+    for (const shell of [...this.enemies]) {
+      if (!shell.isShell || !this.enemies.includes(shell)) {
         continue;
       }
       const sb = shell.sprite.getBounds();
-      for (const e of this.enemies) {
-        if (e === shell || e.isShell) {
+      const owner = shell.owner >= 0 ? this.players[shell.owner] : undefined;
+      for (const e of [...this.enemies]) {
+        if (e === shell || e.isShell || !this.enemies.includes(e)) {
           continue;
         }
         if (Phaser.Geom.Intersects.RectangleToRectangle(sb, e.sprite.getBounds())) {
-          this.defeat(e, e.sprite.x, e.sprite.y);
+          this.defeat(e, owner);
         }
       }
     }
   }
 
-  /**
-   * Enemies are solid to each other: two active ones that bump turn around and
-   * push apart. Sliding shells (which mow through) and helpless flipped ones are
-   * left out.
-   */
+  /** Two active enemies that collide both turn around and push apart. */
   private handleEnemyCollisions(): void {
     for (let i = 0; i < this.enemies.length; i++) {
       const a = this.enemies[i];
@@ -442,10 +496,7 @@ export class MarioBrosScene extends BaseGameScene {
     }
   }
 
-  /**
-   * On the bottom floor there's no wrap — enemies (and spent shells) walk into a
-   * corner pipe and leave the game. On the upper floors they wrap edge-to-edge.
-   */
+  /** Bottom floor: no wrap — walk into a corner pipe and leave. Upper: wrap. */
   private handleEnemyBounds(): void {
     const zones = bottomPipeZones();
     for (let i = this.enemies.length - 1; i >= 0; i--) {
@@ -463,8 +514,13 @@ export class MarioBrosScene extends BaseGameScene {
     }
   }
 
-  private defeat(e: Enemy, x: number, y: number): void {
-    this.popScore(x, y, e.kind.score, { color: '#ffffff', fontSize: '8px' });
+  private defeat(e: Enemy, by?: Player): void {
+    const color = by?.color ?? '#ffffff';
+    if (by) {
+      by.score += e.kind.score;
+      this.addScore(e.kind.score); // keeps the persistent HI in sync
+    }
+    floatingText(this, e.sprite.x, e.sprite.y, String(e.kind.score), { color, fontSize: '8px' });
     this.audio.play('kick');
     e.sprite.destroy();
     const idx = this.enemies.indexOf(e);
@@ -482,6 +538,42 @@ export class MarioBrosScene extends BaseGameScene {
 
   private floorSegments(): PlatformSegment[] {
     return this.floors.map((f) => f.seg);
+  }
+
+  // --- HUD ----------------------------------------------------------------
+
+  private buildHud(): void {
+    this.hudTexts.forEach((t) => t.destroy());
+    this.lifeIcons.forEach((i) => i.destroy());
+    this.hudTexts = [];
+    this.lifeIcons.length = 0;
+    this.players.forEach((p, i) => {
+      const right = i === 1;
+      const t = this.add
+        .text(right ? WIDTH - 4 : 4, 4, '', { ...LABEL_STYLE, fontSize: '8px' })
+        .setOrigin(right ? 1 : 0, 0)
+        .setColor(p.color)
+        .setDepth(1000);
+      this.hudTexts.push(t);
+    });
+    this.refreshHud();
+  }
+
+  private refreshHud(): void {
+    this.lifeIcons.forEach((i) => i.destroy());
+    this.lifeIcons.length = 0;
+    this.hiText.setText(`HI ${this.scores.high}`);
+    this.players.forEach((p, i) => {
+      const right = i === 1;
+      this.hudTexts[i].setText(`${p.label} ${p.score}`);
+      const tex = i === 1 ? TX.luigiRun0 : TX.marioRun0;
+      for (let n = 0; n < p.lives.count; n++) {
+        const x = right ? WIDTH - 6 - n * 9 : 6 + n * 9;
+        this.lifeIcons.push(
+          this.add.image(x, 16, tex).setOrigin(right ? 1 : 0, 0).setScale(0.6).setDepth(1000),
+        );
+      }
+    });
   }
 
   // --- bumps / rendering --------------------------------------------------
@@ -518,20 +610,9 @@ export class MarioBrosScene extends BaseGameScene {
       const h = pipe.y2 - pipe.y1;
       g.fillStyle(COLORS.pipe, 1);
       g.fillRect(pipe.x1, pipe.y1, pipe.x2 - pipe.x1, h);
-      // Lighter rim (the mouth) is a vertical bar at the centre-facing end.
       g.fillStyle(COLORS.pipeRim, 1);
       const rimX = pipe.open === 'right' ? pipe.x2 - 5 : pipe.x1;
       g.fillRect(rimX, pipe.y1 - 2, 5, h + 4);
-    }
-  }
-
-  private refreshLives(): void {
-    for (const icon of this.lifeIcons) {
-      icon.destroy();
-    }
-    this.lifeIcons.length = 0;
-    for (let i = 0; i < this.lives.count; i++) {
-      this.lifeIcons.push(this.add.image(8 + i * 11, 22, TX.marioRun0).setScale(0.7).setDepth(1000));
     }
   }
 }
