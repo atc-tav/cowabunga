@@ -20,6 +20,13 @@ The current primitive set: `BaseGameScene`, `Grid`, `GridMover`, `PathFollower`,
 `Platformer`, `StateMachine`, `gridAI`, `InputManager`, `ScoreManager`,
 `LivesManager`, `juice`, `popups`, `effects`, `textures`, `ui`.
 
+A **cohesive feature-set** earns its own subfolder under `shared/` (rather than
+landing flat as one-off files). The first is
+[`shared/world/`](../src/shared/world/README.md) — the scrolling-game foundation
+(ASCII tilemap, swept tile collision, scrolling camera) that the camera-scrolling
+platformer/adventure projects (SMB2, Kirby) compose on. Future world/level/camera
+work lands there; other clusters can get sibling folders.
+
 ## Rules (enforced, not aspirational)
 
 - **Composition over deep inheritance.** Games extend exactly one base

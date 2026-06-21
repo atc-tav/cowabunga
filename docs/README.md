@@ -21,6 +21,9 @@ Reusable how-tos for cross-cutting features:
 
 - [title-art.md](./title-art.md) — building programmatic arcade title logos
   (arc wordmark + banner + twinkling stars) and the screenshot-driven workflow.
+- [shared/world/README.md](../src/shared/world/README.md) — the scrolling-game
+  foundation (ASCII tilemap, swept tile collision, scrolling camera) for the
+  camera-scrolling platformer/adventure projects.
 
 ## How we work
 
