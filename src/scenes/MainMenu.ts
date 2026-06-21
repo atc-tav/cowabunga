@@ -47,7 +47,7 @@ export class MainMenu extends Phaser.Scene {
     super({ key: 'MainMenu' });
   }
 
-  create(): void {
+  create(data?: { lastGameId?: string }): void {
     const { W, H } = MainMenu;
     this.scale.resize(W, H);
     this.cameras.main.setBackgroundColor('#000000');
@@ -55,7 +55,9 @@ export class MainMenu extends Phaser.Scene {
     this.transitioning = false;
     this.controls = new InputManager(this);
     this.games = GAMES.filter((g) => !g.hidden);
-    this.selected = 0;
+    // Default the selector to the game we just came back from (if any).
+    const last = this.games.findIndex((g) => g.id === data?.lastGameId);
+    this.selected = last >= 0 ? last : 0;
     // The menu is "home" — hide the touch Home button here.
     TouchControls.shared?.setHomeVisible(false);
 
