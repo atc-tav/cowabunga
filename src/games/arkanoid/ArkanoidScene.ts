@@ -252,8 +252,13 @@ export class ArkanoidScene extends BaseGameScene {
     }
     this.updateCapsule(delta);
     this.updateLasers(delta);
-    this.updateEnemies(delta);
     this.updateDoh(delta);
+    // Laser/DOH updates can end the stage or the life mid-frame; if so, stop
+    // before running the rest against torn-down state.
+    if (this.flow.state !== 'playing') {
+      return;
+    }
+    this.updateEnemies(delta);
     this.updatePortal(delta);
     this.updateSlow(delta);
     this.updateCatchTimers(delta);
@@ -903,6 +908,9 @@ export class ArkanoidScene extends BaseGameScene {
     const step = (GAME.laserSpeed * delta) / FRAME_MS;
     for (let i = this.lasers.length - 1; i >= 0; i--) {
       const beam = this.lasers[i];
+      if (!beam) {
+        continue;
+      }
       beam.y -= step;
       // Lasers can shoot down DOH's projectiles...
       const projIdx = this.projectileAtPoint(beam.x, beam.y);
@@ -927,6 +935,11 @@ export class ArkanoidScene extends BaseGameScene {
       if (hit) {
         if (hit.brick.code !== 'X') {
           this.damageBrick(hit.row, hit.col, true);
+          // Destroying the last brick clears the stage, which wipes the laser
+          // list out from under this loop — bail before touching it again.
+          if (this.flow.state !== 'playing') {
+            return;
+          }
         }
         this.removeLaser(i);
         continue;
