@@ -45,7 +45,6 @@ import {
   HAMMER_SMASH_DIST,
   HAMMER_PICKUP_DIST,
   SCORE_SMASH,
-  HAMMER_SPOTS,
   FIRE_SPEED,
   FIRE_CLIMB_SPEED,
   FIRE_RIDE,
@@ -56,11 +55,13 @@ import {
   SCORE_SMASH_FIRE,
   FIRE_BAND_TOP,
   FIRE_BAND_BOTTOM,
+  SCORE_RIVET,
+  RIVET_REACH,
 } from './constants';
 import { COLORS } from './palette';
 import { buildDKTextures, BARREL_KEYS, FIRE_KEYS, TX } from './sprites';
-import { LEVEL1_GIRDERS, buildLadders, DK_X, PAULINE_X, Ladder } from './levels';
-import { STAGE_ORDER } from './stages';
+import { LEVEL1_GIRDERS, buildLadders, Ladder } from './levels';
+import { STAGE_ORDER, StageId, buildStage } from './stages';
 
 interface Barrel {
   sprite: Phaser.GameObjects.Image;
@@ -99,9 +100,22 @@ interface Fireball {
 export class DKScene extends BaseGameScene {
   private mario!: PlatformerBody;
   private sprite!: Phaser.GameObjects.Image;
-  private readonly girders: PlatformSegment[] = LEVEL1_GIRDERS;
-  private readonly ladders: Ladder[] = buildLadders();
-  private readonly startGirder = LEVEL1_GIRDERS.length - 1;
+  private girders: PlatformSegment[] = LEVEL1_GIRDERS;
+  private ladders: Ladder[] = buildLadders();
+  private startGirder = LEVEL1_GIRDERS.length - 1;
+  private girderGfx!: Phaser.GameObjects.Graphics;
+  private ladderGfx!: Phaser.GameObjects.Graphics;
+  private barrelsEnabled = true;
+  private rivetsWin = false;
+  private fireBandTop = FIRE_BAND_TOP;
+  private fireBandBottom = FIRE_BAND_BOTTOM;
+  private fireCount = 1;
+  private dkX = 52;
+  private paulineX = 100;
+  private paulineGirder = 0;
+  private readonly rivets: { sprite: Phaser.GameObjects.Arc; x: number; girder: number }[] = [];
+  private rivetsRemaining = 0;
+  private pauline!: Phaser.GameObjects.Image;
 
   private flow!: StateMachine<DKScene>;
   private lives!: LivesManager;
@@ -140,7 +154,7 @@ export class DKScene extends BaseGameScene {
   private hammerSprite!: Phaser.GameObjects.Image;
   private readonly hammerItems: { sprite: Phaser.GameObjects.Image; x: number; y: number; taken: boolean }[] = [];
 
-  private fire!: Fireball;
+  private readonly fireballs: Fireball[] = [];
 
   constructor() {
     super({ key: 'game-dk', gameId: 'donkeykong', width: WIDTH, height: HEIGHT });
@@ -148,46 +162,26 @@ export class DKScene extends BaseGameScene {
 
   protected createGame(): void {
     buildDKTextures(this);
-    this.drawLadders();
-    this.drawGirders();
 
+    // Persistent objects (rebuilt content per stage lives in loadStage()).
+    this.ladderGfx = this.add.graphics().setDepth(1);
+    this.girderGfx = this.add.graphics().setDepth(2);
     this.barrels.length = 0;
     this.lifeIcons.length = 0;
 
-    this.hammerItems.length = 0;
-    for (const spot of HAMMER_SPOTS) {
-      const x = spot.x;
-      const y = this.surfaceAt(spot.g, x) - 16;
-      this.hammerItems.push({ sprite: this.add.image(x, y, TX.hammer).setDepth(7), x, y, taken: false });
-    }
     this.hammerSprite = this.add.image(0, 0, TX.hammer).setDepth(11).setVisible(false);
     this.hammerMode = false;
 
-    this.kong = this.add.image(DK_X, this.surfaceAt(0, DK_X) - 14, TX.kong).setDepth(9);
-    this.add.image(PAULINE_X, this.surfaceAt(0, PAULINE_X) - 7, TX.pauline).setDepth(9);
+    this.kong = this.add.image(0, 0, TX.kong).setDepth(9);
+    this.pauline = this.add.image(0, 0, TX.pauline).setDepth(9);
     this.helpText = this.add
-      .text(PAULINE_X, this.surfaceAt(0, PAULINE_X) - 18, 'HELP!', HINT_STYLE)
+      .text(0, 0, 'HELP!', HINT_STYLE)
       .setOrigin(0.5, 1)
       .setColor('#ff66c4')
       .setDepth(1000)
       .setVisible(false);
 
-    this.fire = {
-      sprite: this.add.image(0, 0, FIRE_KEYS[0]).setDepth(9).setVisible(false),
-      x: 0,
-      y: 0,
-      girder: FIRE_BAND_TOP,
-      dir: 1,
-      mode: 'walk',
-      targetGirder: FIRE_BAND_TOP,
-      targetY: 0,
-      alive: false,
-      respawn: 0,
-      frameTimer: 0,
-      frame: 0,
-    };
-
-    this.mario = new PlatformerBody(this.startX(), 0, MARIO_W, MARIO_H);
+    this.mario = new PlatformerBody(0, 0, MARIO_W, MARIO_H);
     this.sprite = this.add.image(0, 0, TX.marioWalk0).setDepth(10);
 
     this.lives = new LivesManager(LIVES_START);
@@ -227,7 +221,57 @@ export class DKScene extends BaseGameScene {
       .add('dying', { enter: () => this.enterDying() })
       .add('won', { enter: () => this.enterWon() })
       .add('gameover', { enter: () => this.enterGameOver() });
+
+    this.loadStage(STAGE_ORDER[this.stageIndex]);
     this.flow.transition('intro');
+  }
+
+  /** Build (or rebuild) the world for a stage: girders, ladders, DK/Pauline,
+   *  hammers, rivets, and the fireball band/flags. */
+  private loadStage(id: StageId): void {
+    const cfg = buildStage(id);
+    this.girders = cfg.girders;
+    this.ladders = cfg.ladders;
+    this.startGirder = cfg.startGirder;
+    this.barrelsEnabled = cfg.barrels;
+    this.rivetsWin = cfg.rivetsWin;
+    this.fireBandTop = cfg.fireBandTop;
+    this.fireBandBottom = cfg.fireBandBottom;
+    this.fireCount = cfg.fireCount;
+    this.dkX = cfg.dkX;
+    this.paulineX = cfg.paulineX;
+    this.paulineGirder = cfg.paulineGirder;
+
+    this.drawLadders();
+    this.drawGirders();
+    this.clearBarrels();
+
+    this.kong.setPosition(cfg.dkX, this.surfaceAt(cfg.dkGirder, cfg.dkX) - 14).setAngle(0).setScale(1);
+    this.pauline.setPosition(cfg.paulineX, this.surfaceAt(cfg.paulineGirder, cfg.paulineX) - 7);
+    this.helpText.setPosition(cfg.paulineX, this.surfaceAt(cfg.paulineGirder, cfg.paulineX) - 18);
+
+    // Hammers (none on 100m).
+    for (const item of this.hammerItems) {
+      item.sprite.destroy();
+    }
+    this.hammerItems.length = 0;
+    for (const spot of cfg.hammers) {
+      const y = this.surfaceAt(spot.g, spot.x) - 16;
+      this.hammerItems.push({ sprite: this.add.image(spot.x, y, TX.hammer).setDepth(7), x: spot.x, y, taken: false });
+    }
+    this.endHammer();
+
+    // Rivets (100m only).
+    for (const r of this.rivets) {
+      r.sprite.destroy();
+    }
+    this.rivets.length = 0;
+    for (const r of cfg.rivets) {
+      const y = this.surfaceAt(r.girder, r.x) - 2;
+      const dot = this.add.circle(r.x, y, 3, COLORS.rivet).setStrokeStyle(1, 0x000000).setDepth(3);
+      this.rivets.push({ sprite: dot, x: r.x, girder: r.girder });
+    }
+    this.rivetsRemaining = this.rivets.length;
   }
 
   /** Start opposite the lowest ladder, so you must traverse to reach it. */
@@ -308,7 +352,7 @@ export class DKScene extends BaseGameScene {
 
     this.spawnBarrels(delta);
     this.updateBarrels(delta);
-    this.updateFireball(delta);
+    this.updateFireballs(delta);
     this.tickHelp(delta);
     if (this.hammerMode) {
       this.tickHammer(delta);
@@ -320,12 +364,36 @@ export class DKScene extends BaseGameScene {
     this.refreshBonus();
     this.checkExtraLife();
 
-    if (this.reachedPauline()) {
+    if (this.rivetsWin) {
+      this.checkRivets();
+      if (this.rivetsRemaining === 0) {
+        this.flow.transition('won');
+        return;
+      }
+    } else if (this.reachedPauline()) {
       this.flow.transition('won');
       return;
     }
     if (this.bonus <= 0 || this.barrelHitMario() || this.fireballHitMario()) {
       this.flow.transition('dying');
+    }
+  }
+
+  /** Walk over a rivet (not jump) to pull it; clearing all 8 drops DK. */
+  private checkRivets(): void {
+    if (this.climbing || !this.mario.onGround) {
+      return;
+    }
+    const g = this.marioGirderIndex();
+    for (let i = this.rivets.length - 1; i >= 0; i--) {
+      const r = this.rivets[i];
+      if (r.girder === g && Math.abs(this.mario.x - r.x) < RIVET_REACH) {
+        this.popScore(r.x, r.sprite.y - 4, SCORE_RIVET, { color: '#ffffff', fontSize: '8px' });
+        r.sprite.destroy();
+        this.rivets.splice(i, 1);
+        this.rivetsRemaining -= 1;
+        this.audio.play('rivet');
+      }
     }
   }
 
@@ -350,10 +418,14 @@ export class DKScene extends BaseGameScene {
 
   private enterWon(): void {
     const remaining = Math.floor(this.bonus / 100) * 100;
-    this.banner.setText('STAGE CLEAR!').setColor('#fcfc00').setVisible(true);
+    this.banner.setText(this.rivetsWin ? 'DK FALLS!' : 'STAGE CLEAR!').setColor('#fcfc00').setVisible(true);
     this.helpText.setVisible(false);
     this.clearBarrels();
     this.audio.play('win');
+    if (this.rivetsWin) {
+      // Structure gives way — Donkey Kong tumbles.
+      this.tweens.add({ targets: this.kong, y: this.kong.y + 80, angle: 200, duration: WIN_MS * 0.7, ease: 'Quad.easeIn' });
+    }
     if (remaining > 0) {
       this.addScore(remaining); // the remaining bonus is the stage reward
     }
@@ -361,7 +433,7 @@ export class DKScene extends BaseGameScene {
     this.time.delayedCall(WIN_MS, () => this.advanceStage());
   }
 
-  /** Cycle to the next stage in the loop (only 25m exists today, so it loops). */
+  /** Cycle to the next stage in the loop, looping (and speeding up) on wrap. */
   private advanceStage(): void {
     this.banner.setVisible(false);
     this.stageIndex += 1;
@@ -369,6 +441,7 @@ export class DKScene extends BaseGameScene {
       this.stageIndex = 0;
       this.loopCount += 1;
     }
+    this.loadStage(STAGE_ORDER[this.stageIndex]);
     this.flow.transition('countdown');
   }
 
@@ -478,7 +551,6 @@ export class DKScene extends BaseGameScene {
       item.taken = false;
       item.sprite.setVisible(true);
     }
-    this.spawnFireball();
     const sx = this.startX();
     this.mario.x = sx;
     this.mario.setFeet(this.surfaceAt(this.startGirder, sx));
@@ -490,88 +562,168 @@ export class DKScene extends BaseGameScene {
       .setFlipX(this.facing < 0)
       .setTexture(TX.marioWalk0)
       .setPosition(this.mario.x, this.mario.y);
+    this.spawnFireballs(); // after Mario's placed, so they spawn opposite him
   }
 
-  // --- fireball -----------------------------------------------------------
+  // --- fireballs ----------------------------------------------------------
 
-  private spawnFireball(): void {
-    const f = this.fire;
-    f.girder = FIRE_BAND_TOP;
-    f.x = WIDTH / 2;
+  /** (Re)spawn the stage's fireballs, on the far side from Mario. */
+  private spawnFireballs(): void {
+    for (const f of this.fireballs) {
+      f.sprite.destroy();
+    }
+    this.fireballs.length = 0;
+    for (let i = 0; i < this.fireCount; i++) {
+      const f: Fireball = {
+        sprite: this.add.image(0, 0, FIRE_KEYS[0]).setDepth(9),
+        x: 0,
+        y: 0,
+        girder: this.fireBandTop,
+        dir: 1,
+        mode: 'walk',
+        targetGirder: this.fireBandTop,
+        targetY: 0,
+        alive: true,
+        respawn: 0,
+        frameTimer: i * 40,
+        frame: 0,
+      };
+      this.respawnFireball(f);
+      this.fireballs.push(f);
+    }
+  }
+
+  /** Place a fireball on the band's top girder, opposite Mario's side. */
+  private respawnFireball(f: Fireball): void {
+    const g = this.girders[this.fireBandTop];
+    const onLeft = this.mario.x >= WIDTH / 2; // opposite Mario
+    f.girder = this.fireBandTop;
+    f.x = onLeft ? g.x1 + 12 : g.x2 - 12;
     f.y = this.surfaceAt(f.girder, f.x) - FIRE_RIDE;
-    f.dir = Math.random() < 0.5 ? 1 : -1;
+    f.dir = onLeft ? 1 : -1;
     f.mode = 'walk';
     f.alive = true;
     f.respawn = 0;
     f.sprite.setVisible(true).setPosition(f.x, f.y);
   }
 
-  /** Roams the 2nd & 3rd platforms (band), switching between them at the ladder. */
-  private updateFireball(delta: number): void {
-    const f = this.fire;
-    if (!f.alive) {
-      f.respawn -= delta;
-      if (f.respawn <= 0) {
-        this.spawnFireball();
-      }
-      return;
-    }
+  private updateFireballs(delta: number): void {
     const dt = delta / 1000;
-    if (f.mode === 'walk') {
-      f.x += f.dir * FIRE_SPEED * this.speedScale * dt;
-      f.y = this.surfaceAt(f.girder, f.x) - FIRE_RIDE;
-      const g = this.girders[f.girder];
-      if (f.x <= g.x1 + 6) {
-        f.x = g.x1 + 6;
-        f.dir = 1;
-      } else if (f.x >= g.x2 - 6) {
-        f.x = g.x2 - 6;
-        f.dir = -1;
+    const marioGirder = this.marioGirderIndex();
+    for (const f of this.fireballs) {
+      if (!f.alive) {
+        f.respawn -= delta;
+        if (f.respawn <= 0) {
+          this.respawnFireball(f);
+        }
+        continue;
       }
-      const connector = this.ladders.find((l) => l.fromGirder === FIRE_BAND_TOP);
-      if (connector && Math.abs(f.x - connector.x) < 3 && Math.random() < FIRE_LADDER_CHANCE) {
-        f.targetGirder = f.girder === FIRE_BAND_TOP ? FIRE_BAND_BOTTOM : FIRE_BAND_TOP;
-        f.targetY = this.surfaceAt(f.targetGirder, connector.x);
-        f.x = connector.x;
-        f.mode = 'climb';
+      if (f.mode === 'walk') {
+        f.x += f.dir * FIRE_SPEED * this.speedScale * dt;
+        f.y = this.surfaceAt(f.girder, f.x) - FIRE_RIDE;
+        const g = this.girders[f.girder];
+        if (f.x <= g.x1 + 6) {
+          f.x = g.x1 + 6;
+          f.dir = 1;
+        } else if (f.x >= g.x2 - 6) {
+          f.x = g.x2 - 6;
+          f.dir = -1;
+        }
+        this.maybeFireballClimb(f, marioGirder);
+      } else {
+        const targetCentre = f.targetY - FIRE_RIDE;
+        f.y += Math.sign(targetCentre - f.y) * FIRE_CLIMB_SPEED * this.speedScale * dt;
+        if (Math.abs(f.y - targetCentre) < 2) {
+          f.girder = f.targetGirder;
+          f.y = targetCentre;
+          f.mode = 'walk';
+          f.dir = Math.random() < 0.5 ? 1 : -1;
+        }
       }
-    } else {
-      const targetCentre = f.targetY - FIRE_RIDE;
-      f.y += Math.sign(targetCentre - f.y) * FIRE_CLIMB_SPEED * this.speedScale * dt;
-      if (Math.abs(f.y - targetCentre) < 2) {
-        f.girder = f.targetGirder;
-        f.y = targetCentre;
-        f.mode = 'walk';
-        f.dir = Math.random() < 0.5 ? 1 : -1;
-      }
-    }
 
-    f.frameTimer += delta;
-    if (f.frameTimer >= FIRE_FRAME_MS) {
-      f.frameTimer = 0;
-      f.frame ^= 1;
-      f.sprite.setTexture(FIRE_KEYS[f.frame]);
+      f.frameTimer += delta;
+      if (f.frameTimer >= FIRE_FRAME_MS) {
+        f.frameTimer = 0;
+        f.frame ^= 1;
+        f.sprite.setTexture(FIRE_KEYS[f.frame]);
+      }
+      f.sprite.setPosition(f.x, f.y);
     }
-    f.sprite.setPosition(f.x, f.y);
   }
 
-  /** True if the fireball kills Mario; smashed instead if he's hammering nearby. */
+  /** At a ladder, a fireball may switch girders — within its band, and never
+   *  down to a level below Mario (spec rule). */
+  private maybeFireballClimb(f: Fireball, marioGirder: number): void {
+    if (Math.random() >= FIRE_LADDER_CHANCE) {
+      return;
+    }
+    const valid = this.ladders.filter((l) => {
+      if (Math.abs(f.x - l.x) >= 3) {
+        return false;
+      }
+      const isDown = l.fromGirder === f.girder;
+      const isUp = l.fromGirder === f.girder - 1;
+      if (!isDown && !isUp) {
+        return false;
+      }
+      const target = isDown ? f.girder + 1 : f.girder - 1;
+      if (target < this.fireBandTop || target > this.fireBandBottom) {
+        return false;
+      }
+      if (isDown && target > marioGirder) {
+        return false; // would drop below Mario
+      }
+      return true;
+    });
+    if (valid.length === 0) {
+      return;
+    }
+    const l = Phaser.Utils.Array.GetRandom(valid);
+    f.targetGirder = l.fromGirder === f.girder ? f.girder + 1 : f.girder - 1;
+    f.targetY = this.surfaceAt(f.targetGirder, l.x);
+    f.x = l.x;
+    f.mode = 'climb';
+  }
+
+  /** The girder index Mario is standing on (nearest by feet). */
+  private marioGirderIndex(): number {
+    let best = this.startGirder;
+    let bestD = Infinity;
+    for (let i = 0; i < this.girders.length; i++) {
+      const g = this.girders[i];
+      if (this.mario.x < g.x1 || this.mario.x > g.x2) {
+        continue;
+      }
+      const d = Math.abs(this.mario.feet - surfaceY(g, this.mario.x));
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /** True if any fireball kills Mario; ones near the swinging hammer are smashed. */
   private fireballHitMario(): boolean {
-    const f = this.fire;
-    if (!f.alive) {
-      return false;
+    for (const f of this.fireballs) {
+      if (!f.alive) {
+        continue;
+      }
+      const d = Phaser.Math.Distance.Between(f.x, f.y, this.mario.x, this.mario.y);
+      if (this.hammerMode && d < HAMMER_SMASH_DIST) {
+        f.alive = false;
+        f.sprite.setVisible(false);
+        f.respawn = FIRE_RESPAWN_MS;
+        this.popScore(f.x, f.y, SCORE_SMASH_FIRE, { color: '#ffffff', fontSize: '8px' });
+        this.audio.play('smash');
+        this.impact('light');
+        continue;
+      }
+      if (d < FIRE_HIT_DIST) {
+        return true;
+      }
     }
-    const d = Phaser.Math.Distance.Between(f.x, f.y, this.mario.x, this.mario.y);
-    if (this.hammerMode && d < HAMMER_SMASH_DIST) {
-      f.alive = false;
-      f.sprite.setVisible(false);
-      f.respawn = FIRE_RESPAWN_MS;
-      this.popScore(f.x, f.y, SCORE_SMASH_FIRE, { color: '#ffffff', fontSize: '8px' });
-      this.audio.play('smash');
-      this.impact('light');
-      return false;
-    }
-    return d < FIRE_HIT_DIST;
+    return false;
   }
 
   // --- hammer -------------------------------------------------------------
@@ -647,8 +799,8 @@ export class DKScene extends BaseGameScene {
   private reachedPauline(): boolean {
     return (
       !this.climbing &&
-      Math.abs(this.mario.feet - this.surfaceAt(0, this.mario.x)) < 4 &&
-      Math.abs(this.mario.x - PAULINE_X) < 12
+      Math.abs(this.mario.feet - this.surfaceAt(this.paulineGirder, this.mario.x)) < 6 &&
+      Math.abs(this.mario.x - this.paulineX) < 12
     );
   }
 
@@ -664,13 +816,16 @@ export class DKScene extends BaseGameScene {
   }
 
   private spawnBarrels(delta: number): void {
+    if (!this.barrelsEnabled) {
+      return;
+    }
     this.barrelTimer -= delta;
     if (this.barrelTimer > 0) {
       return;
     }
     this.barrelTimer =
       (BARREL_INTERVAL_MS + Phaser.Math.Between(-BARREL_INTERVAL_JITTER, BARREL_INTERVAL_JITTER)) / this.speedScale;
-    const x = DK_X + 16;
+    const x = this.dkX + 16;
     this.barrels.push({
       sprite: this.add.image(x, this.surfaceAt(0, x) - BARREL_RIDE, BARREL_KEYS[0]).setDepth(8),
       x,
@@ -846,7 +1001,8 @@ export class DKScene extends BaseGameScene {
   // --- world --------------------------------------------------------------
 
   private drawGirders(): void {
-    const g = this.add.graphics().setDepth(2);
+    const g = this.girderGfx;
+    g.clear();
     for (const girder of this.girders) {
       g.fillStyle(COLORS.girder, 1);
       g.fillPoints(
@@ -866,7 +1022,8 @@ export class DKScene extends BaseGameScene {
   }
 
   private drawLadders(): void {
-    const g = this.add.graphics().setDepth(1);
+    const g = this.ladderGfx;
+    g.clear();
     g.fillStyle(COLORS.ladder, 1);
     for (const ladder of this.ladders) {
       const top = ladder.topY;

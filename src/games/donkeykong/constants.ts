@@ -70,6 +70,11 @@ export const FIRE_FRAME_MS = 130;
 export const FIRE_LADDER_CHANCE = 0.5; // chance to switch platform at the ladder
 export const FIRE_RESPAWN_MS = 3500; // after being smashed
 export const SCORE_SMASH_FIRE = 500;
+
+// --- 100m rivets --------------------------------------------------------
+
+export const SCORE_RIVET = 100; // per rivet pulled
+export const RIVET_REACH = 7; // how close (x) Mario must walk to pull a rivet
 // Keep the fireball patrolling the 2nd & 3rd platforms (girder indices 1-2)
 // so it's always a mid-level threat that lets barrels catch up.
 export const FIRE_BAND_TOP = 1;
