@@ -144,6 +144,11 @@ export class ArkanoidScene extends BaseGameScene {
   private slowElapsed = 0;
   private laserCd = 0;
 
+  private portalOpen = false;
+  private portal?: Phaser.GameObjects.Image;
+  private portalFrameTimer = 0;
+  private portalFrame: 0 | 1 = 0;
+
   private nextExtraLife: number = GAME.extraLifeAt;
   private readyTimer = 0;
 
@@ -249,6 +254,7 @@ export class ArkanoidScene extends BaseGameScene {
     this.updateLasers(delta);
     this.updateEnemies(delta);
     this.updateDoh(delta);
+    this.updatePortal(delta);
     this.updateSlow(delta);
     this.updateCatchTimers(delta);
     this.checkExtraLife();
@@ -304,6 +310,7 @@ export class ArkanoidScene extends BaseGameScene {
     this.slowActive = false;
     this.ballSpeed = GAME.ballBaseSpeed;
     this.pDroppedThisLife = false;
+    this.closePortal();
     this.rebuildVaus();
   }
 
@@ -397,16 +404,24 @@ export class ArkanoidScene extends BaseGameScene {
     const dist = (this.ballSpeed * delta) / FRAME_MS;
     for (let i = this.balls.length - 1; i >= 0; i--) {
       const b = this.balls[i];
+      if (!b) {
+        continue;
+      }
       b.dohCd = Math.max(0, b.dohCd - delta);
       if (b.caught) {
         continue;
       }
-      if (this.stepBall(b, dist)) {
+      const lost = this.stepBall(b, dist);
+      // A stage clear / break-out / victory ended the stage mid-step — stop.
+      if (this.flow.state !== 'playing') {
+        return;
+      }
+      if (lost) {
         b.img.destroy();
         this.balls.splice(i, 1);
       }
     }
-    if (this.balls.length === 0) {
+    if (this.balls.length === 0 && this.flow.state === 'playing') {
       this.flow.transition('dying');
     }
   }
@@ -423,6 +438,9 @@ export class ArkanoidScene extends BaseGameScene {
       this.resolveEnemies(b);
       this.resolveDoh(b);
       this.resolvePaddle(b);
+      if (this.flow.state !== 'playing') {
+        return false; // a collision ended the stage; stop sub-stepping
+      }
       if (b.y - R > GAME.screenHeight) {
         return true; // fell out the bottom
       }
@@ -437,6 +455,10 @@ export class ArkanoidScene extends BaseGameScene {
       b.dirx = Math.abs(b.dirx);
       this.applyDir(b);
     } else if (b.x > RIGHT_BOUND) {
+      if (this.portalOpen && Math.abs(b.y - GAME.breakPortalY) <= GAME.breakPortalHalfH + R) {
+        this.breakPortalUsed(b);
+        return;
+      }
       b.x = RIGHT_BOUND;
       b.dirx = -Math.abs(b.dirx);
       this.applyDir(b);
@@ -589,6 +611,7 @@ export class ArkanoidScene extends BaseGameScene {
       }
     }
     this.grid = [];
+    this.closePortal();
     if (stage === GAME.dohStage) {
       this.setupDoh(stage);
       return;
@@ -691,6 +714,9 @@ export class ArkanoidScene extends BaseGameScene {
       if (type === 'P' && this.pDroppedThisLife) {
         continue;
       }
+      if (type === 'B' && this.portalOpen) {
+        continue; // Break only appears while a portal is not already open
+      }
       for (let i = 0; i < weight; i++) {
         pool.push(type);
       }
@@ -767,7 +793,7 @@ export class ArkanoidScene extends BaseGameScene {
         this.refreshLives();
         break;
       case 'B':
-        // Break portal deferred to a later slice — collect awards points only.
+        this.openPortal();
         break;
     }
   }
@@ -809,6 +835,46 @@ export class ArkanoidScene extends BaseGameScene {
       const d = this.clampDir(dx, dy);
       this.spawnBall(src.x, src.y, d.x, d.y, false);
     }
+  }
+
+  // --- break portal -------------------------------------------------------
+
+  private openPortal(): void {
+    if (this.portalOpen) {
+      return;
+    }
+    this.portalOpen = true;
+    this.portalFrame = 0;
+    this.portalFrameTimer = GAME.breakPortalFrameMs;
+    this.portal = this.add
+      .image(GAME.screenWidth - GAME.wallThickness / 2, GAME.breakPortalY, TX.breakPortal0)
+      .setDepth(6);
+  }
+
+  private updatePortal(delta: number): void {
+    if (!this.portalOpen || !this.portal) {
+      return;
+    }
+    this.portalFrameTimer -= delta;
+    if (this.portalFrameTimer <= 0) {
+      this.portalFrameTimer = GAME.breakPortalFrameMs;
+      this.portalFrame = this.portalFrame === 0 ? 1 : 0;
+      this.portal.setTexture(this.portalFrame === 0 ? TX.breakPortal0 : TX.breakPortal1);
+    }
+  }
+
+  private closePortal(): void {
+    this.portal?.destroy();
+    this.portal = undefined;
+    this.portalOpen = false;
+  }
+
+  /** Ball escaped through the portal: bonus points + auto-advance the stage. */
+  private breakPortalUsed(b: Ball): void {
+    this.popScore(b.x, b.y, GAME.breakBonusPoints, { color: '#fcfc00', fontSize: '8px' });
+    this.audio.play('break');
+    this.closePortal();
+    this.flow.transition('cleared');
   }
 
   // --- laser --------------------------------------------------------------
