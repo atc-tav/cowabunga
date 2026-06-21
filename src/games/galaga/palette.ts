@@ -6,6 +6,8 @@ export const COLORS = {
   ship: 0xffffff,
   cockpit: 0xff0000,
   shipTrim: 0x3cbcfc,
+  engine: 0xff7a18,
+  bossAccent: 0xd82800,
   bullet: 0xfcff5e,
   enemyBullet: 0xff66ff,
   beam: 0x9cf0ff, // tractor-beam cone
