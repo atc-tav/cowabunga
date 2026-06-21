@@ -168,6 +168,32 @@ const FLY_FLIP: string[] = [
   '            ',
 ];
 
+// Slipice / Freezie (12x10). I=ice body, C=crystal highlight, X=eye.
+const SLIPICE_WALK_A: string[] = [
+  '            ',
+  '   CCIICC   ',
+  '  CIIIIIIC  ',
+  '  IXIIIIXI  ',
+  '  IIIIIIII  ',
+  '  IIIIIIII  ',
+  '   IICCII   ',
+  '   II  II   ',
+  '            ',
+  '            ',
+];
+const SLIPICE_WALK_B: string[] = [
+  '            ',
+  '   CCIICC   ',
+  '  CIIIIIIC  ',
+  '  IXIIIIXI  ',
+  '  IIIIIIII  ',
+  '  IIIIIIII  ',
+  '   IICCII   ',
+  '    IIII    ',
+  '            ',
+  '            ',
+];
+
 export const TX = {
   marioRun0: 'mb-mario-0',
   marioRun1: 'mb-mario-1',
@@ -184,6 +210,8 @@ export const TX = {
   flyWalk0: 'mb-fly-0',
   flyWalk1: 'mb-fly-1',
   flyFlip: 'mb-fly-flip',
+  slipiceWalk0: 'mb-slipice-0',
+  slipiceWalk1: 'mb-slipice-1',
 } as const;
 
 export function buildMarioBrosTextures(scene: Phaser.Scene): void {
@@ -224,4 +252,12 @@ export function buildMarioBrosTextures(scene: Phaser.Scene): void {
   drawPixelArt(scene, TX.flyWalk0, FLY_WINGS_UP, flyPal);
   drawPixelArt(scene, TX.flyWalk1, FLY_WINGS_DOWN, flyPal);
   drawPixelArt(scene, TX.flyFlip, FLY_FLIP, flyPal);
+
+  const slipicePal = {
+    I: COLORS.slipice,
+    C: COLORS.slipiceCrystal,
+    X: COLORS.slipiceEye,
+  };
+  drawPixelArt(scene, TX.slipiceWalk0, SLIPICE_WALK_A, slipicePal);
+  drawPixelArt(scene, TX.slipiceWalk1, SLIPICE_WALK_B, slipicePal);
 }

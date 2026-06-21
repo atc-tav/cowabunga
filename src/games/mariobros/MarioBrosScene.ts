@@ -29,17 +29,24 @@ import {
   POW_W,
   POW_H,
   GameMode,
+  SLIPICE_H,
+  SLIPICE_SCORE,
+  SLIPICE_SPAWN_MS,
+  SLIPICE_PER_PHASE,
+  ICE_FRICTION_SCALE,
 } from './constants';
 import { COLORS } from './palette';
 import { buildMarioBrosTextures, TX } from './sprites';
 import { FLOORS, PIPES, POW, MARIO_START, LUIGI_START, topPipeSpawns, bottomPipeZones } from './levels';
 import { Enemy, EnemyKind, EnemyKindId, KINDS } from './enemies';
+import { Slipice } from './slipice';
 import { PHASES } from './phases';
 import { Player } from './player';
 
 interface Floor {
   seg: PlatformSegment;
   nudge: number;
+  iced: boolean;
 }
 
 const P1_COLOR = '#ff5030';
@@ -91,6 +98,9 @@ export class MarioBrosScene extends BaseGameScene {
   private loopCount = 0;
   private phaseTimer = 0;
   private phaseText!: Phaser.GameObjects.Text;
+  private readonly slipices: Slipice[] = [];
+  private slipiceSpawnTimer = 0;
+  private slipiceCount = 0;
 
   private powUses = POW_USES;
   private powSeg!: PlatformSegment;
@@ -105,7 +115,7 @@ export class MarioBrosScene extends BaseGameScene {
     buildMarioBrosTextures(this);
     this.showDefaultHud(false);
 
-    this.floors = FLOORS.map((f) => ({ seg: { ...f, thickness: PLATFORM_THICKNESS }, nudge: 0 }));
+    this.floors = FLOORS.map((f) => ({ seg: { ...f, thickness: PLATFORM_THICKNESS }, nudge: 0, iced: false }));
     this.groundSeg = this.floors.find((f) => f.seg.x1 === 0 && f.seg.x2 === WIDTH)!.seg;
     this.drawStatics();
     this.platformGfx = this.add.graphics().setDepth(1);
@@ -170,6 +180,7 @@ export class MarioBrosScene extends BaseGameScene {
     this.powUses = 0;
     this.drawPow();
     this.clearEnemies();
+    this.clearSlipices();
     this.demoSpawnTimer = 0;
     this.demoKindIdx = 0;
     this.blinkTimer = 0;
@@ -331,12 +342,17 @@ export class MarioBrosScene extends BaseGameScene {
     return this.loopCount * PHASES.length + this.phaseIndex + 1;
   }
 
-  /** Load a phase: queue its roster, refill the POW, reset the spawn cadence. */
+  /** Load a phase: queue its roster, thaw the platforms, refill the POW. */
   private startPhase(index: number): void {
     this.clearEnemies();
+    this.clearSlipices();
+    this.floors.forEach((f) => (f.iced = false));
+    this.drawPlatforms();
     this.spawnQueue = Phaser.Utils.Array.Shuffle([...PHASES[index].roster]);
     this.spawnTimer = 500;
     this.pipeToggle = 0;
+    this.slipiceCount = 0;
+    this.slipiceSpawnTimer = SLIPICE_SPAWN_MS;
     this.powUses = POW_USES;
     this.drawPow();
     this.phaseText.setText(`PHASE ${this.phaseNumber()}`);
@@ -350,7 +366,7 @@ export class MarioBrosScene extends BaseGameScene {
     }
 
     this.players.forEach((p, i) => {
-      p.update(delta, this.playerFloors());
+      p.update(delta, this.playerFloors(), this.iceScaleFor(p));
       if (p.alive) {
         this.handlePlayerBump(p, i);
       }
@@ -361,10 +377,11 @@ export class MarioBrosScene extends BaseGameScene {
     this.handleEnemyCollisions();
     this.handleEnemyBounds();
     this.spawnFromQueue(delta);
+    this.updateSlipice(delta);
 
     this.players.forEach((p, i) => {
       p.tickCombo(delta);
-      if (p.alive && !p.safe && this.resolveEnemyContact(p, i)) {
+      if (p.alive && !p.safe && (this.resolveEnemyContact(p, i) || this.touchedSlipice(p))) {
         p.die();
       }
     });
@@ -421,6 +438,11 @@ export class MarioBrosScene extends BaseGameScene {
         e.bump(SHELL_STUN_MS);
       } else if (e.isShell) {
         e.bumpHop(SHELL_BUMP_HOP);
+      }
+    }
+    for (const s of [...this.slipices]) {
+      if (s.floorSeg === seg) {
+        this.killSlipice(s, p); // a single bump shatters a Slipice (no kick)
       }
     }
     // Versus: knock any rival standing on the bumped platform off their feet.
@@ -530,6 +552,110 @@ export class MarioBrosScene extends BaseGameScene {
     if (this.spawnQueue.length === 0 && this.enemies.length === 1) {
       this.enemies[0].makeLast();
     }
+  }
+
+  // --- Slipice / ice ------------------------------------------------------
+
+  private updateSlipice(delta: number): void {
+    const phase = PHASES[this.phaseIndex];
+    if (phase.slipice && this.slipices.length === 0 && this.slipiceCount < SLIPICE_PER_PHASE) {
+      this.slipiceSpawnTimer -= delta;
+      if (this.slipiceSpawnTimer <= 0) {
+        this.spawnSlipice();
+        this.slipiceSpawnTimer = SLIPICE_SPAWN_MS;
+      }
+    }
+
+    const zones = bottomPipeZones();
+    for (let i = this.slipices.length - 1; i >= 0; i--) {
+      const s = this.slipices[i];
+      s.update(delta, this.floorSegments());
+      // Reverse only on contact with an enemy (never the player).
+      for (const e of this.enemies) {
+        if (e.isActive && Phaser.Geom.Intersects.RectangleToRectangle(s.sprite.getBounds(), e.sprite.getBounds())) {
+          s.reverse();
+          break;
+        }
+      }
+      if (this.tryIce(s)) {
+        this.shatter(s.sprite.x, s.sprite.y);
+        s.sprite.destroy();
+        this.slipices.splice(i, 1);
+      } else if (s.floorSeg === this.groundSeg && zones.some(([a, b]) => s.body.x >= a && s.body.x <= b)) {
+        s.sprite.destroy(); // gave up — left through a bottom pipe
+        this.slipices.splice(i, 1);
+      } else if (s.floorSeg !== this.groundSeg) {
+        if (s.body.x < 0) {
+          s.body.x += WIDTH;
+        } else if (s.body.x > WIDTH) {
+          s.body.x -= WIDTH;
+        }
+      }
+    }
+  }
+
+  /** Freeze the (non-ground) platform a Slipice has reached the centre of. */
+  private tryIce(s: Slipice): boolean {
+    const seg = s.floorSeg;
+    if (!seg || seg === this.groundSeg) {
+      return false;
+    }
+    const floor = this.floors.find((f) => f.seg === seg);
+    if (!floor || floor.iced) {
+      return false;
+    }
+    if (Math.abs(s.body.x - (seg.x1 + seg.x2) / 2) < 6) {
+      floor.iced = true;
+      this.drawPlatforms();
+      return true;
+    }
+    return false;
+  }
+
+  private spawnSlipice(): void {
+    const spawn = Phaser.Utils.Array.GetRandom(topPipeSpawns());
+    const s = new Slipice(this, spawn.x, spawn.feetY - SLIPICE_H / 2, spawn.dir);
+    s.body.onGround = true;
+    this.slipices.push(s);
+    this.slipiceCount += 1;
+  }
+
+  private killSlipice(s: Slipice, by: Player): void {
+    by.score += SLIPICE_SCORE;
+    this.addScore(SLIPICE_SCORE);
+    floatingText(this, s.sprite.x, s.sprite.y, String(SLIPICE_SCORE), { color: by.color, fontSize: '8px' });
+    this.shatter(s.sprite.x, s.sprite.y);
+    s.sprite.destroy();
+    const idx = this.slipices.indexOf(s);
+    if (idx >= 0) {
+      this.slipices.splice(idx, 1);
+    }
+  }
+
+  private touchedSlipice(p: Player): boolean {
+    const mb = p.getBounds();
+    return this.slipices.some((s) =>
+      Phaser.Geom.Intersects.RectangleToRectangle(mb, s.sprite.getBounds()),
+    );
+  }
+
+  /** Friction multiplier for whichever platform this player stands on. */
+  private iceScaleFor(p: Player): number {
+    const seg = this.segmentUnder(p.body);
+    const floor = seg ? this.floors.find((f) => f.seg === seg) : undefined;
+    return floor?.iced ? ICE_FRICTION_SCALE : 1;
+  }
+
+  private shatter(x: number, y: number): void {
+    const burst = this.add.circle(x, y, 6, 0xffffff).setDepth(11);
+    this.tweens.add({ targets: burst, scale: 2, alpha: 0, duration: 260, onComplete: () => burst.destroy() });
+  }
+
+  private clearSlipices(): void {
+    for (const s of this.slipices) {
+      s.sprite.destroy();
+    }
+    this.slipices.length = 0;
   }
 
   // --- POW block ----------------------------------------------------------
@@ -755,9 +881,9 @@ export class MarioBrosScene extends BaseGameScene {
     g.clear();
     for (const f of this.floors) {
       const y = f.seg.y1 + f.nudge;
-      g.fillStyle(COLORS.platform, 1);
+      g.fillStyle(f.iced ? COLORS.iceBody : COLORS.platform, 1);
       g.fillRect(f.seg.x1, y, f.seg.x2 - f.seg.x1, PLATFORM_THICKNESS);
-      g.fillStyle(COLORS.platformTop, 1);
+      g.fillStyle(f.iced ? COLORS.iceTop : COLORS.platformTop, 1);
       g.fillRect(f.seg.x1, y, f.seg.x2 - f.seg.x1, 2);
     }
   }

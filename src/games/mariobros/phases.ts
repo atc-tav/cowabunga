@@ -11,6 +11,8 @@ import type { EnemyKindId } from './enemies';
  */
 export interface PhaseDef {
   roster: EnemyKindId[];
+  /** Slipice (Freezie) prowls this phase, icing platforms. */
+  slipice?: boolean;
 }
 
 export const PHASES: PhaseDef[] = [
@@ -20,4 +22,6 @@ export const PHASES: PhaseDef[] = [
   { roster: ['turtle', 'turtle', 'crab', 'crab', 'crab', 'crab'] },
   { roster: ['fly', 'fly', 'fly', 'fly'] },
   { roster: ['fly', 'fly', 'fly', 'crab', 'crab'] },
+  { roster: ['turtle', 'turtle', 'turtle', 'turtle', 'fly'], slipice: true },
+  { roster: ['crab', 'crab', 'crab', 'crab', 'fly'], slipice: true },
 ];
