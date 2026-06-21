@@ -52,6 +52,7 @@ src/
 │   ├── CRTOverlay.ts       DEFERRED no-op seam
 │   ├── StateMachine.ts     Generic FSM (ghost states, enemy AI, flow)
 │   ├── textures.ts         drawPixelArt() — the programmatic-sprite primitive
+│   ├── titleArt.ts         Arc title logos (banner + arc wordmark + stars); see docs/title-art.md
 │   └── ui.ts               Shared colors + text styles
 └── games/
     └── <name>/             Self-contained; imports only from shared/
