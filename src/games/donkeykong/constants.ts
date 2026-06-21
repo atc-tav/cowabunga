@@ -36,6 +36,15 @@ export const DEATH_PAUSE_MS = 900;
 export const WIN_MS = 2600;
 export const GAMEOVER_MS = 2600;
 
+// --- bonus timer, loop & extra lives ------------------------------------
+
+export const BONUS_START = 5000; // each stage opens with this much bonus
+export const BONUS_DECAY_PER_SEC = 100; // counts down 100/sec; reaching 0 is fatal
+export const LOOP_SPEED_INC = 0.12; // hazards get this much faster each loop
+export const MAX_SPEED_SCALE = 2.5; // cap so it stays (barely) playable
+export const EXTRA_LIFE_FIRST = 20000; // first 1-up threshold
+export const EXTRA_LIFE_REPEAT = 60000; // and every this many points after
+
 // --- hammer power-up ----------------------------------------------------
 
 export const HAMMER_DURATION_MS = 6500;
