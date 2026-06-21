@@ -27,9 +27,11 @@ export const WORD_SPAWN_MS = 900; // initial gap between words
 export const WORD_SPAWN_MIN_MS = 360;
 export const WORD_SPAWN_RAMP = 9; // ms shaved off the gap per second survived
 export const WORD_SCORE = 20;
+export const BEAT_MS = 700; // extra pause after a sentence-ending word (a breather)
 
-// --- cookie enemy (Galaga-style, after 1000 pts) -------------------------
-export const COOKIE_TRIGGER_SCORE = 1000; // first cookie appears here
+// --- cookie enemy (Galaga-style) ----------------------------------------
+export const COOKIE_FIRST_MIN = 450; // first cookie appears between these...
+export const COOKIE_FIRST_MAX = 550; // ...scores (random)
 export const COOKIE_RESPAWN_MIN = 200; // next cookie after this many more pts...
 export const COOKIE_RESPAWN_MAX = 500; // ...up to this many (random)
 export const COOKIE_SPIN = 42; // deg/sec, slow spin

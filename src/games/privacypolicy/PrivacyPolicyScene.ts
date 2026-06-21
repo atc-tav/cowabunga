@@ -44,7 +44,7 @@ export class PrivacyPolicyScene extends BaseGameScene {
   private cookie?: Phaser.GameObjects.Image;
   private cookieDive = false;
   private cookieT = 0;
-  private cookieNextScore = C.COOKIE_TRIGGER_SCORE;
+  private cookieNextScore = C.COOKIE_FIRST_MIN;
 
   // boss
   private boss?: Phaser.GameObjects.Text;
@@ -66,13 +66,29 @@ export class PrivacyPolicyScene extends BaseGameScene {
   protected createGame(): void {
     buildPrivacyTextures(this);
     this.wordList = C.POLICY_TEXT.split(/\s+/).filter(Boolean);
+    // Full reset — the scene instance is reused across runs, so leftover
+    // objects/refs from a previous game must not bleed into this one.
     this.wordIndex = 0;
     this.survived = 0;
     this.spawnTimer = 0;
     this.bullets = [];
     this.words = [];
+    this.stars = [];
+    this.cookie?.destroy();
+    this.cookie = undefined;
+    this.cookieDive = false;
+    this.cookieT = 0;
+    this.boss?.destroy();
+    this.boss = undefined;
+    this.bossStage = 0;
+    this.bossDir = 1;
+    this.bossShotsLeft = 0;
+    this.bossShotTimer = 0;
+    this.bossCycleTimer = 0;
+    this.bossDying = false;
+    for (const l of this.bossLasers) l.obj?.destroy();
     this.bossLasers = [];
-    this.cookieNextScore = C.COOKIE_TRIGGER_SCORE;
+    this.cookieNextScore = Phaser.Math.Between(C.COOKIE_FIRST_MIN, C.COOKIE_FIRST_MAX);
     this.nextBossScore = C.BOSS_SCORE_INTERVAL;
     this.mode = 'flow';
 
@@ -237,6 +253,11 @@ export class PrivacyPolicyScene extends BaseGameScene {
     const half = word.width / 2;
     word.x = Phaser.Math.Between(Math.ceil(half) + 2, C.WIDTH - Math.ceil(half) - 2);
     this.words.push(word);
+
+    // A beat after each sentence: pause longer once a period goes by.
+    if (text.endsWith('.')) {
+      this.spawnTimer += C.BEAT_MS;
+    }
   }
 
   private wordSpeed(): number {
