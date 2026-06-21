@@ -56,10 +56,18 @@ capsule drops.
 ## (c) How to continue this work
 
 ### Current status
-- **Done:** design docs (README + TEST_DESIGN) and this devlog. Reviewed and
-  approved by the maintainer. No runtime code yet.
+- **Done:** design docs (README + TEST_DESIGN + this devlog), AND the first
+  implementation: the `testkit` core (`GameTestSurface` contract, node
+  Playwright harness, scenario runner, invariant runner) plus the Arkanoid
+  surface and a **13-scenario / 34-check suite that passes green** via
+  `npm run test:game -- arkanoid`. This codifies the manual Arkanoid
+  verification so it runs on demand.
+- **Not yet done:** seeded RNG + fixed-step `tick` (deferred — see Decisions
+  log), the fuzz/invariant *driver* (invariants exist and are checked after
+  each scenario, but there's no random-play bot yet), pure-logic unit tests
+  (mode 1), and the human-pack generator.
 - **Branch convention:** descriptive names, `claude/<topic>` (e.g.
-  `claude/agentic-test-framework`, `claude/arkanoid-32-stages`).
+  `claude/testkit-arkanoid-scenarios`).
 - **Workflow:** one PR per coherent slice; squash-merge; **re-sync to
   `origin/main` before starting the next slice** (a missed re-sync caused a
   merge conflict earlier — see Decisions log).
@@ -101,6 +109,31 @@ smell in the game (logic tangled into rendering) — surface it, don't fight it.
 ---
 
 ## Decisions log (newest first)
+
+### 2026-06-21 — testkit core built; Arkanoid verification locked in
+Implemented the reusable `testkit` (contract in `src/shared/testkit/surface.ts`;
+node harness/assert/runner as `.mjs`) and the Arkanoid surface
+(`ArkanoidScene.buildTestSurface()`) + `src/games/arkanoid/testing/scenarios.mjs`.
+`npm run test:game -- arkanoid` boots the game headlessly and runs 13 scenarios
+(34 checks) covering every capsule, laser, catch, enemies, multiball life-rule,
+extra life, and the full DOH fight — all green, invariants clean.
+
+Pragmatic choices made during the build (deviating from the pure design):
+- **Surface adapter lives on the scene** (`buildTestSurface()`), not in
+  `testing/`, so it can read the scene's *private* state type-safely without
+  casts. Only the thin adapter touches internals; scenarios + harness + contract
+  stay separate. Gated behind `import.meta.env.DEV` (verified absent from the
+  prod bundle).
+- **Determinism via scene pause, not a fixed-step tick (yet).** The harness
+  `start()` pauses the scene's update loop; scenarios then drive the sim with
+  explicit hook calls (`updateBalls`/`updateLasers`/`moveProjectiles`). This is
+  deterministic enough for scenario mode without the seeded-RNG refactor, which
+  is still wanted for fuzz mode and capsule-drop fidelity.
+- **Browser:** `playwright` added as a devDependency; the harness points at the
+  pre-installed `/opt/pw-browsers` Chromium (CDN blocked, no `playwright install`).
+- **Gotcha found while building:** `updateLasers` early-returns (skipping
+  `removeLaser`) when flow isn't `'playing'` (correct, from the freeze fix) — so
+  in-play scenarios must `startPlaying` first. Caught by the suite itself.
 
 ### 2026-06-21 — DEVLOG created
 Maintainer asked for a running design log in the test folder with (a) what it

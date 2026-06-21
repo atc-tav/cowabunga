@@ -28,6 +28,7 @@ import {
   enemyTexture,
 } from './enemies';
 import { DOH_TX, buildDohTextures } from './doh';
+import { GameTestSurface, InvariantViolation, registerTestSurface } from '../../shared/testkit/surface';
 
 interface Ball {
   img: Phaser.GameObjects.Image;
@@ -205,6 +206,11 @@ export class ArkanoidScene extends BaseGameScene {
       .add('victory', { enter: () => this.enterVictory() })
       .add('gameover', { enter: () => this.enterGameOver() });
     this.flow.transition('ready');
+
+    // Expose the deterministic test surface (dev/test builds only).
+    if (import.meta.env.DEV) {
+      registerTestSurface(this.buildTestSurface());
+    }
   }
 
   protected updateGame(_time: number, delta: number): void {
@@ -1402,5 +1408,167 @@ export class ArkanoidScene extends BaseGameScene {
       gfx.generateTexture(EXPLODE_KEYS[i], 16, 16);
       gfx.destroy();
     }
+  }
+
+  // --- test surface (dev/test only) ---------------------------------------
+  // The deterministic seams + state snapshot the headless harness drives. Lives
+  // here (not in testing/) so it can read the scene's private state type-safely.
+
+  private buildTestSurface(): GameTestSurface {
+    const slowFloor = GAME.ballBaseSpeed * GAME.slowSpeedMultiplier;
+    return {
+      gameId: 'arkanoid',
+      sceneKey: 'game-arkanoid',
+      snapshot: () => ({
+        score: this.scores.score,
+        lives: this.lives.count,
+        stage: this.stage,
+        flow: this.flow.state,
+        ballCount: this.balls.length,
+        ballSpeed: this.ballSpeed,
+        destroyableRemaining: this.destroyableRemaining,
+        vausMode: this.vausMode,
+        enlarged: this.enlarged,
+        catchMode: this.catchMode,
+        vausWidth: this.vausWidth,
+        capsuleInFlight: this.capsuleInFlight,
+        portalOpen: this.portalOpen,
+        laserCount: this.lasers.length,
+        enemyCount: this.enemies.length,
+        dohActive: this.dohActive,
+        dohHits: this.dohHits,
+        dohProjectileCount: this.dohProjectiles.length,
+      }),
+      invariants: (): InvariantViolation[] => {
+        const v: InvariantViolation[] = [];
+        if (this.ballSpeed < slowFloor - 0.001 || this.ballSpeed > GAME.ballMaxSpeed + 0.001) {
+          v.push({ rule: 'ball-speed-bounds', detail: `${this.ballSpeed}` });
+        }
+        if (this.vausMode === 'laser' && this.catchMode) {
+          v.push({ rule: 'laser-xor-catch', detail: 'both active' });
+        }
+        if (this.dohHits < 0 || this.dohHits > GAME.dohHitsRequired) {
+          v.push({ rule: 'doh-hits-range', detail: `${this.dohHits}` });
+        }
+        if (this.destroyableRemaining < 0) {
+          v.push({ rule: 'destroyable-nonneg', detail: `${this.destroyableRemaining}` });
+        }
+        const expW = this.enlarged ? GAME.vausEnlargedWidth : GAME.vausNormalWidth;
+        if (this.vausWidth !== expW) {
+          v.push({ rule: 'vaus-width-matches-enlarged', detail: `${this.vausWidth} != ${expW}` });
+        }
+        return v;
+      },
+      hooks: {
+        startPlaying: () => this.flow.transition('playing'),
+        clearBalls: () => this.clearBalls(),
+        spawnBall: (x: number, y: number, dx: number, dy: number, caught: boolean) => {
+          this.spawnBall(x, y, dx, dy, caught);
+          return this.balls.length - 1;
+        },
+        setBall: (i: number, x: number, y: number, dx: number, dy: number, caught: boolean) => {
+          const b = this.balls[i];
+          if (b) {
+            b.x = x;
+            b.y = y;
+            b.dirx = dx;
+            b.diry = dy;
+            b.caught = caught;
+          }
+        },
+        ballDir: (i: number) => {
+          const b = this.balls[i];
+          return b ? { dirx: b.dirx, diry: b.diry, caught: b.caught } : null;
+        },
+        applyCapsule: (type: CapsuleType) => this.applyCapsule(type),
+        setCatchMode: (on: boolean) => {
+          this.catchMode = on;
+        },
+        setVausMode: (mode: 'normal' | 'laser') => {
+          this.vausMode = mode;
+          this.rebuildVaus();
+        },
+        setBallSpeed: (v: number) => {
+          this.ballSpeed = v;
+        },
+        resolvePaddle: (i: number) => {
+          const b = this.balls[i];
+          if (!b) return false;
+          this.resolvePaddle(b);
+          return b.caught;
+        },
+        releaseBall: (i: number) => {
+          const b = this.balls[i];
+          if (b) this.releaseBall(b);
+        },
+        updateBalls: (ms: number) => this.updateBalls(ms),
+        loadStage: (n: number) => {
+          this.stage = n;
+          this.loadStage(n);
+        },
+        firstAliveBrick: () => {
+          for (let r = 0; r < this.grid.length; r++) {
+            for (let c = 0; c < this.grid[r].length; c++) {
+              const b = this.grid[r][c];
+              if (b && b.code !== 'X') {
+                return { row: r, col: c, code: b.code, x: b.img.x, y: b.img.y };
+              }
+            }
+          }
+          return null;
+        },
+        pushLaser: (x: number, y: number) => {
+          this.lasers.push({ img: this.add.image(x, y, TX.laserBeam).setDepth(8), x, y });
+        },
+        updateLasers: (ms: number) => this.updateLasers(ms),
+        spawnEnemy: (kind: EnemyKind) => {
+          this.spawnEnemy(kind);
+          const e = this.enemies[this.enemies.length - 1];
+          return { index: this.enemies.length - 1, x: e.x, y: e.y };
+        },
+        setEnemyPos: (i: number, x: number, y: number) => {
+          const e = this.enemies[i];
+          if (e) {
+            e.x = x;
+            e.y = y;
+            e.ballCd = 0;
+          }
+        },
+        resolveEnemies: (i: number) => {
+          const b = this.balls[i];
+          if (b) this.resolveEnemies(b);
+        },
+        killEnemyAt: (x: number, y: number) => {
+          const idx = this.enemyAtPoint(x, y);
+          if (idx >= 0) {
+            this.killEnemy(idx);
+            return true;
+          }
+          return false;
+        },
+        enemyCount: () => this.enemies.length,
+        setScore: (n: number) => this.scores.setScore(n),
+        forceExtraLifeCheck: () => this.checkExtraLife(),
+        dohCenter: () => (this.doh ? { x: this.doh.x, y: this.doh.y } : null),
+        registerDohHits: (n: number) => {
+          const x = this.doh ? this.doh.x : 0;
+          const y = this.doh ? this.doh.y : 0;
+          const b = this.spawnBall(x, y, 0, 1, false);
+          for (let k = 0; k < n; k++) {
+            b.dohCd = 0;
+            this.registerDohHit(b);
+          }
+        },
+        spawnProjectileOnVaus: () => {
+          this.spawnProjectile();
+          const p = this.dohProjectiles[this.dohProjectiles.length - 1];
+          if (p) {
+            p.x = this.vaus.x;
+            p.y = this.vaus.y;
+          }
+        },
+        moveProjectiles: (ms: number) => this.moveProjectiles(ms),
+      },
+    };
   }
 }

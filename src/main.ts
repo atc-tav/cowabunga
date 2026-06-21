@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { MainMenu } from './scenes/MainMenu';
 import { GAMES } from './registry';
 import { TouchControls } from './shared/TouchControls';
+import { initTestKit } from './shared/testkit/surface';
 
 /**
  * Game bootstrap. The canvas starts at the menu's size; each scene resizes the
@@ -34,6 +35,11 @@ TouchControls.init();
 game.scene.add('MainMenu', MainMenu, false);
 for (const entry of GAMES) {
   game.scene.add(entry.key, entry.SceneClass, false);
+}
+
+// Expose the game to the headless test harness (dev/test builds only).
+if (import.meta.env.DEV) {
+  initTestKit(game);
 }
 
 game.scene.start('MainMenu');
