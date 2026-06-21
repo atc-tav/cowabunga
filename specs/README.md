@@ -15,6 +15,9 @@ to build (or validate) a faithful clone.
 > house style guide (structure, conventions, required sections, standing
 > decisions) for producing specs consistent with the ones already here.
 
+> **Known issues & deferred work** (spec defects, linter follow-ups, the
+> port-first sequencing decision) live in [`BACKLOG.md`](./BACKLOG.md).
+
 ## Index
 
 | Spec | Platform / Source | File |
