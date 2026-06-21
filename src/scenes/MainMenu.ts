@@ -19,11 +19,11 @@ export class MainMenu extends Phaser.Scene {
   private static readonly H = 288;
 
   // 80s-TV geometry (bezel outer, recessed screen inner). Sits below the logo.
-  private static readonly BEZEL = { x: 16, y: 64, w: 224, h: 126, r: 14 };
-  private static readonly SCREEN = { x: 28, y: 78, w: 160, h: 98, r: 8 };
+  private static readonly BEZEL = { x: 16, y: 78, w: 224, h: 116, r: 14 };
+  private static readonly SCREEN = { x: 28, y: 92, w: 160, h: 90, r: 8 };
 
-  private static readonly TITLE_Y = 204;
-  private static readonly SELECTOR_Y = 228;
+  private static readonly TITLE_Y = 206;
+  private static readonly SELECTOR_Y = 230;
 
   private controls!: InputManager;
   private games: GameEntry[] = [];

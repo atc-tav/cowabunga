@@ -212,49 +212,58 @@ function drawWordmark(scene: Phaser.Scene, cx: number, topY: number): void {
   const baseH = 11 * PX;
   const GAP = PX;
 
-  // Fan look: letters grow and tilt the further they sit from the centre
-  // ("ABU"). Tilt splays outward — left letters lean left, right lean right —
-  // tangent to the arch, like the reference.
-  const GROW = 0.26;
-  const MAX_ANGLE = 38;
-  const EXTRA = 5; // extra spacing between tilted letters so they don't crowd
-  const targetW = 230;
+  // Arc text: every letter stands on ONE circle (baselines on the arc) and is
+  // rotated tangent to it, so the wordmark reads as a single continuous arc.
+  // Letters also grow toward the ends. The arc geometry naturally drops the
+  // outer letters lower (bottoms much lower, tops a little lower than centre).
+  const GROW = 0.38; // C/A noticeably taller than the centre; OW/NG transition
+  const EXTRA = 1.5;
+  const targetArc = 200; // arc-length budget for the whole word
+  const endAngle = (36 * Math.PI) / 180; // tilt of the outermost letters
 
   const tiltAt = (i: number) => Math.abs((i - mid) / mid);
   const growth = Array.from({ length: n }, (_, i) => 1 + GROW * tiltAt(i));
   const gapAt = (i: number) => GAP + EXTRA * ((tiltAt(i) + tiltAt(i + 1)) / 2);
 
-  // Lay everything out in unscaled units first, then scale to fit the width.
+  // Lay out in unscaled units, scale to the arc-length budget, then bend.
   let raw = growth.reduce((s, g) => s + baseW * g, 0);
   for (let i = 0; i < n - 1; i++) raw += gapAt(i);
-  const SC = targetW / raw;
-  const archDepth = 9 * SC;
-  const baseY = topY + (baseH * SC) / 2;
+  const SC = targetArc / raw;
+  const arcLen = raw * SC;
+  const radius = arcLen / 2 / endAngle;
+  // Centre letter's baseline; ends curve down from here.
+  const baseY = topY + baseH * SC;
 
-  let x = cx - (raw * SC) / 2;
+  let s = -arcLen / 2; // signed arc-length cursor from the centre
+  let leftX = cx;
+  let rightX = cx;
   for (let i = 0; i < n; i++) {
     const sc = SC * growth[i];
     const w = baseW * sc;
-    const t = (i - mid) / mid; // -1 (far left) .. +1 (far right)
-    const arch = archDepth * t * t; // ends ride lower
+    const sCenter = s + w / 2;
+    s += w + (i < n - 1 ? gapAt(i) * SC : 0);
+
+    const a = sCenter / radius; // angle along the arc (rad), signed
+    const x = cx + radius * Math.sin(a);
+    const yBase = baseY + radius * (1 - Math.cos(a));
     const key = `logo_${word[i]}`;
     drawPixelArt(scene, key, outlineGlyph(GLYPHS[word[i]]), palette, PX);
     scene.add
-      .image(x + w / 2, baseY + arch, key)
-      .setOrigin(0.5, 0.5)
+      .image(x, yBase, key)
+      .setOrigin(0.5, 1) // stand the letter on the arc
       .setScale(sc)
-      .setAngle(MAX_ANGLE * t)
+      .setAngle((a * 180) / Math.PI)
       .setDepth(20);
-    x += w + (i < n - 1 ? gapAt(i) * SC : 0);
+    if (i === 0) leftX = x - w / 2;
+    if (i === n - 1) rightX = x + w / 2;
   }
-  const total = raw * SC;
 
   // Sparkle stars around the wordmark (one left, two right), like the artwork.
   drawPixelArt(scene, 'logo_star', STAR, { '#': 0xfcfc00 }, 1);
-  const place = (sx: number, sy: number, s: number) =>
-    scene.add.image(sx, sy, 'logo_star').setOrigin(0.5).setScale(s).setDepth(21);
-  place(cx - total / 2 - 2, baseY - 4, 1.3);
-  place(cx + total / 2 + 3, baseY - 9, 1.6);
-  place(cx + total / 2, baseY + 16, 1.0);
+  const place = (sx: number, sy: number, st: number) =>
+    scene.add.image(sx, sy, 'logo_star').setOrigin(0.5).setScale(st).setDepth(21);
+  place(leftX - 4, baseY - 6, 1.3);
+  place(rightX + 4, baseY - 10, 1.6);
+  place(rightX + 1, baseY + 14, 1.0);
 }
 
