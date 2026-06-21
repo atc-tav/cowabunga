@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { TouchControls } from './TouchControls';
 
 /**
  * Normalized input actions used across every game. Games never read raw keys
@@ -82,16 +83,24 @@ export class InputManager {
   private firstInputFired = false;
   private firstInputCb?: () => void;
 
-  // Per-frame gamepad action snapshots, so justPressed() can detect the rising
-  // edge of a controller button the same way JustDown does for the keyboard.
+  // Per-frame action snapshots, so justPressed() can detect the rising edge of
+  // a gamepad button or on-screen touch button the same way JustDown does for
+  // the keyboard.
   private readonly padNow = new Map<InputAction, boolean>();
   private readonly padPrev = new Map<InputAction, boolean>();
-  private padPrimed = false;
+  private readonly touchNow = new Map<InputAction, boolean>();
+  private readonly touchPrev = new Map<InputAction, boolean>();
+  private primed = false;
+
+  // On-screen touch is a single shared overlay, so only the primary (pad 0)
+  // manager reads it — a player-two scheme on pad 1 stays touch-free.
+  private readonly usesTouch: boolean;
 
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly options: InputOptions = {},
   ) {
+    this.usesTouch = (options.padIndex ?? 0) === 0;
     const kb = scene.input.keyboard;
     if (kb) {
       const custom = options.keys;
@@ -106,26 +115,30 @@ export class InputManager {
     for (const action of ALL_ACTIONS) {
       this.padNow.set(action, false);
       this.padPrev.set(action, false);
+      this.touchNow.set(action, false);
+      this.touchPrev.set(action, false);
     }
   }
 
-  /** True while the action is held (keyboard or gamepad). */
+  /** True while the action is held (keyboard, gamepad, or touch). */
   isDown(action: InputAction): boolean {
     const list = this.keys.get(action);
     if (list && list.some((k) => k.isDown)) {
       return true;
     }
-    return this.padDown(action);
+    return this.padDown(action) || this.touchDown(action);
   }
 
-  /** True only on the frame the action was first pressed (keyboard or gamepad). */
+  /** True only on the frame the action was first pressed (any input source). */
   justPressed(action: InputAction): boolean {
     const list = this.keys.get(action);
     if (list && list.some((k) => Phaser.Input.Keyboard.JustDown(k))) {
       return true;
     }
-    // Gamepad rising edge: down this frame, up last frame.
-    return Boolean(this.padNow.get(action)) && !this.padPrev.get(action);
+    // Gamepad / touch rising edge: down this frame, up last frame.
+    const padEdge = Boolean(this.padNow.get(action)) && !this.padPrev.get(action);
+    const touchEdge = Boolean(this.touchNow.get(action)) && !this.touchPrev.get(action);
+    return padEdge || touchEdge;
   }
 
   /** Normalized -1/0/1 movement vector. Useful for free movement games. */
@@ -149,15 +162,19 @@ export class InputManager {
 
   /** Pump once per frame from the owning scene's update(). */
   update(): void {
-    // Snapshot gamepad state so justPressed() can read this frame's rising
-    // edges. On the first pump we prime prev = now, so a button still held
-    // from the launching scene (e.g. A/Start) isn't read as a fresh press.
+    // Snapshot gamepad + touch state so justPressed() can read this frame's
+    // rising edges. On the first pump we prime prev = now, so a button still
+    // held from the launching scene (e.g. A/Start) isn't read as a fresh press.
     for (const action of ALL_ACTIONS) {
-      const now = this.padDown(action);
-      this.padPrev.set(action, this.padPrimed ? (this.padNow.get(action) ?? false) : now);
-      this.padNow.set(action, now);
+      const padNow = this.padDown(action);
+      this.padPrev.set(action, this.primed ? (this.padNow.get(action) ?? false) : padNow);
+      this.padNow.set(action, padNow);
+
+      const touchNow = this.touchDown(action);
+      this.touchPrev.set(action, this.primed ? (this.touchNow.get(action) ?? false) : touchNow);
+      this.touchNow.set(action, touchNow);
     }
-    this.padPrimed = true;
+    this.primed = true;
 
     if (this.firstInputFired || !this.firstInputCb) {
       return;
@@ -166,6 +183,14 @@ export class InputManager {
       this.firstInputFired = true;
       this.firstInputCb();
     }
+  }
+
+  /** Current on-screen touch state for an action (primary manager only). */
+  private touchDown(action: InputAction): boolean {
+    if (!this.usesTouch) {
+      return false;
+    }
+    return TouchControls.shared?.isDown(action) ?? false;
   }
 
   private activePad(): Phaser.Input.Gamepad.Gamepad | null {

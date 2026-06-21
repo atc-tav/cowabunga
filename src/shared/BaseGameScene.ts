@@ -6,6 +6,7 @@ import { CRTOverlay } from './CRTOverlay';
 import { screenShake, ImpactPreset } from './juice';
 import { floatingText, FloatingTextOptions } from './popups';
 import { HUD_STYLE, LABEL_STYLE } from './ui';
+import { TouchControls } from './TouchControls';
 
 export interface BaseGameSceneConfig {
   /** Phaser scene key (must be unique + match the registry entry). */
@@ -59,6 +60,8 @@ export abstract class BaseGameScene extends Phaser.Scene {
     this.controls.onFirstInput(() => this.audio.unlock());
 
     this.paused = false;
+    // Touch overlay: a game shows the Home (exit-to-menu) button.
+    TouchControls.shared?.setHomeVisible(true);
     this.createHud();
     this.createGame();
     this.crt.apply();
