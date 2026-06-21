@@ -1568,6 +1568,9 @@ export class ArkanoidScene extends BaseGameScene {
           }
         },
         moveProjectiles: (ms: number) => this.moveProjectiles(ms),
+        // Read-only helpers for the fuzz bot.
+        paddleX: () => this.vaus.x,
+        ballsInfo: () => this.balls.map((b) => ({ x: b.x, y: b.y, caught: b.caught })),
       },
     };
   }
