@@ -434,8 +434,8 @@ follow them so new specs are *more* consistent than the current set:
 
 ## 9. Before you submit: the self-review checklist
 
-Run this over your own draft. (A future spec-linter will automate the
-mechanical items; do them by hand until then.)
+Run this over your own draft. The mechanical items are automated — run
+`npm run lint:specs` (see §10) — but the judgment items below are on you.
 
 **Structure**
 - [ ] Title matches `<Game> (<Year> <Platform>) — Clone Design Specification`
@@ -470,7 +470,89 @@ mechanical items; do them by hand until then.)
 
 ---
 
-## 10. Adding the finished file
+## 10. The spec linter
+
+Most of the mechanical items in §9 are enforced automatically by a linter:
+`scripts/lint-specs.mjs`. Run it before submitting any spec.
+
+```bash
+npm run lint:specs                 # lint every specs/*.md
+node scripts/lint-specs.mjs specs/pac-man-arcade.md   # one file
+node scripts/lint-specs.mjs --strict                  # warnings also fail
+```
+
+It's a single dependency-free Node script (Node builtins only), so it runs
+anywhere the repo does — no install step.
+
+### 10.1 How it works
+
+The linter reads each spec as plain text and runs a series of independent
+checks. It does **not** understand game design — it only catches *structural*
+defects and copy-paste bugs. Each check appends findings tagged **ERROR** (a
+real defect — fails the run, exit code 1) or **WARN** (the standard isn't met
+yet — informational; only fails under `--strict`). Output is grouped per file
+with line numbers, ending in a summary table.
+
+The checks, by rule name (the `[tag]` shown in output):
+
+| Rule | Severity | What it catches |
+|------|----------|-----------------|
+| `title` | error/warn | H1 must end `— Clone Design Specification`; should carry `(<Year> <Platform>)` |
+| `header` | warn | Missing `**Build target:**` header callout |
+| `check-callouts` | warn | No `✅ **CHECK**` callouts in the file |
+| `sections` | error/warn | A required section heading is absent (see `REQUIRED_SECTIONS`) |
+| `constants` | warn | Constants object missing, or named `PHYSICS` instead of `GAME` |
+| `sprite-shape` | error | An ASCII sprite's rows are not all the same width |
+| `sprite-dims` | error/warn | Grid size doesn't match its `(WxH)` label; or no label present |
+| `sprite-ascii` | error | A non-ASCII glyph inside sprite art (e.g. a Cyrillic look-alike) |
+| `contamination` | error | A term unique to *another* game's spec appears (copy-paste leak) |
+| `tx` | warn | No typed `TX` registry / `TXKey`; or a referenced TX key isn't declared |
+
+How the two trickiest checks work:
+
+- **Sprite grids** (`sprite-shape` / `sprite-dims` / `sprite-ascii`): the linter
+  finds every `const NAME: string[] = [ … ];` block, collects the quoted rows
+  (tolerating a trailing `// comment`), looks back up to 3 lines for a `(WxH)`
+  label, then asserts the rows are uniform width, match the label, and contain
+  only ASCII. This is what flags ragged art and stray non-ASCII characters
+  before they reach `drawPixelArt()`.
+- **Contamination** (`contamination`): each game has a short list of
+  *genuinely unique* terms in `GAME_SIGNATURE_TERMS` (e.g. `pooka`/`fygar` for
+  Dig Dug, `vaus`/`doh` for Arkanoid). The owning spec is identified from the
+  filename; if any *other* game's unique term appears, it's almost always a
+  paste from the wrong template. (This is how we found a Dig Dug "rock crush"
+  line living in the Arkanoid checklist.) Shared words like "barrel" are
+  deliberately excluded to avoid false positives.
+
+### 10.2 What it does NOT check
+
+These remain manual review items (§9): internal numeric contradictions across
+prose/formula/constants (e.g. silver-brick hit counts disagreeing), whether
+level/content data is genuinely *complete* vs. sampled, palette accuracy, and
+whether sourcing is real. The linter proves a spec is *well-formed*, not that
+it's *correct or complete*.
+
+### 10.3 Extending it
+
+The config lives at the top of the script and is the only part you normally
+touch:
+
+- **`REQUIRED_SECTIONS`** — add a `{ name, re, severity }` row to require a new
+  section. Use `severity: 'warn'` for a new standard so pre-existing specs
+  aren't broken retroactively; promote to `'error'` once they're updated.
+- **`GAME_SIGNATURE_TERMS`** — add an entry (`'<filename-substring>': [terms]`)
+  for each new game. Only list terms unique to that one game.
+
+When you add a brand-new check, push findings via `r.error(...)` / `r.warn(...)`
+inside a `checkX(text, r)` function and call it from `lintFile`. Keep checks
+mechanical and high-signal — a noisy linter gets ignored.
+
+> **Known state:** the six original specs predate the linter and currently
+> report real errors (ragged sprites, the Galaga Cyrillic glyph, the Arkanoid
+> contamination) plus warnings for the newer-standard sections. Fixing those is
+> tracked separately; new specs should pass clean.
+
+## 11. Adding the finished file
 
 1. Save it in `specs/` with a lowercase-kebab filename, `<game>-<platform>.md`
    (e.g. `pac-man-arcade.md`, `frogger-arcade.md`).

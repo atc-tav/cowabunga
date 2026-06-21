@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint:specs": "node scripts/lint-specs.mjs"
   },
   "dependencies": {
     "phaser": "^3.80.1"
