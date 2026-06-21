@@ -33,6 +33,12 @@ import {
   DEATH_PAUSE_MS,
   WIN_MS,
   GAMEOVER_MS,
+  BONUS_START,
+  BONUS_DECAY_PER_SEC,
+  LOOP_SPEED_INC,
+  MAX_SPEED_SCALE,
+  EXTRA_LIFE_FIRST,
+  EXTRA_LIFE_REPEAT,
   HAMMER_DURATION_MS,
   HAMMER_BLINK_MS,
   HAMMER_SWING_MS,
@@ -54,6 +60,7 @@ import {
 import { COLORS } from './palette';
 import { buildDKTextures, BARREL_KEYS, FIRE_KEYS, TX } from './sprites';
 import { LEVEL1_GIRDERS, buildLadders, DK_X, PAULINE_X, Ladder } from './levels';
+import { STAGE_ORDER } from './stages';
 
 interface Barrel {
   sprite: Phaser.GameObjects.Image;
@@ -118,6 +125,13 @@ export class DKScene extends BaseGameScene {
   private kong!: Phaser.GameObjects.Image;
   private readonly barrels: Barrel[] = [];
   private barrelTimer = 0;
+
+  private stageIndex = 0;
+  private loopCount = 0;
+  private bonus = BONUS_START;
+  private nextLife = EXTRA_LIFE_FIRST;
+  private bonusText!: Phaser.GameObjects.Text;
+  private stageText!: Phaser.GameObjects.Text;
 
   private hammerMode = false;
   private hammerTimer = 0;
@@ -190,6 +204,20 @@ export class DKScene extends BaseGameScene {
       .setDepth(1000)
       .setVisible(false);
 
+    this.bonusText = this.add
+      .text(WIDTH / 2, 4, '', { ...HINT_STYLE, color: '#fcd000' })
+      .setOrigin(0.5, 0)
+      .setDepth(1000);
+    this.stageText = this.add
+      .text(WIDTH / 2, 14, '', { ...HINT_STYLE, color: '#ffffff' })
+      .setOrigin(0.5, 0)
+      .setDepth(1000);
+
+    this.stageIndex = 0;
+    this.loopCount = 0;
+    this.nextLife = EXTRA_LIFE_FIRST;
+    this.resetBonus();
+
     this.helpTimer = Phaser.Math.Between(HELP_PERIOD_MIN_MS, HELP_PERIOD_MAX_MS);
 
     this.flow = new StateMachine<DKScene>(this)
@@ -227,6 +255,7 @@ export class DKScene extends BaseGameScene {
   private enterCountdown(): void {
     this.placeMarioAtStart();
     this.clearBarrels();
+    this.resetBonus(); // each life / stage gets a fresh timer
     this.barrelTimer = 0; // DK starts rolling immediately
     this.countdownNum = 3;
     this.countdownTimer = COUNTDOWN_STEP_MS;
@@ -287,11 +316,15 @@ export class DKScene extends BaseGameScene {
       this.checkHammerPickup();
     }
 
+    this.bonus -= (BONUS_DECAY_PER_SEC * delta) / 1000;
+    this.refreshBonus();
+    this.checkExtraLife();
+
     if (this.reachedPauline()) {
       this.flow.transition('won');
       return;
     }
-    if (this.barrelHitMario() || this.fireballHitMario()) {
+    if (this.bonus <= 0 || this.barrelHitMario() || this.fireballHitMario()) {
       this.flow.transition('dying');
     }
   }
@@ -316,12 +349,27 @@ export class DKScene extends BaseGameScene {
   }
 
   private enterWon(): void {
-    this.banner.setText('YOU WIN!').setColor('#fcfc00').setVisible(true);
+    const remaining = Math.floor(this.bonus / 100) * 100;
+    this.banner.setText('STAGE CLEAR!').setColor('#fcfc00').setVisible(true);
     this.helpText.setVisible(false);
     this.clearBarrels();
     this.audio.play('win');
-    this.addScore(5000);
-    this.time.delayedCall(WIN_MS, () => this.scene.restart());
+    if (remaining > 0) {
+      this.addScore(remaining); // the remaining bonus is the stage reward
+    }
+    this.checkExtraLife();
+    this.time.delayedCall(WIN_MS, () => this.advanceStage());
+  }
+
+  /** Cycle to the next stage in the loop (only 25m exists today, so it loops). */
+  private advanceStage(): void {
+    this.banner.setVisible(false);
+    this.stageIndex += 1;
+    if (this.stageIndex >= STAGE_ORDER.length) {
+      this.stageIndex = 0;
+      this.loopCount += 1;
+    }
+    this.flow.transition('countdown');
   }
 
   private enterGameOver(): void {
@@ -470,7 +518,7 @@ export class DKScene extends BaseGameScene {
     }
     const dt = delta / 1000;
     if (f.mode === 'walk') {
-      f.x += f.dir * FIRE_SPEED * dt;
+      f.x += f.dir * FIRE_SPEED * this.speedScale * dt;
       f.y = this.surfaceAt(f.girder, f.x) - FIRE_RIDE;
       const g = this.girders[f.girder];
       if (f.x <= g.x1 + 6) {
@@ -489,7 +537,7 @@ export class DKScene extends BaseGameScene {
       }
     } else {
       const targetCentre = f.targetY - FIRE_RIDE;
-      f.y += Math.sign(targetCentre - f.y) * FIRE_CLIMB_SPEED * dt;
+      f.y += Math.sign(targetCentre - f.y) * FIRE_CLIMB_SPEED * this.speedScale * dt;
       if (Math.abs(f.y - targetCentre) < 2) {
         f.girder = f.targetGirder;
         f.y = targetCentre;
@@ -620,7 +668,8 @@ export class DKScene extends BaseGameScene {
     if (this.barrelTimer > 0) {
       return;
     }
-    this.barrelTimer = BARREL_INTERVAL_MS + Phaser.Math.Between(-BARREL_INTERVAL_JITTER, BARREL_INTERVAL_JITTER);
+    this.barrelTimer =
+      (BARREL_INTERVAL_MS + Phaser.Math.Between(-BARREL_INTERVAL_JITTER, BARREL_INTERVAL_JITTER)) / this.speedScale;
     const x = DK_X + 16;
     this.barrels.push({
       sprite: this.add.image(x, this.surfaceAt(0, x) - BARREL_RIDE, BARREL_KEYS[0]).setDepth(8),
@@ -643,7 +692,7 @@ export class DKScene extends BaseGameScene {
     for (let i = this.barrels.length - 1; i >= 0; i--) {
       const b = this.barrels[i];
       if (b.mode === 'roll') {
-        b.x += b.dir * BARREL_SPEED * dt;
+        b.x += b.dir * BARREL_SPEED * this.speedScale * dt;
         b.y = this.surfaceAt(b.girder, b.x) - BARREL_RIDE;
         this.rollDecisions(b);
         if (b.x < -8 || b.x > WIDTH + 8) {
@@ -652,7 +701,7 @@ export class DKScene extends BaseGameScene {
           continue;
         }
       } else {
-        b.y += BARREL_FALL_SPEED * dt;
+        b.y += BARREL_FALL_SPEED * this.speedScale * dt;
         if (b.y >= b.targetY - BARREL_RIDE) {
           b.girder = b.targetGirder;
           b.y = this.surfaceAt(b.girder, b.x) - BARREL_RIDE;
@@ -714,6 +763,32 @@ export class DKScene extends BaseGameScene {
   }
 
   // --- helpers ------------------------------------------------------------
+
+  /** Hazard speed-up per completed loop, capped so it stays playable. */
+  private get speedScale(): number {
+    return Math.min(1 + this.loopCount * LOOP_SPEED_INC, MAX_SPEED_SCALE);
+  }
+
+  private resetBonus(): void {
+    this.bonus = BONUS_START;
+    this.refreshBonus();
+  }
+
+  private refreshBonus(): void {
+    this.bonusText.setText(`BONUS ${Math.floor(this.bonus / 100) * 100}`);
+    const stage = STAGE_ORDER[this.stageIndex];
+    this.stageText.setText(this.loopCount > 0 ? `${stage}  L${this.loopCount + 1}` : stage);
+  }
+
+  /** Bank score-threshold 1-ups (20k, then every 60k). */
+  private checkExtraLife(): void {
+    while (this.scores.score >= this.nextLife) {
+      this.lives.gain();
+      this.refreshLives();
+      this.nextLife += EXTRA_LIFE_REPEAT;
+      this.audio.play('extra');
+    }
+  }
 
   private surfaceAt(girderIndex: number, x: number): number {
     return surfaceY(this.girders[girderIndex], x);
