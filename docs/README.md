@@ -23,6 +23,10 @@ the decision in front of you.
   our best clone (Arkanoid, 86% faithful) and our worst (Donkey Kong, 48%, with
   a *longer* spec). The imperatives above are the goals; *this* is the method
   that actually hits them. Faithfulness (#3) is the outcome; this is the how.
+- [vetting-ledgers.md](./vetting-ledgers.md) — **for humans reviewing an agent's
+  ledger.** How to tell a good assertion from a bad one, with worked
+  good-vs-bad examples across several games. Vetting the ledger before code is
+  written is the highest-leverage thing a human does here.
 
 ## Playbooks
 

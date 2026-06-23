@@ -70,6 +70,11 @@ goes 🟢 only when a real check verifies it.
 > from the spec's constants/scoring tables into a `unit` row. Lift every stage
 > into a `stage/*` row. If you can't phrase an assertion, the spec is too vague
 > — back to Step 0.
+>
+> **Every assertion must be specific, observable, and decisive** — exact numbers
+> and game state, not "correctly" / "properly" / "as expected." A human will vet
+> this column against `docs/vetting-ledgers.md`; write assertions that pass that
+> bar (set-up → action → exact observed result).
 
 ## 3. Invariant catalog (checked every frame in fuzz mode)
 

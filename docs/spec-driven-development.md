@@ -185,6 +185,13 @@ So the agent loop is: **lint spec → draft ledger → *human vets the ledger* �
 implement to green → human spot-checks the green.** Vetting the ledger is where
 human attention has the highest leverage.
 
+> **Vetting guide:** the quality of a ledger lives entirely in its **assertion**
+> column — a vague assertion lets a wrong game pass review while the checklist
+> goes green. [`docs/vetting-ledgers.md`](./vetting-ledgers.md) is the
+> human's guide to telling a good assertion from a bad one, with worked
+> good-vs-bad examples across several games. Read it before you review an
+> agent's ledger.
+
 ## The pipeline (the sequence that feeds the machine)
 
 Follow these in order. **Do not start a step before the previous one is signed

@@ -31,6 +31,7 @@ that is green.** A passing test that doesn't trace to the spec proves nothing
 (that's how Galaga shipped a green suite at 52% faithful).
 
 - **The full process:** [`docs/spec-driven-development.md`](docs/spec-driven-development.md) ← start here
+- **Vetting an agent's ledger (humans):** [`docs/vetting-ledgers.md`](docs/vetting-ledgers.md) — good vs. bad assertions
 - **The spec quality bar + lint:** [`specs/SPEC_GUIDE.md`](specs/SPEC_GUIDE.md)
 - **The Oracle Ledger template:** [`src/shared/testkit/TEST_DESIGN.template.md`](src/shared/testkit/TEST_DESIGN.template.md)
 - **The worked example (copy this):** [`src/games/arkanoid/test-design/`](src/games/arkanoid/test-design/)
