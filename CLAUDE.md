@@ -151,6 +151,8 @@ it **before** writing your own camera or tile collision.
 - `npm run dev` — dev server (HMR)
 - `npm run build` — typecheck + production build
 - `npm run typecheck` — types only
+- `npm run factory:status` — audit which games have spec/ledger/test artifacts
+  (the process scoreboard; add `-- --strict` to fail when any is missing)
 - `npm run test:game -- <game>` — headless scenario suite for a game (e.g.
   `arkanoid`, `galaga`)
 - `npm run fuzz:game -- <game> [secs]` — invariant-checked random-play soak test

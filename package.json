@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:game": "node src/shared/testkit/run.mjs",
-    "fuzz:game": "node src/shared/testkit/fuzz-run.mjs"
+    "fuzz:game": "node src/shared/testkit/fuzz-run.mjs",
+    "factory:status": "node scripts/factory-status.mjs"
   },
   "dependencies": {
     "phaser": "^3.80.1"

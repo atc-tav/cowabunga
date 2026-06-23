@@ -45,6 +45,16 @@ character — and nothing that fights it. Every "should we add X?" runs through:
 
 ## <a name="checklist"></a>Checklist — "faithful"
 
+> **How you achieve everything below:** the
+> [spec-driven, oracle-gated process](./spec-driven-development.md). Faithfulness
+> is not a vibe you check at the end — it's the **percentage of the game's
+> Oracle Ledger that is green**. The items here are the human-judged remainder
+> on top of a green ledger, not a substitute for it.
+
+- [ ] **An Oracle Ledger exists** (`src/games/<game>/test-design/TEST_DESIGN.md`),
+      traces every spec section, and **every non-`human` row is green** —
+      `npm run test:game -- <game>` and `fuzz:game` pass clean. *(This is the
+      gate; the rest is the human ~10%.)*
 - [ ] Enemy/AI behavior matches the original's logic, not just its sprites.
 - [ ] Colors come from the game's own `palette.ts` and read true to the arcade.
 - [ ] Renders at the game's authentic native resolution.

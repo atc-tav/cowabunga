@@ -44,7 +44,11 @@ Two agents, one repo:
 
 - **The builder** ships games — new mechanics, new levels, new games — one
   vertical slice at a time, in the order set by `CLAUDE.md` (Pac-Man → Galaga →
-  Donkey Kong → Mario Bros. → Dig Dug).
+  Donkey Kong → Mario Bros. → Dig Dug). The builder works the
+  [spec-driven, oracle-gated process](./spec-driven-development.md): **lint the
+  spec → build the Oracle Ledger → implement the slice to green.** No slice is
+  "built" until its ledger rows are green — code without a ledger is the habit
+  that produced our fake clones.
 - **The polisher** makes the shipped games *feel* good — juice, taste,
   reproducibility — and never rewrites in-flight game logic. Polish **layers on
   top of** the shared primitives; it composes, it doesn't refactor someone
@@ -72,6 +76,11 @@ this is the tie-breaker:
 
 ## Definition of done (the short version)
 
-A game slice is "done feeling good" when every entry in these four checklists
-passes: [Feel](./fun-and-feel.md#checklist), [RL-safe](./rl-dojo-readiness.md#checklist),
+**The gate, first:** a game slice isn't done until its
+[Oracle Ledger](./spec-driven-development.md) traces the spec and every
+non-`human` row is green (`npm run test:game -- <game>` + `fuzz:game` clean).
+That is faithfulness, made measurable.
+
+**Then the human ~10%:** every entry in these four checklists passes —
+[Feel](./fun-and-feel.md#checklist), [RL-safe](./rl-dojo-readiness.md#checklist),
 [Faithful](./faithfulness.md#checklist), [Modular](./modularity.md#checklist).
