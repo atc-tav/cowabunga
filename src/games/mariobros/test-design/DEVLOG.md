@@ -6,6 +6,70 @@ settled questions. Pairs with `TEST_DESIGN.md` (the ledger) in this folder.
 
 ---
 
+## 2026-06-23 — Steps 2–3: stood up the test surface and drove the behavioral reds green
+
+**What I did.** Implemented Step 2 (test surface) and Step 3 (the clear
+behavioral-fix targets) for Mario Bros., then verified with the real harness.
+
+**Step 2 — test surface (follows Arkanoid).** Added
+`MarioBrosScene.buildTestSurface()` (registered under `import.meta.env.DEV`),
+`src/games/mariobros/testing/scenarios.mjs` (17 scenarios), and `fuzz.mjs`. The
+snapshot is flat JSON (score/lives/phase/flow/mode/combo, `players[]`,
+`enemies[{kind,x,y,state,dir,bumps,grounded,last,stun,effSpeed}]`,
+`targetsRemaining`, `coinCount`, `powUsesRemaining`, bonus fields, iced count,
+…). Hooks cover the ledger §6 seams plus what the scenarios need
+(`beginPlay`, `skipToPhase`, `spawnEnemy`, `flipEnemy`, `kickEnemy`,
+`activatePow`, `setScore`, `checkExtraLife`, `placePlayer`, `resolveContact`,
+`collectAllCoins`, `makeLast`, `setEnemyAirborne`, `stepHorizontal`, …).
+Invariants coded: score≥0, pow-uses∈[0,3], ≤3 iced platforms, enemies in bounds,
+flipped⊕shell, **fly-last-no-boost**, and the **turtle<fly<crab** speed ordering.
+
+**Step 3 — behavioral fixes (only these + the surface touched game code).**
+- Scoring: kick = **800 flat** for all kinds (`KICK_SCORE`; crab 1200→800, fly
+  1000→800); coin **300→800**; bonus all-coins **5000 first / 8000 subsequent**;
+  combo replaced the `2^(n-1)` doubling with a pure `comboScore(n)=min(800n,3200)`
+  (additive +800, capped 3200); **extra life at 20,000** wired through
+  `Player.grantExtraLifeIfDue` (one-shot, US default) and awarded on kick + coin.
+- Enemies: retuned to **turtle 36 < fly 40 < crab 46** (was 42/40/38, inverted);
+  added `lastBoost` so the last-enemy speed multiplier applies to turtle/crab
+  only — the **Fighterfly keeps its pace as last** (§0 #6); added
+  `groundedFlipOnly` so a mid-air fly bump is a no-op (§4.3).
+- Stomp: removed `canStomp`/stomp-kills-enemy — landing on an un-flipped enemy
+  now **kills the player**, enemy survives (§3.1).
+- POW: now **re-flips an already-flipped grounded enemy upright** via `recover()`
+  (§3.3 caution); still skips airborne enemies.
+- Player: **fixed jump arc** — extracted `applyHorizontal`; horizontal `vx` is
+  locked while airborne (no mid-air steering). Removed `AIR_ACCEL` use.
+
+**Verification.** `npm run build` green (tsc strict, no `any`);
+`npm run test:game -- mariobros` 55/55 checks; `npm run fuzz:game -- mariobros`
+clean (no invariant violations / exceptions); `npm test` (vitest) 9/9.
+
+**Tally moved 🟢 36 / 🟡 7 / 🔴 56 / human 4 / n/a 1.** Every Step-3 target row is
+now 🟢 and traced to a named scenario or coded invariant.
+
+**Honest reds left.** The remaining 🔴 are **untested** behaviors the harness does
+not yet exercise (momentum, gap-fall/edge traversal, screen-wrap of player +
+enemies, bottom-pipe recycle, slipice/icicle state machines, head-on reverse,
+spawn stagger/alternation, sprite/TX/color rows, phases 11–14 + looping) and the
+**deferred** rows (Mode A/B, phase 12/14 rosters, bonus-phase cadence,
+color-variant palette-swap). None were in scope this session.
+
+**Deferred — left red with a note (per the task).** Mode A/B difficulty
+(`mode/A-B`, `const/flip-recovery-*` already human); phase 12/14 rosters +
+bonus-phase cadence (`phase/roster-12/13-bonus/14`, `phase/count`, loop rows —
+§0 leaves cadence MED-confidence and 12/14 "Mixed" under-specified); color-variant
+palette-swap sprites (`sprite/color-variant` — aesthetic/human). The 2P
+solo/coop/versus modes were preserved and still pass the fuzz soak.
+
+**Spec ambiguity hit.** `scoring/bonus-all-subsequent` (8000) — the value is fixed
+in code, but the scenario only exercises the **first** bonus stage (5000); driving
+a *subsequent* stage needs phase-completion plumbing I left out of scope, so that
+row is 🟡 (value correct, second-stage path not yet exercised). `slipice/non-target`
+is 🟡 for the same reason (separation proven; full kill-then-clear scenario TODO).
+
+---
+
 ## 2026-06-24 — Reconciled the ledger to the authoritative §0 (authentic-arcade research pass)
 
 **What I did.** The spec gained an authoritative **§0 Authentic-Arcade

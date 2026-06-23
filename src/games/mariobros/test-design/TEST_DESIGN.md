@@ -5,8 +5,12 @@
 > research pass) and the inline fixes it references. §0 overrides any conflicting
 > inline value; rows below now trace to the corrected spec. The 2026-06-23 open
 > questions are recorded in `DEVLOG.md` and have all been settled by §0 (see the
-> 2026-06-24 DEVLOG entry). This is the **definition of done**: the game is
-> faithful when every non-`human`, non-`n/a` row is 🟢.
+> 2026-06-24 DEVLOG entry). **Steps 2–3 executed 2026-06-23** (this session): the
+> test surface now exists (`MarioBrosScene.buildTestSurface()` +
+> `testing/scenarios.mjs` + `testing/fuzz.mjs`) and the clear behavioral reds were
+> driven green and **verified** by `npm run test:game -- mariobros` (17 scenarios,
+> 55 checks) + `npm run fuzz:game -- mariobros` (clean). This is the **definition
+> of done**: the game is faithful when every non-`human`, non-`n/a` row is 🟢.
 >
 > **Faithfulness = % of this ledger that is green** (excluding `human` and `n/a`
 > out-of-scope rows). Status reflects the **current** implementation
@@ -93,11 +97,22 @@ Every section of `specs/mario-bros-arcade.md` and where it is covered below.
 ## 2. The Oracle Ledger (every row traces to the spec)
 
 Status legend: 🟢 correct & verifiable · 🟡 value/behavior matches the corrected
-spec but is **unverifiable today** (no `buildTestSurface()` exists) · 🔴 wrong,
-missing, or divergent from the corrected spec · `human` feel-tuned (human-judged)
-· `n/a` out of faithfulness scope (non-spec extra; see §0). **A 🟡 is not a pass**
-— it becomes 🟢 only once the test surface verifies it — but it is *not* a real
-bug, so it is tracked separately from the 🔴 fix list.
+spec but is **not yet verified by a scenario/invariant** · 🔴 wrong, missing, or
+divergent / unverified-and-untested · `human` feel-tuned (human-judged) · `n/a`
+out of faithfulness scope (non-spec extra; see §0). **A 🟡 is not a pass** — it
+becomes 🟢 only once a real check verifies it — but it is *not* a known bug, so it
+is tracked separately from the 🔴 fix list.
+
+**Tally (2026-06-23, after Steps 2–3): 🟢 36 · 🟡 7 · 🔴 56 · human 4 · n/a 1.**
+The Step-3 behavioral-fix targets are all 🟢 and verified by
+`npm run test:game -- mariobros` (17 scenarios / 55 checks) + a clean
+`npm run fuzz:game -- mariobros` soak. The remaining 🔴 are **untested** rows
+(plausible-in-code behaviors the harness does not yet exercise: momentum,
+traversal/gaps, screen-wrap, recycle, slipice/icicle state machines, head-on
+reverse, spawn stagger, sprite/TX/color, phases 11–14 & looping) plus the
+explicitly **deferred** rows (Mode A/B, phase 12/14 rosters, bonus-phase cadence,
+color-variant palette-swap) — none were in this session's scope. They are honest
+red: not yet proven, so not green.
 
 ### Constants (§9 PHYSICS, §3, §6) → unit rows
 
@@ -113,9 +128,9 @@ bug, so it is tracked separately from the 🔴 fix list.
 | `const/enemy-base-crab` | §9 `sidestepper:1.4` | unit | crab base speed equals spec | 🔴 |
 | `const/enemy-base-fly` | §9 `fighterFly:1.1` | unit | fly horizontal speed equals spec | 🔴 |
 | `const/enemy-base-slipice` | §9 `slipice:0.6` | unit | slipice speed equals spec | 🔴 |
-| `const/enrage-ordering` | §0 #8 (per-enemy §4 governs; global §9 1.6× removed) | invariant | for each enemy, `enraged speed > normal speed` (exact multiplier feel-tuned). Current: crab `CRAB_ANGRY_SPEED=74 > CRAB_SPEED=38` ✓; turtle `SHELL_RECOVER_SPEED=60 > SHELL_SPEED=42` ✓ | 🟡 (holds in code; unverifiable) |
+| `const/enrage-ordering` | §0 #8 (per-enemy §4 governs; global §9 1.6× removed) | invariant | for each enemy, `enraged speed > normal speed` (exact multiplier feel-tuned). crab `CRAB_ANGRY_SPEED=74 > CRAB_SPEED=46` ✓; turtle `SHELL_RECOVER_SPEED=60 > SHELL_SPEED=36` ✓ | 🟢 (speed-ordering invariant verified; enrage>normal holds in code) |
 | `const/enrage-exact` | §0 #8 (LOW conf — exact numbers undocumented) | human | exact enraged-speed feel per enemy is human-tuned (no authentic source); only the ordering above is asserted | human |
-| `const/last-mult` | §0 #6/#8 (per-enemy §4 governs; global §9 2.2× removed) | invariant | last-enemy speed > enemy's normal speed for turtle & crab; **fly is exempt** (does NOT speed up as last — §0 #6). Current `ENEMY_LAST_MULT=2.0` applied uniformly (incl. fly) → see `enemy/fly-not-last-fast` | 🔴 (fly wrongly sped up) |
+| `const/last-mult` | §0 #6/#8 (per-enemy §4 governs; global §9 2.2× removed) | invariant | last-enemy speed > enemy's normal speed for turtle & crab; **fly is exempt** (does NOT speed up as last — §0 #6). `effSpeed` now gates the last boost on `kind.lastBoost` (turtle/crab only). | 🟢 (verified: `fly-last-no-boost` invariant + `fly as last enemy keeps its pace` scenario) |
 | `const/flip-recovery-A` | §0 #4 (~5 s Mode A; exact frames feel-tuned) | human (loose bound) | Mode-A flip recovery sits in the **4–6 s range** (authentic ≈5 s; the old 20 000 ms was the *bonus-stage* time limit, not recovery). Current `SHELL_STUN_MS=4200` is in band. Exact frame count is feel-tuned | human |
 | `const/flip-recovery-B` | §0 #4/#7 (Mode B shorter; exact undocumented) | human | Mode-B flip recovery is **shorter than Mode A** (must kick sooner); exact value feel-tuned. No A/B mode exists yet (single 4 200 ms stun) | human |
 | `const/pow-uses` | §3.3 "3 per phase" | unit | `POW_USES === 3` | 🟢 |
@@ -127,23 +142,23 @@ bug, so it is tracked separately from the 🔴 fix list.
 
 | ID | Spec ref | Oracle | Assertion (state-based) | Status |
 |----|----------|--------|--------------------------|:--:|
-| `scoring/flip` | §3.4 + §0 #1 "Flip enemy → **0**; points only on the kick" | unit+scenario | bump a grounded target enemy from below → score increases by **exactly 0**; enemy enters `flipped`. Then the kick scores (see `scoring/kick`) | 🟡 (value now CORRECT — code awards 0 on flip; unverifiable until surface exists) |
-| `scoring/kick` | §3.4 "Kick enemy off platform → 800" | unit+scenario | run into a flipped enemy → score increases by **exactly 800** (base, combo=1). Holds for turtle, crab, fly. | 🔴 (turtle 800, crab `CRAB_SCORE=1200`, fly `FLY_SCORE=1000` — must all be 800) |
+| `scoring/flip` | §3.4 + §0 #1 "Flip enemy → **0**; points only on the kick" | unit+scenario | bump a grounded target enemy from below → score increases by **exactly 0**; enemy enters `flipped`. Then the kick scores (see `scoring/kick`) | 🟢 (verified: `flip awards 0` scenario) |
+| `scoring/kick` | §3.4 "Kick enemy off platform → 800" | unit+scenario | run into a flipped enemy → score increases by **exactly 800** (base, combo=1). Holds for turtle, crab, fly. | 🟢 (verified: `kick awards 800 for every enemy kind`; `CRAB_SCORE`/`FLY_SCORE` now `KICK_SCORE=800`) |
 | `scoring/slipice` | §3.4 + §0 #9 "Hit Slipice → 500 *(undocumented)*" | unit+scenario | bump a Slipice from below → score += **exactly 500**; Slipice removed. **Value is UNVERIFIED against any source (§0 #9) — flag for human**: keep 500 as the placeholder but do not treat green here as faithfulness evidence | 🟡 (code `SLIPICE_SCORE=500` matches the placeholder; both value-authenticity and runtime are unverified) |
-| `scoring/coin` | §3.4 "Collect bonus coin → 800" | unit+scenario | collect one bonus coin → score += **exactly 800** | 🔴 (current `COIN_SCORE=300`) |
-| `scoring/bonus-all-first` | §3.4 + §0 #3 "all coins, 1st bonus stage → **5,000**" | unit+scenario | collect all 10 coins in the **first** bonus stage → +5 000 beyond the 800/coin | 🔴 (current `BONUS_COMPLETE_FIRST=3000` — must be 5 000) |
-| `scoring/bonus-all-subsequent` | §3.4 + §0 #3 "all coins, 2nd bonus stage onward → **8,000**" | unit+scenario | collect all 10 coins in a **subsequent** bonus stage → +8 000 beyond the 800/coin | 🔴 (current `BONUS_COMPLETE_REPEAT=5000` — must be 8 000) |
-| `scoring/combo-additive` | §3.4 + §0 #2 "additive +800: 800/1600/2400/3200, capped at 3200 (NOT doubling)" | unit+scenario | kicking enemies in quick succession yields deltas **800, 1600, 2400, 3200, 3200…** (each +800, capped at 3200); a kick after the window resets to 800 | 🔴 (code doubles: `registerKill()` returns `Math.pow(2, n-1)` → 800/1600/3200/6400 — wrong shape AND uncapped) |
-| `scoring/extra-life` | §3.4 + §1 + §0 #5 "extra life at 20,000 (US DIP default)" | unit+scenario | crossing 20 000 points grants exactly **+1 life**, once (20 000 confirmed authentic — §0 #5) | 🔴 (not implemented anywhere — real bug) |
+| `scoring/coin` | §3.4 "Collect bonus coin → 800" | unit+scenario | collect one bonus coin → score += **exactly 800** | 🟢 (verified: `coins award 800 each` — `COIN_SCORE=800`) |
+| `scoring/bonus-all-first` | §3.4 + §0 #3 "all coins, 1st bonus stage → **5,000**" | unit+scenario | collect all 10 coins in the **first** bonus stage → +5 000 beyond the 800/coin | 🟢 (verified: `coins...5000 full first bonus` — 10×800+5000 = 13000; `BONUS_COMPLETE_FIRST=5000`) |
+| `scoring/bonus-all-subsequent` | §3.4 + §0 #3 "all coins, 2nd bonus stage onward → **8,000**" | unit+scenario | collect all 10 coins in a **subsequent** bonus stage → +8 000 beyond the 800/coin | 🟡 (value fixed: `BONUS_COMPLETE_REPEAT=8000`; first-stage path verified, subsequent-stage path not yet exercised by a scenario) |
+| `scoring/combo-additive` | §3.4 + §0 #2 "additive +800: 800/1600/2400/3200, capped at 3200 (NOT doubling)" | unit+scenario | kicking enemies in quick succession yields deltas **800, 1600, 2400, 3200, 3200…** (each +800, capped at 3200); a kick after the window resets to 800 | 🟢 (verified: `combo is additive +800 capped at 3200` + `combo resets to 800 after the window`; pure `comboScore(n)=min(800n,3200)` replaces the doubling) |
+| `scoring/extra-life` | §3.4 + §1 + §0 #5 "extra life at 20,000 (US DIP default)" | unit+scenario | crossing 20 000 points grants exactly **+1 life**, once (20 000 confirmed authentic — §0 #5) | 🟢 (verified: `extra life awarded once crossing 20,000` — +1 at 20k, one-shot via `Player.grantExtraLifeIfDue`) |
 
 ### Player movement (§3.1) → rows
 
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
 | `move/momentum` | §3.1 + ✅ Momentum Physics | scenario | at full speed, release direction → `vx` decays by friction each frame (not 0 next frame); player slides 1–2 tile widths before stopping | 🔴 (friction model present; unverifiable) |
-| `move/fixed-jump-arc` | §3.1 "Fixed arc (cannot adjust mid-air)" | scenario | jump direction is fixed at takeoff; horizontal input mid-air does not change the arc beyond air-accel within spec | 🔴 (current build applies `AIR_ACCEL` mid-air — verify vs "cannot adjust"; see Q4) |
+| `move/fixed-jump-arc` | §3.1 "Fixed arc (cannot adjust mid-air)" | scenario | jump direction is fixed at takeoff; horizontal input mid-air does not change `vx` at all | 🟢 (verified: `fixed jump arc — airborne input does not change vx`; air-accel path removed — `applyHorizontal` only accelerates while grounded) |
 | `move/fall-no-damage` | §3.1 "fall from any height without damage" | scenario | drop the player from the top platform to the floor → no life lost | 🔴 |
-| `stomp/kills-player` | §3.1 "Jumping onto an enemy from above causes the **player** to lose a life" + §10 | scenario | land on top of an un-flipped turtle/crab/fly → **player** loses a life; enemy survives | 🔴 (current build STOMPS turtle & fly — kills the enemy; crab harmless-bounce. Direct contradiction.) |
+| `stomp/kills-player` | §3.1 "Jumping onto an enemy from above causes the **player** to lose a life" + §10 | scenario | land on top of an un-flipped turtle/crab/fly → **player** loses a life; enemy survives | 🟢 (verified: `stomping an un-flipped enemy kills the player` for all 3 kinds; `canStomp`/stomp-kills-enemy removed) |
 | `move/no-platform-drop` | §3.1 "cannot drop through platforms" | invariant | no input causes the player to pass downward through a platform surface | 🔴 |
 
 ### Flip / defeat sequence (§3.2) → rows
@@ -152,18 +167,18 @@ bug, so it is tracked separately from the 🔴 fix list.
 |----|----------|--------|-----------|:--:|
 | `flip/from-below-only` | §3.2 Step 1 | scenario | bump the platform directly under a grounded target enemy → it flips; bumping a platform with no enemy on it does nothing | 🔴 |
 | `flip/recovery-enrage` | §3.2 + ✅ Flip Recovery + §0 #4 | scenario | leave a flipped enemy un-kicked until `flipTimer` expires (~5 s Mode A) → it stands up, speed increases, color/state = `enraged`. (Exact timer feel-tuned — `const/flip-recovery-A`.) | 🟡 (recovery behavior present, `SHELL_STUN_MS=4200` in the 4–6 s band; unverifiable) |
-| `flip/last-immediate-superfast` | §3.2 ✅ Flip Recovery edge case + §0 #6 | scenario | when only 1 **turtle or crab** remains → it immediately enters super-fast (`last`) state regardless of flip state. **A last-enemy Fighterfly must NOT speed up** (§0 #6) — covered by `enemy/fly-not-last-fast` | 🔴 (`updateLastEnemy` calls `makeLast()` on ANY last enemy incl. fly; no turtle/crab gate) |
-| `enemy/speed-ordering` | §0 #8 (per-enemy §4 governs; global §9 removed) | invariant | normal walking-speed ordering holds: **Shellcreeper (slowest) < Fighterfly < Sidestepper (fastest)**, and for each enemy enraged > normal. Exact numbers feel-tuned. Current: turtle 42, fly 40, crab 38 → ordering is **inverted** (crab slowest, turtle fastest) | 🔴 (ordering violated — see `enemy/crab-faster`) |
+| `flip/last-immediate-superfast` | §3.2 ✅ Flip Recovery edge case + §0 #6 | scenario | when only 1 **turtle or crab** remains → it immediately enters super-fast (`last`) state regardless of flip state. **A last-enemy Fighterfly must NOT speed up** (§0 #6) — covered by `enemy/fly-not-last-fast` | 🟢 (verified: `fly as last enemy keeps its pace` also asserts turtle last > normal; speed boost gated on `kind.lastBoost`) |
+| `enemy/speed-ordering` | §0 #8 (per-enemy §4 governs; global §9 removed) | invariant | normal walking-speed ordering holds: **Shellcreeper (slowest) < Fighterfly < Sidestepper (fastest)**, and for each enemy enraged > normal. Exact numbers feel-tuned. Now: turtle 36 < fly 40 < crab 46 | 🟢 (verified: `normal speed ordering turtle < fly < crab` scenario + `speed-ordering` invariant) |
 | `enemy/speed-exact` | §0 #8 (LOW conf — exact numbers undocumented) | human | exact per-enemy speed/enrage/last multipliers are human-tuned for feel; only the ordering invariant above is automatable | human |
 
 ### POW block (§3.3) → rows
 
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
-| `pow/uses-counter` | §3.3 + ✅ POW Logic | scenario | `powUsesRemaining` starts at 3; each activation decrements by 1; at 0 the POW sprite is removed | 🔴 (logic present; unverifiable) |
-| `pow/flips-grounded` | §3.3 "all enemies touching a platform/floor are flipped" | scenario | with N grounded active enemies, one POW hit → all N become `flipped` simultaneously | 🔴 |
-| `pow/skips-airborne` | §3.3 + ✅ POW Logic ("does NOT affect airborne Fighter Fly") | scenario | a Fighter Fly mid-hop during a POW hit is **not** flipped (stays active) | 🔴 (code checks `onGround` — likely correct; unverifiable) |
-| `pow/reflips-flipped-upright` | §3.3 "if already flipped, hitting POW flips it back upright" | scenario | hit POW while an enemy is already flipped → that enemy returns to active (possibly faster) | 🔴 (current `activatePow` only affects `isActive` enemies — flipped ones are untouched; divergence) |
+| `pow/uses-counter` | §3.3 + ✅ POW Logic | scenario | `powUsesRemaining` starts at 3; each activation decrements by 1; at 0 the POW sprite is removed | 🟢 (verified: `POW disappears after 3 uses`; `pow-uses-range` invariant) |
+| `pow/flips-grounded` | §3.3 "all enemies touching a platform/floor are flipped" | scenario | with N grounded active enemies, one POW hit → all N become `flipped` simultaneously | 🟢 (verified: `POW flips grounded enemies, skips airborne, counts down`) |
+| `pow/skips-airborne` | §3.3 + ✅ POW Logic ("does NOT affect airborne Fighter Fly") | scenario | a Fighter Fly mid-hop during a POW hit is **not** flipped (stays active) | 🟢 (verified: airborne fly in the POW scenario is not flipped) |
+| `pow/reflips-flipped-upright` | §3.3 "if already flipped, hitting POW flips it back upright" | scenario | hit POW while an enemy is already flipped → that enemy returns to active (possibly faster) | 🟢 (verified: `POW re-flips an already-flipped enemy upright`; `activatePow` now calls `recover()` on flipped grounded enemies) |
 
 ### Enemies — Shellcreeper (§4.1)
 
@@ -178,9 +193,9 @@ bug, so it is tracked separately from the 🔴 fix list.
 
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
-| `enemy/crab-two-hit` | §4.2 + ✅ Two-Hit Mechanic | scenario | hit 1 → crab `hitPoints` 2→1, becomes enraged + faster, **not** flipped; hit 2 → flipped | 🔴 (logic present; unverifiable) |
-| `enemy/crab-recovery-no-reset` | §4.2 ✅ Two-Hit ("recovering does NOT reset hitPoints to 2") | scenario | after flip + recovery, the crab needs only **1** more hit to flip again (not 2) | 🔴 (`recover()` sets bumps to flipsToStun-1=1 → 1 hit needed; likely correct, unverifiable) |
-| `enemy/crab-faster` | §4.2 + §0 #8 "Sidestepper is the fastest; Shellcreeper slowest" | unit | crab base speed > turtle base speed (and > fly) | 🔴 (`CRAB_SPEED=38 < SHELL_SPEED=42` — crab is the **slowest**; real ordering bug, §0 #8) |
+| `enemy/crab-two-hit` | §4.2 + ✅ Two-Hit Mechanic | scenario | hit 1 → crab `hitPoints` 2→1, becomes enraged + faster, **not** flipped; hit 2 → flipped | 🟢 (verified: `crab takes two hits to flip; recovery keeps one`) |
+| `enemy/crab-recovery-no-reset` | §4.2 ✅ Two-Hit ("recovering does NOT reset hitPoints to 2") | scenario | after flip + recovery, the crab needs only **1** more hit to flip again (not 2) | 🟢 (verified: same scenario — one bump re-flips after recovery) |
+| `enemy/crab-faster` | §4.2 + §0 #8 "Sidestepper is the fastest; Shellcreeper slowest" | unit | crab base speed > turtle base speed (and > fly) | 🟢 (verified: `CRAB_SPEED=46 > FLY_SPEED=40 > SHELL_SPEED=36`; speed-ordering scenario + invariant) |
 | `enemy/crab-last-blue` | §4.2 + §0 #6 "Sidestepper speeds up as last enemy" | scenario | last crab enters super-fast (`last`) state and is faster than its normal speed (exact multiplier feel-tuned — §0 #8) | 🟡 (crab does enter `makeLast()`; behavior present, exact value feel-tuned; unverifiable) |
 
 ### Enemies — Fighter Fly (§4.3)
@@ -188,10 +203,10 @@ bug, so it is tracked separately from the 🔴 fix list.
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
 | `enemy/fly-hops` | §4.3 / §7.3 "moves by hopping 2–3 tiles" | scenario | the fly's vertical velocity is periodically launched (hops), not continuous walking | 🔴 (hop logic present; unverifiable) |
-| `enemy/fly-grounded-only-flip` | §4.3 + ✅ Jump-Only Flip | scenario | bump the platform under an **airborne** fly → no effect (stays active); bump while grounded → flips | 🔴 (current `bump()` does NOT check grounded; a mid-air fly CAN be flipped → divergence) |
+| `enemy/fly-grounded-only-flip` | §4.3 + ✅ Jump-Only Flip | scenario | bump the platform under an **airborne** fly → no effect (stays active); bump while grounded → flips | 🟢 (verified: `fly is only flippable while grounded`; `bump()` now no-ops when `groundedFlipOnly && !onGround`) |
 | `enemy/fly-quick-recovery` | §4.3 "gets back up very quickly" | scenario | a flipped fly's stun duration is shorter than a turtle's | 🔴 (current build uses same `SHELL_STUN_MS` for all; divergence) |
 | `enemy/fly-no-enrage` | §4.3 "no enraged faster state" | scenario | a recovered fly returns to normal speed (no enrage tier) | 🟡 (fly `angrySpeed===walkSpeed`, no enrage tier; unverifiable) |
-| `enemy/fly-not-last-fast` | §4.3 + §0 #6 "Fighterfly does NOT speed up as last enemy" | scenario+invariant | when a Fighterfly is the last enemy on screen its speed/hop-rate is **unchanged** from its normal pace (no last-enemy boost — unlike turtle/crab). The `last` color/state may still render, but `effSpeed` must not multiply | 🔴 (`makeLast()` applies to the fly and `effSpeed` multiplies by `ENEMY_LAST_MULT=2.0` for all kinds — fly wrongly accelerates; §0 #6) |
+| `enemy/fly-not-last-fast` | §4.3 + §0 #6 "Fighterfly does NOT speed up as last enemy" | scenario+invariant | when a Fighterfly is the last enemy on screen its speed/hop-rate is **unchanged** from its normal pace (no last-enemy boost — unlike turtle/crab). The `last` color/state may still render, but `effSpeed` must not multiply | 🟢 (verified: `fly as last enemy keeps its pace` + `fly-last-no-boost` invariant; `effSpeed` gates on `kind.lastBoost`, fly=false) |
 | `enemy/fly-cross-level` | §4.3 "can hop to a different platform level" | scenario | over many hops a fly can land on a different platform row than it started | 🔴 |
 
 ### Enemies — Slipice (§4.4)
@@ -203,7 +218,7 @@ bug, so it is tracked separately from the 🔴 fix list.
 | `slipice/three-platforms-max` | §4.4 "three platforms can be iced; then no more spawn" | scenario | once all three non-floor platforms are iced, no further Slipice spawns this phase | 🔴 (`SLIPICE_PER_PHASE=3` caps spawns; needs the 3-iced condition too) |
 | `slipice/one-hit-kill` | §4.4 "1 hit, no kick, 500 pts" | scenario | one bump from below removes a Slipice and scores 500; no kick step | 🔴 |
 | `slipice/touch-kills-player` | §4.4 "touching Slipice loses a life" | scenario | player contacts an un-flipped Slipice → player loses a life | 🔴 |
-| `slipice/non-target` | §4.4 + ✅ Slipice Non-Target | invariant | killing a Slipice never decrements the phase's `targetsRemaining`; phase clears regardless of Slipice presence | 🔴 |
+| `slipice/non-target` | §4.4 + ✅ Slipice Non-Target | invariant | killing a Slipice never decrements the phase's `targetsRemaining`; phase clears regardless of Slipice presence | 🟡 (`targetsRemaining()` counts only the `enemies`/`spawnQueue` lists — Slipice lives in a separate `slipices` list and the `Slipice is not a phase-clear target` scenario confirms it never enters them; a full kill-a-slipice-then-clear scenario is still TODO) |
 | `slipice/reverse-on-enemy-only` | §4.4 / §7.4 "reverses only on enemy contact, not the player" | scenario | a Slipice overlapping the player does NOT reverse; overlapping another enemy DOES reverse | 🔴 (logic present; unverifiable) |
 
 ### Icicles (§2.3)
