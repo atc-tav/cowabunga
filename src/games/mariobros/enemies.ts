@@ -6,6 +6,7 @@ import {
   SHELL_H,
   SHELL_SPEED,
   SHELL_RECOVER_SPEED,
+  SHELL_STUN_MS,
   SHELL_PROJECTILE_SPEED,
   SHELL_SPIN_DEG,
   SHELL_GRACE_MS,
@@ -27,6 +28,7 @@ import {
   FLY_HOP_SPEED,
   FLY_GROUND_MS,
   FLY_FRAME_MS,
+  FLY_STUN_MS,
 } from './constants';
 import { COLORS } from './palette';
 import { TX } from './sprites';
@@ -47,6 +49,7 @@ export interface EnemyKind {
   angrySpeed: number; // speed after the first (non-flipping) bump
   recoverSpeed: number;
   flipsToStun: number; // bumps needed to reach the helpless 'flipped' state
+  stunMs: number; // how long it lies flipped before recovering (fly: much shorter)
   groundedFlipOnly: boolean; // only flippable while touching a platform (the fly)
   lastBoost: boolean; // speeds up as the phase's last enemy? (turtle/crab yes, fly NO — §0 #6)
   becomesShell: boolean; // kicked while flipped → sliding projectile (else dies)
@@ -66,6 +69,7 @@ export const KINDS: Record<EnemyKindId, EnemyKind> = {
     angrySpeed: SHELL_SPEED,
     recoverSpeed: SHELL_RECOVER_SPEED,
     flipsToStun: 1,
+    stunMs: SHELL_STUN_MS,
     groundedFlipOnly: false,
     lastBoost: true,
     becomesShell: true,
@@ -81,6 +85,7 @@ export const KINDS: Record<EnemyKindId, EnemyKind> = {
     angrySpeed: CRAB_ANGRY_SPEED,
     recoverSpeed: CRAB_RECOVER_SPEED,
     flipsToStun: 2,
+    stunMs: SHELL_STUN_MS,
     groundedFlipOnly: false,
     lastBoost: true,
     becomesShell: false,
@@ -97,6 +102,7 @@ export const KINDS: Record<EnemyKindId, EnemyKind> = {
     angrySpeed: FLY_SPEED,
     recoverSpeed: FLY_RECOVER_SPEED,
     flipsToStun: 1,
+    stunMs: FLY_STUN_MS, // recovers very quickly (§4.3) — much shorter than turtle/crab
     groundedFlipOnly: true, // only flippable in its brief grounded window (§4.3)
     lastBoost: false, // the fly does NOT speed up as the last enemy (§0 #6)
     becomesShell: false,
@@ -190,7 +196,7 @@ export class Enemy {
    * last bump flips it (helpless for `stunMs`); earlier ones only anger it
    * (faster). Ignored once flipped or sliding. Returns true if it just flipped.
    */
-  bump(stunMs: number): boolean {
+  bump(stunMs: number = this.kind.stunMs): boolean {
     if (this.state === 'flipped' || this.state === 'shell') {
       return false;
     }
@@ -210,7 +216,7 @@ export class Enemy {
   }
 
   /** Directly flip it for `ms` (a stomped speeding shell, or a POW slam). */
-  flipFor(ms: number): void {
+  flipFor(ms: number = this.kind.stunMs): void {
     this.state = 'flipped';
     this.stun = ms;
   }

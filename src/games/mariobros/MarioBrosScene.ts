@@ -15,7 +15,6 @@ import {
   PLATFORM_THICKNESS,
   BUMP_AMP,
   BUMP_RECOVER,
-  SHELL_STUN_MS,
   SHELL_STOP_WAKE_MS,
   SHELL_BUMP_HOP,
   STOMP_BOUNCE,
@@ -529,7 +528,7 @@ export class MarioBrosScene extends BaseGameScene {
         continue;
       }
       if (e.isActive) {
-        e.bump(SHELL_STUN_MS);
+        e.bump(); // each kind uses its own stun window (fly recovers fast, §4.3)
       } else if (e.isShell) {
         e.bumpHop(SHELL_BUMP_HOP);
       }
@@ -650,7 +649,13 @@ export class MarioBrosScene extends BaseGameScene {
 
   private updateSlipice(delta: number): void {
     const phase = PHASES[this.phaseIndex];
-    if (phase.slipice && this.slipices.length === 0 && this.slipiceCount < SLIPICE_PER_PHASE) {
+    // Once three platforms are iced, no more Slipice spawn for the phase (§4.4).
+    if (
+      phase.slipice &&
+      this.slipices.length === 0 &&
+      this.slipiceCount < SLIPICE_PER_PHASE &&
+      this.icedPlatformCount() < SLIPICE_PER_PHASE
+    ) {
       this.slipiceSpawnTimer -= delta;
       if (this.slipiceSpawnTimer <= 0) {
         this.spawnSlipice();
@@ -688,6 +693,10 @@ export class MarioBrosScene extends BaseGameScene {
 
   /** Freeze the (non-ground) platform a Slipice has reached the centre of. */
   private tryIce(s: Slipice): boolean {
+    // Hard cap: at most three platforms iced per phase (§4.4) — never a 4th.
+    if (this.icedPlatformCount() >= SLIPICE_PER_PHASE) {
+      return false;
+    }
     const seg = s.floorSeg;
     if (!seg || seg === this.groundSeg) {
       return false;
@@ -811,7 +820,7 @@ export class MarioBrosScene extends BaseGameScene {
         continue; // POW never affects airborne enemies (e.g. a mid-hop fly)
       }
       if (e.isActive) {
-        e.flipFor(SHELL_STUN_MS);
+        e.flipFor(); // per-kind stun window
       } else if (e.isFlipped) {
         // Spec §3.3 caution: an already-flipped enemy is flipped back upright
         // (re-activated, possibly faster).
@@ -1084,6 +1093,8 @@ export class MarioBrosScene extends BaseGameScene {
     this.clearIcicles();
     this.clearCoins();
     this.spawnQueue = [];
+    this.bonusCompletions = 0;
+    this.bonusTimer = 0;
     this.powUses = POW_USES;
     this.drawPow();
     this.floors.forEach((f) => (f.iced = false));
@@ -1137,6 +1148,7 @@ export class MarioBrosScene extends BaseGameScene {
             y: Math.round(e.body.y),
             state: this.enemyState(e),
             dir: e.dir,
+            vy: Math.round(e.body.vy),
             bumps: e.bumpCount,
             grounded: e.grounded,
             last: e.last,
@@ -1147,8 +1159,21 @@ export class MarioBrosScene extends BaseGameScene {
           targetsRemaining: this.targetsRemaining(),
           spawnQueueLength: this.spawnQueue.length,
           slipiceCount: this.slipices.length,
+          slipices: this.slipices.map((s) => ({
+            x: Math.round(s.body.x),
+            y: Math.round(s.body.y),
+            dir: s.dir,
+            // which non-ground floor (by index in FLOORS) it's standing on, or -1
+            floorIndex: this.floors.findIndex((f) => f.seg === s.floorSeg),
+          })),
           icedPlatforms: this.floors.filter((f) => f.iced).length,
           icicleCount: this.icicles.length,
+          icicles: this.icicles.map((ic) => ({
+            x: Math.round(ic.sprite.x),
+            y: Math.round(ic.sprite.y),
+            state: ic.state,
+            lethal: ic.lethal,
+          })),
           coinCount: this.coins.length,
           bonusActive: this.flow.state === 'bonus',
           bonusTimer: Math.round(this.bonusTimer),
@@ -1206,14 +1231,14 @@ export class MarioBrosScene extends BaseGameScene {
         setEnemyState: (i: number, state: 'walk' | 'angry' | 'flipped' | 'shell') => {
           const e = this.enemies[i];
           if (!e) return;
-          if (state === 'flipped') e.flipFor(SHELL_STUN_MS);
+          if (state === 'flipped') e.flipFor();
           else if (state === 'shell') e.kick(1, 0);
           else e.recover();
         },
         // --- defeat sequence --------------------------------------------
         flipEnemy: (i: number) => {
           const e = this.enemies[i];
-          return e ? e.bump(SHELL_STUN_MS) : false;
+          return e ? e.bump() : false;
         },
         kickEnemy: (i: number, playerIdx: number) => {
           const e = this.enemies[i];
@@ -1308,9 +1333,99 @@ export class MarioBrosScene extends BaseGameScene {
           p.applyHorizontal(ms / 1000, dir, 1);
           return p.vxDebug;
         },
+        // Full deterministic player physics step (gravity + move + wrap + bump).
+        // `dir`: -1/0/1 held horizontal. Returns the post-step player snapshot.
+        stepPlayer: (playerIdx: number, ms: number, dir: number) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          p.stepPhysics(ms, this.playerFloors(), dir, this.iceScaleFor(p));
+          // Surface a head-bump immediately (bumps drive flips/POW); also apply it.
+          if (p.alive) this.handlePlayerBump(p, playerIdx);
+          return {
+            x: Math.round(p.body.x),
+            y: Math.round(p.body.y),
+            vx: Math.round(p.vxDebug * 100) / 100,
+            onGround: p.body.onGround,
+            feet: Math.round(p.body.feet),
+            alive: p.alive,
+            lives: p.lives.count,
+          };
+        },
+        setPlayerVy: (playerIdx: number, vy: number) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          p.body.vy = vy;
+        },
+        // --- enemy / traversal reads ------------------------------------
+        enemyFloorIndex: (i: number) => {
+          const e = this.enemies[i];
+          return e ? this.floors.findIndex((f) => f.seg === e.floorSeg) : -1;
+        },
+        runEnemyBounds: () => this.handleEnemyBounds(),
+        runEnemyCollisions: () => this.handleEnemyCollisions(),
+        // --- slipice ----------------------------------------------------
+        spawnSlipice: (x: number, dir: 1 | -1, floorIndex?: number) => {
+          const seg = floorIndex !== undefined ? this.floors[floorIndex]?.seg : undefined;
+          const feetY = seg ? seg.y1 : topPipeSpawns()[0].feetY;
+          const s = new Slipice(this, x, feetY - SLIPICE_H / 2, dir ?? 1);
+          s.body.onGround = true;
+          s.floorSeg = seg ?? null;
+          this.slipices.push(s);
+          return this.slipices.length - 1;
+        },
+        updateSlipice: (ms: number) => this.updateSlipice(ms),
+        bumpSlipice: (i: number) => {
+          const s = this.slipices[i];
+          if (s) this.killSlipice(s, this.players[0]);
+        },
+        slipiceTouchesPlayer: (playerIdx: number) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          return this.touchedSlipice(p);
+        },
+        // The exact per-frame lethal resolution from updatePlaying: enemy contact
+        // OR slipice OR a falling icicle kills the player. Returns true on death.
+        runLethalChecks: (playerIdx: number) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          if (
+            p.alive &&
+            !p.safe &&
+            (this.resolveEnemyContact(p, playerIdx) || this.touchedSlipice(p) || this.touchedIcicle(p))
+          ) {
+            p.die();
+            return true;
+          }
+          return false;
+        },
+        // --- icicle -----------------------------------------------------
+        spawnIcicle: (x: number) => {
+          const a = icicleAnchors().find((p) => p.x === x) ?? icicleAnchors()[0];
+          this.icicles.push(new Icicle(this, a.x, a.y));
+          return this.icicles.length - 1;
+        },
+        updateIcicles: (ms: number) => this.updateIcicles(ms),
+        icicleTouchesPlayer: (playerIdx: number) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          return this.touchedIcicle(p);
+        },
+        // --- phase completion plumbing (drives subsequent-bonus / clear) -
+        forceClearPhase: () => {
+          // Empty the board exactly as a real clear would: no queued spawns,
+          // no live enemies. updatePlaying then advances to the next phase.
+          this.clearEnemies();
+          this.spawnQueue = [];
+        },
+        runPlayingStep: (ms: number) => {
+          this.flow.update(ms);
+          return this.flow.state;
+        },
         // --- bonus phase ------------------------------------------------
         enterBonus: () => {
           this.phaseIndex = 2; // a bonus phase
+          this.clearCoins();
+          // Force a clean (re-)entry so each call re-spawns the 10 coins — even
+          // when already in 'bonus' (a same-state transition is a no-op). This
+          // lets a scenario drive a first then a subsequent bonus stage.
+          if (this.flow.state === 'bonus') {
+            this.flow.transition('playing');
+          }
           this.flow.transition('bonus');
         },
         collectAllCoins: (playerIdx: number) => {

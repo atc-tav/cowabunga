@@ -62,6 +62,9 @@ export const FLY_SCORE = KICK_SCORE; // kick = 800 for ALL enemies (spec §3.4)
 export const FLY_HOP_SPEED = 210; // px/sec launch of each hop
 export const FLY_GROUND_MS = 200; // grounded (flippable) dwell between hops
 export const FLY_FRAME_MS = 90; // wing flap
+// The fly "gets back up very quickly" after a flip (spec §4.3) — a much shorter
+// flipped window than the turtle/crab (SHELL_STUN_MS), so it must be kicked fast.
+export const FLY_STUN_MS = 1600;
 
 // Slipice (Freezie): non-target hazard. Walks to a platform's centre and ices
 // it. Killed by a single bump from below (no kick). Touching it kills you.

@@ -178,6 +178,29 @@ export class Player {
     }
   }
 
+  /**
+   * Deterministic physics step for the test surface: drive the body with an
+   * explicit horizontal `dir` (-1/0/1) instead of live input, applying the same
+   * accel/friction/wrap/gravity path `move()` uses. No engine input is read, so
+   * scenarios can prove momentum, falling, traversal, wrap and head-bumps without
+   * synthetic key events. Returns nothing; read the result from the snapshot.
+   */
+  stepPhysics(delta: number, floors: PlatformSegment[], dir: number, iceScale = 1): void {
+    if (!this.alive) {
+      return;
+    }
+    const dt = delta / 1000;
+    this.applyHorizontal(dt, dir, iceScale);
+    this.body.x += this.vx * dt;
+    if (this.body.x < 0) {
+      this.body.x += WIDTH;
+    } else if (this.body.x > WIDTH) {
+      this.body.x -= WIDTH;
+    }
+    this.body.update(delta, GRAVITY, floors);
+    this.syncSprite();
+  }
+
   /** Test-surface accessors for deterministic physics checks. */
   get vxDebug(): number {
     return this.vx;
