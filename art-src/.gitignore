@@ -1,0 +1,29 @@
+# art-src/ — design-time authoring scratch.
+#
+# Default: ignore large raw working files, but KEEP references and exports
+# (they are the design-time source-of-truth a bake traces back to).
+
+# Ignore everything by default...
+*
+
+# ...except the things that document and seed a bake-off:
+!.gitignore
+!README.md
+!contact-sheet.html
+
+# Keep per-game/per-sprite folders so the patterns below can reach into them.
+!*/
+!*/*/
+
+# Committed: the arcade reference frame and any tool/hand exports.
+!**/reference.png
+!**/*.export.png
+
+# Explicitly drop bulky scratch even if it sneaks into a kept folder.
+work/
+**/work/
+*.psd
+*.ase
+*.aseprite
+*.xcf
+*.tiff

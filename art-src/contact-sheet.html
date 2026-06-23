@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sprite contact sheet</title>
+    <style>
+      body {
+        background: #111;
+        color: #ddd;
+        font: 13px/1.4 system-ui, sans-serif;
+        margin: 24px;
+      }
+      h1 { font-size: 16px; }
+      p.note { color: #888; max-width: 60ch; }
+      .row {
+        display: flex;
+        align-items: flex-end;
+        gap: 24px;
+        padding: 12px;
+        border-bottom: 1px solid #333;
+      }
+      .slot { text-align: center; }
+      .slot .label { color: #9cf; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
+      /* Pixel-perfect upscaling — no smoothing. */
+      img { image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto; background: #000; }
+      img.x1 { transform: scale(1); }
+      img.x4 { width: auto; }
+      .pair { display: flex; gap: 12px; align-items: flex-end; }
+      .scale-tag { color: #666; font-size: 10px; margin-top: 4px; }
+      .missing { color: #844; font-size: 11px; padding: 20px 8px; border: 1px dashed #533; }
+    </style>
+  </head>
+  <body>
+    <h1>Sprite bake-off contact sheet</h1>
+    <p class="note">
+      Eyeball candidates side by side at 1× and 4× (nearest-neighbour, so what
+      you see is exactly the pixels). Edit the <code>ROWS</code> array below to
+      point at your <code>art-src/&lt;game&gt;/&lt;sprite&gt;/</code> PNGs. Open
+      this file directly in a browser — no build step.
+    </p>
+
+    <div id="sheet"></div>
+
+    <script>
+      // ---- EDIT ME -----------------------------------------------------------
+      // Each row is one sprite; each slot is a candidate image (path relative to
+      // this file). Use null for an empty slot. The four conventional slots are:
+      //   reference / hand-crafted / transcribed / pixellab
+      const SLOTS = ['reference', 'hand-crafted', 'transcribed', 'pixellab'];
+      const ROWS = [
+        {
+          name: 'donkeykong / barrel',
+          images: [
+            'donkeykong/barrel/reference.png',
+            'donkeykong/barrel/handcraft.export.png',
+            'donkeykong/barrel/transcribed.export.png',
+            'donkeykong/barrel/pixellab.export.png',
+          ],
+        },
+        // Add more rows here...
+      ];
+      const ZOOM = 4; // the "4x" magnification factor
+      // ------------------------------------------------------------------------
+
+      const sheet = document.getElementById('sheet');
+      for (const row of ROWS) {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'row';
+
+        const head = document.createElement('div');
+        head.className = 'slot';
+        head.innerHTML = '<div class="label">' + row.name + '</div>';
+        rowEl.appendChild(head);
+
+        SLOTS.forEach((slotName, i) => {
+          const src = row.images && row.images[i];
+          const slot = document.createElement('div');
+          slot.className = 'slot';
+          const label = document.createElement('div');
+          label.className = 'label';
+          label.textContent = slotName;
+          slot.appendChild(label);
+
+          if (!src) {
+            const m = document.createElement('div');
+            m.className = 'missing';
+            m.textContent = '(empty)';
+            slot.appendChild(m);
+          } else {
+            const pair = document.createElement('div');
+            pair.className = 'pair';
+
+            const c1 = document.createElement('div');
+            const i1 = document.createElement('img');
+            i1.src = src;
+            i1.className = 'x1';
+            i1.alt = src;
+            i1.onerror = () => { c1.innerHTML = '<div class="missing">missing</div>'; };
+            c1.appendChild(i1);
+            const t1 = document.createElement('div');
+            t1.className = 'scale-tag';
+            t1.textContent = '1x';
+            c1.appendChild(t1);
+
+            const c4 = document.createElement('div');
+            const i4 = document.createElement('img');
+            i4.src = src;
+            i4.className = 'x4';
+            i4.alt = src;
+            // Scale up by ZOOM once the natural size is known.
+            i4.onload = () => {
+              i4.style.width = i4.naturalWidth * ZOOM + 'px';
+              i4.style.height = i4.naturalHeight * ZOOM + 'px';
+            };
+            c4.appendChild(i4);
+            const t4 = document.createElement('div');
+            t4.className = 'scale-tag';
+            t4.textContent = ZOOM + 'x';
+            c4.appendChild(t4);
+
+            pair.appendChild(c1);
+            pair.appendChild(c4);
+            slot.appendChild(pair);
+          }
+          rowEl.appendChild(slot);
+        });
+
+        sheet.appendChild(rowEl);
+      }
+    </script>
+  </body>
+</html>
