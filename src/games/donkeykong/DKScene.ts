@@ -193,7 +193,14 @@ export class DKScene extends BaseGameScene {
       .setColor('#fcfc00')
       .setDepth(1000);
     this.countdownText = this.add
-      .text(WIDTH / 2, HEIGHT / 2, '', { fontFamily: 'monospace', fontSize: '40px', color: '#ffffff' })
+      .text(WIDTH / 2, HEIGHT / 2, '', {
+        fontFamily: 'monospace',
+        fontSize: '20px',
+        fontStyle: 'bold',
+        color: '#fcd000',
+        stroke: '#000000',
+        strokeThickness: 5,
+      })
       .setOrigin(0.5)
       .setDepth(1000)
       .setVisible(false);
@@ -303,7 +310,14 @@ export class DKScene extends BaseGameScene {
     this.barrelTimer = 0; // DK starts rolling immediately
     this.countdownNum = 3;
     this.countdownTimer = COUNTDOWN_STEP_MS;
-    this.countdownText.setText('3').setVisible(true);
+    this.countdownText.setText('3').setColor('#fcd000').setVisible(true);
+    this.popCountdown();
+  }
+
+  /** Quick scale-pop so each beat reads as an arcade cue, not a static label. */
+  private popCountdown(): void {
+    this.countdownText.setScale(1.6);
+    this.tweens.add({ targets: this.countdownText, scale: 1, duration: 220, ease: 'Back.out' });
   }
 
   private updateCountdown(delta: number): void {
@@ -318,8 +332,10 @@ export class DKScene extends BaseGameScene {
     this.countdownNum -= 1;
     if (this.countdownNum > 0) {
       this.countdownText.setText(String(this.countdownNum));
+      this.popCountdown();
     } else if (this.countdownNum === 0) {
-      this.countdownText.setText('GO!');
+      this.countdownText.setText('GO!').setColor('#3cd23c');
+      this.popCountdown();
     } else {
       this.countdownText.setVisible(false);
       this.flow.transition('playing');
@@ -1004,19 +1020,29 @@ export class DKScene extends BaseGameScene {
     const g = this.girderGfx;
     g.clear();
     for (const girder of this.girders) {
+      const { x1, y1, x2, y2 } = girder;
+      // A horizontal sub-band of the sloped beam, between vertical offsets.
+      const band = (top: number, bot: number): Phaser.Geom.Point[] => [
+        new Phaser.Geom.Point(x1, y1 + top),
+        new Phaser.Geom.Point(x2, y2 + top),
+        new Phaser.Geom.Point(x2, y2 + bot),
+        new Phaser.Geom.Point(x1, y1 + bot),
+      ];
+      // Base face, then a shadow band along the bottom and a 1px highlight on
+      // top — three tones read as a steel beam instead of a flat salmon bar.
       g.fillStyle(COLORS.girder, 1);
-      g.fillPoints(
-        [
-          new Phaser.Geom.Point(girder.x1, girder.y1),
-          new Phaser.Geom.Point(girder.x2, girder.y2),
-          new Phaser.Geom.Point(girder.x2, girder.y2 + GIRDER_THICKNESS),
-          new Phaser.Geom.Point(girder.x1, girder.y1 + GIRDER_THICKNESS),
-        ],
-        true,
-      );
-      g.fillStyle(COLORS.rivet, 1);
-      for (let x = girder.x1 + 6; x < girder.x2 - 4; x += 16) {
-        g.fillRect(x, surfaceY(girder, x) + 1, 2, 2);
+      g.fillPoints(band(0, GIRDER_THICKNESS), true);
+      g.fillStyle(COLORS.girderLo, 1);
+      g.fillPoints(band(GIRDER_THICKNESS - 2, GIRDER_THICKNESS), true);
+      g.fillStyle(COLORS.girderHi, 1);
+      g.fillPoints(band(0, 1), true);
+      // Rivets: small dark bolts with a glint, spaced along the surface.
+      for (let x = x1 + 8; x < x2 - 4; x += 14) {
+        const sy = surfaceY(girder, x) + 2;
+        g.fillStyle(COLORS.girderStud, 1);
+        g.fillRect(x, sy, 2, 2);
+        g.fillStyle(COLORS.girderHi, 1);
+        g.fillRect(x, sy, 1, 1);
       }
     }
   }

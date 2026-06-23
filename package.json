@@ -11,13 +11,16 @@
     "test": "vitest run",
     "test:game": "node src/shared/testkit/run.mjs",
     "fuzz:game": "node src/shared/testkit/fuzz-run.mjs",
-    "factory:status": "node scripts/factory-status.mjs"
+    "factory:status": "node scripts/factory-status.mjs",
+    "sprites:bake": "node scripts/sprites/bake.mjs",
+    "sprites:selftest": "node scripts/sprites/selftest.mjs"
   },
   "dependencies": {
     "phaser": "^3.80.1"
   },
   "devDependencies": {
     "playwright": "^1.49.0",
+    "pngjs": "^7.0.0",
     "typescript": "^5.4.5",
     "vite": "^5.2.0",
     "vitest": "^4.1.9"

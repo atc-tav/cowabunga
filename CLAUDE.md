@@ -5,6 +5,15 @@ built with **Phaser 3 + TypeScript** via **Vite**. All graphics are drawn
 **programmatically** (no asset files); all sound will be **procedural** Web
 Audio. Personal/educational project — not for commercialization.
 
+> **Note — "no asset files" is under active revision.** User feedback flagged the
+> hand-coded art as a deal-breaker. We're testing a *design-time authoring →
+> bake-to-grid* pipeline (tool designs a sprite; output is committed as a code
+> pixel grid; runtime stays asset-free and deterministic). The candidate revised
+> principle: *"no **runtime** asset files; design-time authoring allowed; the
+> shipped game is still code-drawn."* A one-sprite bake-off decides whether we
+> adopt it — see [`docs/art-pipeline.md`](docs/art-pipeline.md). Until then, the
+> rule above stands.
+
 > This file reflects decisions made while scaffolding. The original design
 > brief is preserved in `docs/` history; where this file and the brief differ,
 > **this file wins**.

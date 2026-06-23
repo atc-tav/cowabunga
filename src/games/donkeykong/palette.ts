@@ -1,7 +1,10 @@
-/** Donkey Kong palette — salmon girders with blue rivets, classic red Mario. */
+/** Donkey Kong palette — shaded salmon girders, classic red Mario. */
 export const COLORS = {
-  girder: 0xfca89c,
-  rivet: 0x2038ec,
+  girder: 0xfca89c, // beam face
+  girderHi: 0xffd0c4, // top edge highlight (light catch)
+  girderLo: 0xc0503c, // bottom shadow (gives the beam depth)
+  girderStud: 0x6a2010, // dark rivet/bolt on the beam (was a stray blue dot)
+  rivet: 0x2038ec, // gameplay pull-rivet (rivet stage) — distinct from beam studs
   ladder: 0x4cd6e6,
   capShirt: 0xff0000, // cap + shirt red
   skin: 0xfcb088,

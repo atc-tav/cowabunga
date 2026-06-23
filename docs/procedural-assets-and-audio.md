@@ -2,6 +2,13 @@
 
 > No asset files. Sprites are drawn in code; sound is synthesized in code.
 
+> ⚠️ **Under revision (experiment pending).** User feedback showed this principle,
+> as implemented, ships art people won't play. We're evaluating a design-time
+> *bake-to-grid* pipeline whose candidate principle is *"no **runtime** asset
+> files; design-time authoring allowed; the shipped game is still code-drawn."*
+> A bake-off decides adoption — see [`art-pipeline.md`](art-pipeline.md). This
+> doc remains authoritative until that gate resolves.
+
 The whole collection ships with **zero asset files** — no PNGs, no WAVs, no font
 files. Everything is generated at runtime. This keeps the repo tiny, makes every
 visual diff reviewable as code, and forces a discipline that pays off on the
