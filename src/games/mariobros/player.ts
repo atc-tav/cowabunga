@@ -6,10 +6,8 @@ import {
   GRAVITY,
   JUMP_SPEED,
   RUN_ACCEL,
-  AIR_ACCEL,
   RUN_MAX,
   GROUND_FRICTION,
-  AIR_FRICTION,
   MARIO_W,
   MARIO_H,
   WALK_FRAME_MS,
@@ -18,7 +16,19 @@ import {
   RESPAWN_MS,
   VS_STUN_MS,
   COMBO_WINDOW_MS,
+  COMBO_STEP,
+  COMBO_CAP,
+  EXTRA_LIFE_AT,
 } from './constants';
+
+/**
+ * Combo score for the `n`-th chained kick (1-based): additive +800 per kick,
+ * capped at 3200 (spec §0 #2). 1→800, 2→1600, 3→2400, 4→3200, 5+→3200.
+ * Pure so it is unit-checkable.
+ */
+export function comboScore(n: number): number {
+  return Math.min(COMBO_STEP * Math.max(1, n), COMBO_CAP);
+}
 
 export interface PlayerConfig {
   controls: InputManager;
@@ -46,6 +56,8 @@ export class Player {
   readonly label: string;
 
   score = 0;
+  /** Next score threshold that will grant an extra life (spec §0 #5). */
+  nextExtraLife = EXTRA_LIFE_AT;
   alive = true;
   facing: 1 | -1 = 1;
   stun = 0; // versus knock-over: no control while > 0
@@ -129,18 +141,7 @@ export class Player {
       this.stun -= delta;
     }
 
-    const accel = this.body.onGround ? RUN_ACCEL : AIR_ACCEL;
-    if (dir !== 0) {
-      this.vx += dir * accel * dt;
-      this.facing = dir > 0 ? 1 : -1;
-    } else {
-      let friction = (this.body.onGround ? GROUND_FRICTION : AIR_FRICTION) * dt;
-      if (this.body.onGround) {
-        friction *= iceScale; // frozen platforms barely slow you down
-      }
-      this.vx = this.vx > 0 ? Math.max(0, this.vx - friction) : Math.min(0, this.vx + friction);
-    }
-    this.vx = Phaser.Math.Clamp(this.vx, -RUN_MAX, RUN_MAX);
+    this.applyHorizontal(dt, dir, iceScale);
     this.body.x += this.vx * dt;
     if (this.body.x < 0) {
       this.body.x += WIDTH;
@@ -154,6 +155,35 @@ export class Player {
     this.body.update(delta, GRAVITY, floors);
     this.sprite.setPosition(this.body.x, this.body.y).setFlipX(this.facing < 0);
     this.animate(delta, dir !== 0);
+  }
+
+  /**
+   * Fixed jump arc (spec §3.1 / §0): horizontal velocity is locked at takeoff —
+   * no mid-air steering. Ground accel/friction only applies while grounded;
+   * airborne, `vx` is left untouched (the player can turn to face, but the arc
+   * is fixed). Extracted so the test surface can drive it deterministically.
+   */
+  applyHorizontal(dt: number, dir: number, iceScale = 1): void {
+    if (this.body.onGround) {
+      if (dir !== 0) {
+        this.vx += dir * RUN_ACCEL * dt;
+        this.facing = dir > 0 ? 1 : -1;
+      } else {
+        const friction = GROUND_FRICTION * dt * iceScale;
+        this.vx = this.vx > 0 ? Math.max(0, this.vx - friction) : Math.min(0, this.vx + friction);
+      }
+      this.vx = Phaser.Math.Clamp(this.vx, -RUN_MAX, RUN_MAX);
+    } else if (dir !== 0) {
+      this.facing = dir > 0 ? 1 : -1;
+    }
+  }
+
+  /** Test-surface accessors for deterministic physics checks. */
+  get vxDebug(): number {
+    return this.vx;
+  }
+  set vxDebug(v: number) {
+    this.vx = v;
   }
 
   private animate(delta: number, moving: boolean): void {
@@ -199,13 +229,28 @@ export class Player {
   }
 
   /**
-   * Register a defeat for the combo chain and return the score multiplier:
-   * kills within COMBO_WINDOW_MS of each other double (1×, 2×, 4×, …).
+   * Register a defeat for the combo chain and return the points awarded for it:
+   * additive +800 per chained kick, capped at 3200 (spec §0 #2). Kicks within
+   * COMBO_WINDOW_MS of each other extend the chain; otherwise it resets to 800.
    */
   registerKill(): number {
     this.comboCount = this.comboTimer > 0 ? this.comboCount + 1 : 1;
     this.comboTimer = COMBO_WINDOW_MS;
-    return Math.pow(2, this.comboCount - 1);
+    return comboScore(this.comboCount);
+  }
+
+  /**
+   * Grant an extra life the once the player's score first crosses 20,000
+   * (spec §0 #5 — US DIP factory default: a single award, not recurring).
+   * Returns the number of lives granted this call (0 or 1).
+   */
+  grantExtraLifeIfDue(): number {
+    if (this.score >= this.nextExtraLife) {
+      this.lives.gain(1);
+      this.nextExtraLife = Number.POSITIVE_INFINITY; // one-shot
+      return 1;
+    }
+    return 0;
   }
 
   tickCombo(delta: number): void {
@@ -227,5 +272,10 @@ export class Player {
 
   getBounds(): Phaser.Geom.Rectangle {
     return this.sprite.getBounds();
+  }
+
+  /** Snap the sprite to the body — for deterministic test-surface placement. */
+  syncSprite(): void {
+    this.sprite.setPosition(this.body.x, this.body.y);
   }
 }

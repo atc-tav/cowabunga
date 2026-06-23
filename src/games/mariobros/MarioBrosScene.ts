@@ -59,6 +59,7 @@ import { Slipice } from './slipice';
 import { Icicle } from './icicle';
 import { PHASES } from './phases';
 import { Player } from './player';
+import { GameTestSurface, InvariantViolation, registerTestSurface } from '../../shared/testkit/surface';
 
 interface Floor {
   seg: PlatformSegment;
@@ -189,6 +190,11 @@ export class MarioBrosScene extends BaseGameScene {
       .add('playing', { update: (_c, dt) => this.updatePlaying(dt) })
       .add('gameover', { enter: () => this.enterGameOver() });
     this.flow.transition('attract');
+
+    // Deterministic test surface (dev/test builds only; tree-shaken in prod).
+    if (import.meta.env.DEV) {
+      registerTestSurface(this.buildTestSurface());
+    }
   }
 
   protected updateGame(_time: number, delta: number): void {
@@ -434,6 +440,7 @@ export class MarioBrosScene extends BaseGameScene {
         this.addScore(reward);
         floatingText(this, p.body.x, p.body.y - 10, `${reward}!`, { color: p.color, fontSize: '10px' });
       }
+      this.checkExtraLife(p);
     }
   }
 
@@ -592,12 +599,10 @@ export class MarioBrosScene extends BaseGameScene {
         } else if (e.lethalShell && this.shellHurts(e, index)) {
           return true;
         }
-      } else if (fromAbove && e.kind.canStomp) {
-        this.defeat(e, p);
-        p.body.vy = -STOMP_BOUNCE;
-      } else if (fromAbove) {
-        p.body.vy = -STOMP_BOUNCE; // can't be stomped — harmless bounce
       } else {
+        // Un-flipped active enemy: enemies CANNOT be stomped in Mario Bros.
+        // Touching one — including landing on top of it — kills the PLAYER; the
+        // enemy survives (spec §3.1 stomp rule).
         return true;
       }
     }
@@ -802,8 +807,15 @@ export class MarioBrosScene extends BaseGameScene {
     this.audio.play('pow');
     this.flashPow();
     for (const e of this.enemies) {
-      if (e.isActive && e.body.onGround) {
+      if (!e.body.onGround) {
+        continue; // POW never affects airborne enemies (e.g. a mid-hop fly)
+      }
+      if (e.isActive) {
         e.flipFor(SHELL_STUN_MS);
+      } else if (e.isFlipped) {
+        // Spec §3.3 caution: an already-flipped enemy is flipped back upright
+        // (re-activated, possibly faster).
+        e.recover();
       }
     }
     this.drawPow();
@@ -927,13 +939,24 @@ export class MarioBrosScene extends BaseGameScene {
   /** Bank an enemy's points (with combo) and float them — without removing it. */
   private award(e: Enemy, by?: Player): void {
     const color = by?.color ?? '#ffffff';
+    // Kick = 800 flat for every enemy (spec §3.4); the combo chain then governs
+    // the actual points (800/1600/2400/3200 capped, §0 #2) — not the enemy kind.
     let points = e.kind.score;
     if (by) {
-      points *= by.registerKill(); // chained kicks double (combo)
+      points = by.registerKill();
       by.score += points;
       this.addScore(points); // keeps the persistent HI in sync
+      this.checkExtraLife(by);
     }
     floatingText(this, e.sprite.x, e.sprite.y, String(points), { color, fontSize: '8px' });
+  }
+
+  /** Award the extra life at 20,000 once, and audio/HUD it (spec §0 #5). */
+  private checkExtraLife(p: Player): void {
+    if (p.grantExtraLifeIfDue() > 0) {
+      this.audio.play('extra');
+      this.refreshHud();
+    }
   }
 
   private defeat(e: Enemy, by?: Player): void {
@@ -1031,5 +1054,284 @@ export class MarioBrosScene extends BaseGameScene {
       const rimX = pipe.open === 'right' ? pipe.x2 - 5 : pipe.x1;
       g.fillRect(rimX, pipe.y1 - 2, 5, h + 4);
     }
+  }
+
+  // --- test surface (dev/test only) --------------------------------------
+
+  /** Non-Slipice enemies still on the board + still queued to spawn. */
+  private targetsRemaining(): number {
+    return this.enemies.length + this.spawnQueue.length;
+  }
+
+  private enemyState(e: Enemy): string {
+    if (e.isShell) return 'shell';
+    if (e.isFlipped) return 'flipped';
+    return e.state; // 'walk' | 'angry'
+  }
+
+  /**
+   * Stand up a deterministic single-player combat situation: clear the board,
+   * make the world interactive, and put the scene in `playing`. Scenarios then
+   * place enemies / drive bumps / kicks directly via hooks (the harness pauses
+   * the live loop, so hooks do the work, not `updateGame`).
+   */
+  private testBeginPlay(): void {
+    this.mode = 'solo';
+    this.createPlayers();
+    this.flow.transition('playing');
+    this.clearEnemies();
+    this.clearSlipices();
+    this.clearIcicles();
+    this.clearCoins();
+    this.spawnQueue = [];
+    this.powUses = POW_USES;
+    this.drawPow();
+    this.floors.forEach((f) => (f.iced = false));
+    this.players.forEach((p) => {
+      p.placeAtStart();
+      p.score = 0;
+      p.nextExtraLife = 20000;
+    });
+  }
+
+  /** Place an enemy at an exact spot, grounded, facing `dir` (default right). */
+  private testSpawnEnemy(kindId: EnemyKindId, x: number, y: number, dir: 1 | -1 = 1): number {
+    const e = new Enemy(this, KINDS[kindId], x, y, dir);
+    e.body.onGround = true;
+    e.floorSeg = this.floorSegments().find(
+      (s) => x >= s.x1 && x <= s.x2 && Math.abs(e.body.feet - surfaceY(s, x)) < 6,
+    ) ?? null;
+    this.enemies.push(e);
+    return this.enemies.length - 1;
+  }
+
+  private buildTestSurface(): GameTestSurface {
+    return {
+      gameId: 'mariobros',
+      sceneKey: 'game-mariobros',
+      snapshot: () => {
+        const p0 = this.players[0];
+        return {
+          score: p0 ? p0.score : 0,
+          high: this.scores.high,
+          lives: p0 ? p0.lives.count : 0,
+          phase: this.phaseNumber(),
+          phaseIndex: this.phaseIndex,
+          loopCount: this.loopCount,
+          flow: this.flow.state,
+          mode: this.mode,
+          combo: p0 ? p0.comboCount : 0,
+          players: this.players.map((p) => ({
+            x: Math.round(p.body.x),
+            y: Math.round(p.body.y),
+            onGround: p.body.onGround,
+            alive: p.alive,
+            invuln: p.invuln > 0,
+            score: p.score,
+            lives: p.lives.count,
+            comboCount: p.comboCount,
+          })),
+          enemies: this.enemies.map((e) => ({
+            kind: e.kind.id,
+            x: Math.round(e.body.x),
+            y: Math.round(e.body.y),
+            state: this.enemyState(e),
+            dir: e.dir,
+            bumps: e.bumpCount,
+            grounded: e.grounded,
+            last: e.last,
+            stun: Math.round(e.stun),
+            effSpeed: Math.round(e.effSpeed * 100) / 100,
+          })),
+          enemyCount: this.enemies.length,
+          targetsRemaining: this.targetsRemaining(),
+          spawnQueueLength: this.spawnQueue.length,
+          slipiceCount: this.slipices.length,
+          icedPlatforms: this.floors.filter((f) => f.iced).length,
+          icicleCount: this.icicles.length,
+          coinCount: this.coins.length,
+          bonusActive: this.flow.state === 'bonus',
+          bonusTimer: Math.round(this.bonusTimer),
+          bonusCompletions: this.bonusCompletions,
+          powUsesRemaining: this.powUses,
+        };
+      },
+      invariants: (): InvariantViolation[] => {
+        const v: InvariantViolation[] = [];
+        const p0 = this.players[0];
+        if (p0 && p0.score < 0) {
+          v.push({ rule: 'score-nonneg', detail: `${p0.score}` });
+        }
+        if (this.powUses < 0 || this.powUses > POW_USES) {
+          v.push({ rule: 'pow-uses-range', detail: `${this.powUses}` });
+        }
+        if (this.icedPlatformCount() > 3) {
+          v.push({ rule: 'iced-platforms-max-3', detail: `${this.icedPlatformCount()}` });
+        }
+        for (const e of this.enemies) {
+          // No entity ever sits outside [0, W) once wrap has resolved.
+          if (e.body.x < -1 || e.body.x > WIDTH + 1) {
+            v.push({ rule: 'enemy-in-bounds', detail: `${e.kind.id}@${Math.round(e.body.x)}` });
+          }
+          // A flipped enemy is never simultaneously a sliding shell.
+          if (e.isFlipped && e.isShell) {
+            v.push({ rule: 'flipped-xor-shell', detail: e.kind.id });
+          }
+          // The last-enemy boost must never reach a Fighterfly (§0 #6).
+          if (e.last && e.kind.id === 'fly' && e.effSpeed > e.kind.walkSpeed + 0.01) {
+            v.push({ rule: 'fly-last-no-boost', detail: `${e.effSpeed}` });
+          }
+        }
+        // Speed ordering: turtle < fly < crab at normal pace (§0 #8).
+        if (!(KINDS.turtle.walkSpeed < KINDS.fly.walkSpeed && KINDS.fly.walkSpeed < KINDS.crab.walkSpeed)) {
+          v.push({ rule: 'speed-ordering', detail: 'turtle<fly<crab violated' });
+        }
+        return v;
+      },
+      hooks: {
+        // --- setup -------------------------------------------------------
+        beginPlay: () => this.testBeginPlay(),
+        seed: (n: number) => {
+          // Deterministic RNG for spawn-pipe / recover-direction choices.
+          (Phaser.Math.RND as Phaser.Math.RandomDataGenerator).sow([String(n)]);
+        },
+        skipToPhase: (n: number) => {
+          // n is 1-based global phase; map into the unique table.
+          this.phaseIndex = Math.max(0, Math.min(PHASES.length - 1, n - 1));
+          this.loopCount = 0;
+          this.startPhase(this.phaseIndex);
+        },
+        spawnEnemy: (kind: EnemyKindId, x: number, y: number, dir: 1 | -1) =>
+          this.testSpawnEnemy(kind, x, y, dir ?? 1),
+        setEnemyState: (i: number, state: 'walk' | 'angry' | 'flipped' | 'shell') => {
+          const e = this.enemies[i];
+          if (!e) return;
+          if (state === 'flipped') e.flipFor(SHELL_STUN_MS);
+          else if (state === 'shell') e.kick(1, 0);
+          else e.recover();
+        },
+        // --- defeat sequence --------------------------------------------
+        flipEnemy: (i: number) => {
+          const e = this.enemies[i];
+          return e ? e.bump(SHELL_STUN_MS) : false;
+        },
+        kickEnemy: (i: number, playerIdx: number) => {
+          const e = this.enemies[i];
+          if (!e || !e.isFlipped) return false;
+          const p = this.players[playerIdx] ?? this.players[0];
+          if (e.kick(e.body.x >= p.body.x ? 1 : -1, playerIdx)) {
+            this.award(e, p); // turtle slides off as a shell
+          } else {
+            this.defeat(e, p);
+          }
+          return true;
+        },
+        forceRecover: (i: number) => {
+          const e = this.enemies[i];
+          if (e) {
+            e.flipFor(0);
+            e.recover();
+          }
+        },
+        recoverReady: () => this.recoverEnemies(),
+        makeLast: (i: number) => {
+          const e = this.enemies[i];
+          if (e) e.makeLast();
+        },
+        markLastIfAlone: () => this.updateLastEnemy(),
+        tickEnemies: (ms: number) => {
+          for (const e of this.enemies) e.update(ms, this.floorSegments());
+        },
+        setEnemyAirborne: (i: number, up: number) => {
+          const e = this.enemies[i];
+          if (e) {
+            e.body.onGround = false;
+            e.floorSeg = null;
+            e.body.vy = -up;
+          }
+        },
+        // --- POW --------------------------------------------------------
+        activatePow: () => this.activatePow(),
+        setPowUses: (n: number) => {
+          this.powUses = n;
+          this.drawPow();
+        },
+        // --- scoring / lives --------------------------------------------
+        registerKick: (playerIdx: number) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          return p.registerKill();
+        },
+        setScore: (n: number) => {
+          const p = this.players[0];
+          if (p) p.score = n;
+        },
+        addScore: (playerIdx: number, n: number) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          p.score += n;
+          this.addScore(n);
+          this.checkExtraLife(p);
+        },
+        checkExtraLife: (playerIdx: number) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          this.checkExtraLife(p);
+        },
+        resetCombo: (playerIdx: number) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          // force the combo window closed, then tick it to expire
+          p.tickCombo(999999);
+        },
+        // --- contact ----------------------------------------------------
+        placePlayer: (playerIdx: number, x: number, y: number) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          p.body.x = x;
+          p.body.setFeet(y);
+          p.invuln = 0;
+          p.syncSprite();
+        },
+        resolveContact: (playerIdx: number) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          const died = this.resolveEnemyContact(p, playerIdx);
+          if (died) p.die();
+          return died;
+        },
+        // --- movement (fixed jump arc) ----------------------------------
+        setPlayerVx: (playerIdx: number, vx: number) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          p.vxDebug = vx;
+        },
+        setPlayerGround: (playerIdx: number, onGround: boolean) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          p.body.onGround = onGround;
+        },
+        stepHorizontal: (playerIdx: number, ms: number, dir: number) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          p.applyHorizontal(ms / 1000, dir, 1);
+          return p.vxDebug;
+        },
+        // --- bonus phase ------------------------------------------------
+        enterBonus: () => {
+          this.phaseIndex = 2; // a bonus phase
+          this.flow.transition('bonus');
+        },
+        collectAllCoins: (playerIdx: number) => {
+          const p = this.players[playerIdx] ?? this.players[0];
+          // Move the player over each coin and run the collector.
+          for (const coin of [...this.coins]) {
+            p.body.x = coin.x;
+            p.body.setFeet(coin.y);
+            p.syncSprite();
+            this.collectCoins(p);
+          }
+        },
+        // --- read-only helpers for the fuzz bot -------------------------
+        flowState: () => this.flow.state,
+        playerX: () => (this.players[0] ? this.players[0].body.x : 0),
+        enemyXs: () => this.enemies.map((e) => Math.round(e.body.x)),
+      },
+    };
+  }
+
+  private icedPlatformCount(): number {
+    return this.floors.filter((f) => f.iced).length;
   }
 }

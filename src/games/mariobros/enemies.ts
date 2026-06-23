@@ -47,7 +47,8 @@ export interface EnemyKind {
   angrySpeed: number; // speed after the first (non-flipping) bump
   recoverSpeed: number;
   flipsToStun: number; // bumps needed to reach the helpless 'flipped' state
-  canStomp: boolean; // can Mario kill it by landing on top while it's active?
+  groundedFlipOnly: boolean; // only flippable while touching a platform (the fly)
+  lastBoost: boolean; // speeds up as the phase's last enemy? (turtle/crab yes, fly NO — §0 #6)
   becomesShell: boolean; // kicked while flipped → sliding projectile (else dies)
   score: number;
   tex: { walk: [string, string]; flip: string };
@@ -65,7 +66,8 @@ export const KINDS: Record<EnemyKindId, EnemyKind> = {
     angrySpeed: SHELL_SPEED,
     recoverSpeed: SHELL_RECOVER_SPEED,
     flipsToStun: 1,
-    canStomp: true,
+    groundedFlipOnly: false,
+    lastBoost: true,
     becomesShell: true,
     score: SHELL_SCORE,
     tex: { walk: [TX.shellWalk0, TX.shellWalk1], flip: TX.shellFlip },
@@ -79,7 +81,8 @@ export const KINDS: Record<EnemyKindId, EnemyKind> = {
     angrySpeed: CRAB_ANGRY_SPEED,
     recoverSpeed: CRAB_RECOVER_SPEED,
     flipsToStun: 2,
-    canStomp: false,
+    groundedFlipOnly: false,
+    lastBoost: true,
     becomesShell: false,
     score: CRAB_SCORE,
     tex: { walk: [TX.crabWalk0, TX.crabWalk1], flip: TX.crabFlip },
@@ -94,7 +97,8 @@ export const KINDS: Record<EnemyKindId, EnemyKind> = {
     angrySpeed: FLY_SPEED,
     recoverSpeed: FLY_RECOVER_SPEED,
     flipsToStun: 1,
-    canStomp: true,
+    groundedFlipOnly: true, // only flippable in its brief grounded window (§4.3)
+    lastBoost: false, // the fly does NOT speed up as the last enemy (§0 #6)
     becomesShell: false,
     score: FLY_SCORE,
     tex: { walk: [TX.flyWalk0, TX.flyWalk1], flip: TX.flyFlip },
@@ -190,6 +194,10 @@ export class Enemy {
     if (this.state === 'flipped' || this.state === 'shell') {
       return false;
     }
+    // A fly is only flippable in its grounded window (spec §4.3 / invariant #9).
+    if (this.kind.groundedFlipOnly && !this.body.onGround) {
+      return false;
+    }
     this.bumps += 1;
     if (this.bumps >= this.kind.flipsToStun) {
       this.state = 'flipped';
@@ -248,9 +256,14 @@ export class Enemy {
     this.last = true;
   }
 
-  /** Walking speed after the per-loop ramp and any last-enemy multiplier. */
-  private get effSpeed(): number {
-    return this.speed * this.speedScale * (this.last ? ENEMY_LAST_MULT : 1);
+  /**
+   * Walking speed after the per-loop ramp and any last-enemy multiplier. The
+   * last-enemy boost applies to turtle & crab only — a Fighterfly keeps its
+   * normal pace as the last enemy (spec §0 #6).
+   */
+  get effSpeed(): number {
+    const lastMult = this.last && this.kind.lastBoost ? ENEMY_LAST_MULT : 1;
+    return this.speed * this.speedScale * lastMult;
   }
 
   /** Current body tint (or null to clear) based on last/angry state. */
@@ -262,6 +275,16 @@ export class Enemy {
       return this.kind.angryTint;
     }
     return null;
+  }
+
+  /** How many flip-bumps this enemy has taken (for the test surface). */
+  get bumpCount(): number {
+    return this.bumps;
+  }
+
+  /** Is this enemy currently touching a platform/floor? (for the test surface) */
+  get grounded(): boolean {
+    return this.body.onGround;
   }
 
   get isActive(): boolean {
