@@ -1,15 +1,26 @@
 # Mario Bros. (1983 Arcade) — Oracle Ledger (Test Design)
 
-> Derived from `specs/mario-bros-arcade.md` (spec lint drafted 2026-06-23; open
-> questions are recorded in `DEVLOG.md` and MUST be resolved by a human before
-> implementation — several rows below are blocked on them). This is the
-> **definition of done**: the game is faithful when every non-`human` row is 🟢.
+> Derived from `specs/mario-bros-arcade.md`. **Reconciled 2026-06-24** to the
+> spec's new authoritative **§0 Authentic-Arcade Reconciliation** (a 2026
+> research pass) and the inline fixes it references. §0 overrides any conflicting
+> inline value; rows below now trace to the corrected spec. The 2026-06-23 open
+> questions are recorded in `DEVLOG.md` and have all been settled by §0 (see the
+> 2026-06-24 DEVLOG entry). This is the **definition of done**: the game is
+> faithful when every non-`human`, non-`n/a` row is 🟢.
 >
-> **Faithfulness = % of this ledger that is green.** Status reflects the
-> **current** implementation (`src/games/mariobros/*.ts`) as of 2026-06-23.
-> There is currently **no test surface** (`buildTestSurface()` and `testing/`
-> are absent), so every `scenario`/`invariant` row is unverifiable today and
-> therefore 🔴 even where the underlying behavior may look right in play.
+> **Faithfulness = % of this ledger that is green** (excluding `human` and `n/a`
+> out-of-scope rows). Status reflects the **current** implementation
+> (`src/games/mariobros/*.ts`) as of 2026-06-24. There is currently **no test
+> surface** (`buildTestSurface()` and `testing/` are absent), so every
+> `scenario`/`invariant` row is unverifiable today: per our convention those are
+> 🔴 even where the underlying behavior may look right in play. Rows whose
+> **value is now confirmed authentic** are noted "🟢 on value / unverifiable
+> until the surface exists" so the genuine fix list (real bugs) is separable from
+> the test-surface debt.
+>
+> **Status legend:** 🟢 correct & verifiable · 🟡 value correct, unverifiable
+> (no surface yet) · 🔴 wrong/missing/divergent · `human` feel-tuned, human-judged
+> · `n/a` out of faithfulness scope (non-spec extra, §0).
 
 ## 0. Spec coverage map (completeness gate)
 
@@ -22,7 +33,7 @@ Every section of `specs/mario-bros-arcade.md` and where it is covered below.
 | §2.2 Pipe Positions | `stage/pipes-present`, `spawn/top-pipes`, `traverse/exit-bottom-recycle` | |
 | §2.3 Icicles (Phase 9+) | `icicle/*` | ✅ CHECK Icicle Timer |
 | §3.1 Player Movement (momentum, jump, fall, **stomp kills player**, no drop-through) | `move/*`, `stomp/kills-player` | ✅ CHECK Momentum Physics |
-| §3.2 Enemy Defeat Sequence (flip=10, kick=800, flip recovery, speed states) | `scoring/flip`, `scoring/kick`, `flip/*`, `enemy/speed-states` | ✅ CHECK Flip Recovery |
+| §3.2 Enemy Defeat Sequence (flip=**0** §0 #1, kick=800, flip recovery ~5 s §0 #4, speed states) | `scoring/flip`, `scoring/kick`, `flip/*`, `enemy/speed-ordering`, `enemy/speed-exact` | ✅ CHECK Flip Recovery (fly-last edge case → `enemy/fly-not-last-fast`) |
 | §3.3 POW Block | `pow/*` | ✅ CHECK POW Logic |
 | §3.4 Scoring & Combos | `scoring/*` | every value lifted to a unit row |
 | §3.5 Enemy Collision Behavior | `enemy/headon-reverse` | |
@@ -47,7 +58,7 @@ Every section of `specs/mario-bros-arcade.md` and where it is covered below.
 ### P0 — correctness-critical and bug-prone
 | Area | Why it's risky | Primary oracle |
 |------|----------------|----------------|
-| Scoring values (flip/kick/coin/slipice/bonus/combo) | known-wrong in current build (flip 0, kick varies by enemy, coin 300) | unit (each value) + scenario (flip→kick deltas) |
+| Scoring values (kick/coin/bonus/combo) | known-wrong in current build: kick varies by enemy (800/1200/1000, must be 800), coin 300 (→800), bonus 3000/5000 (→5000/8000, §0 #3), combo doubles (→additive+800 cap 3200, §0 #2). *Flip=0 is now CORRECT (§0 #1).* | unit (each value) + scenario (flip→kick deltas) |
 | Stomp rule (jump-onto-enemy kills the **player**) | current build lets the player stomp turtles/flies — inverts the spec | scenario (land on turtle → player dies) + invariant |
 | Two-step defeat (flip-from-below, then kick) | flip must score 10 and stun; kick must score 800 and remove/launch | scenario + invariant (`flipped⇒stun∈(0,stunMs]`) |
 | Sidestepper two-hit | 1st hit angers (no flip), 2nd flips; recovery must NOT reset hitPoints to 2 | scenario (both hits + post-recovery) |
@@ -57,13 +68,13 @@ Every section of `specs/mario-bros-arcade.md` and where it is covered below.
 | Screen wrap (player + ALL enemies) | ground enemies currently recycle via pipes, not wrap | scenario + invariant (positions ∈ [0,W) after wrap) |
 
 ### P1 — important, lower bug odds
-- Flip recovery: timer expiry → enrage (faster + color change); Mode A 20 000 ms / Mode B 15 000 ms (blocked on Q1).
-- Last-enemy super-fast/blue state (immediate, even if flipped).
+- Flip recovery: timer expiry → enrage (faster + color change); ~5 s Mode A, shorter Mode B (exact frames feel-tuned, §0 #4/#7).
+- Last-enemy super-fast/blue state (immediate, even if flipped) — **turtle & crab only; Fighterfly is exempt** (§0 #6).
 - POW: 3 uses, flips grounded enemies, removed at 0, re-flips an already-flipped enemy upright (spec caution).
-- Bonus phase: 10 coins, 20 s (15 s ice bonus), all-collected = 3 000 first / 5 000 later.
+- Bonus phase: 10 coins, 20 s (15 s ice bonus), all-collected = **5 000 first / 8 000 subsequent** (§0 #3).
 - Icicle state machine `hidden→forming→full→falling`; lethal only while `falling`.
 - Slipice: walks to platform center, ices it, self-destroys; reverses only on enemy contact; 3 platforms max.
-- Combo multiplier (×2 chain within ~1 s).
+- Combo multiplier: **additive +800, capped at 3 200** (800/1600/2400/3200), within ~1 s (§0 #2).
 - Head-on enemy collision → both reverse.
 - Per-loop enemy speed ramp.
 
@@ -81,9 +92,12 @@ Every section of `specs/mario-bros-arcade.md` and where it is covered below.
 
 ## 2. The Oracle Ledger (every row traces to the spec)
 
-Status legend: 🟢 verified-able-and-correct in current code · 🔴 wrong, missing,
-or unverifiable (no test surface). **All `scenario`/`invariant` rows are 🔴
-today because no `buildTestSurface()` exists** — they are honest red.
+Status legend: 🟢 correct & verifiable · 🟡 value/behavior matches the corrected
+spec but is **unverifiable today** (no `buildTestSurface()` exists) · 🔴 wrong,
+missing, or divergent from the corrected spec · `human` feel-tuned (human-judged)
+· `n/a` out of faithfulness scope (non-spec extra; see §0). **A 🟡 is not a pass**
+— it becomes 🟢 only once the test surface verifies it — but it is *not* a real
+bug, so it is tracked separately from the 🔴 fix list.
 
 ### Constants (§9 PHYSICS, §3, §6) → unit rows
 
@@ -99,10 +113,11 @@ today because no `buildTestSurface()` exists** — they are honest red.
 | `const/enemy-base-crab` | §9 `sidestepper:1.4` | unit | crab base speed equals spec | 🔴 |
 | `const/enemy-base-fly` | §9 `fighterFly:1.1` | unit | fly horizontal speed equals spec | 🔴 |
 | `const/enemy-base-slipice` | §9 `slipice:0.6` | unit | slipice speed equals spec | 🔴 |
-| `const/enraged-mult` | §9 `enemyEnragedMultiplier:1.6` | unit | enraged speed = base × 1.6 (current crab uses fixed `CRAB_ANGRY_SPEED=74`, not a 1.6× of 38=60.8 — mismatch) | 🔴 |
-| `const/last-mult` | §9 `enemyLastMultiplier:2.2` | unit | last-enemy speed = base × 2.2 (current `ENEMY_LAST_MULT=2.0`) | 🔴 |
-| `const/flip-recovery-A` | §9 `flipRecoveryTimeA:20000` | unit | Mode A flip recovery timer = 20 000 ms (current `SHELL_STUN_MS=4200`) | 🔴 |
-| `const/flip-recovery-B` | §9 `flipRecoveryTimeB:15000` | unit | Mode B flip recovery timer = 15 000 ms (not implemented) | 🔴 |
+| `const/enrage-ordering` | §0 #8 (per-enemy §4 governs; global §9 1.6× removed) | invariant | for each enemy, `enraged speed > normal speed` (exact multiplier feel-tuned). Current: crab `CRAB_ANGRY_SPEED=74 > CRAB_SPEED=38` ✓; turtle `SHELL_RECOVER_SPEED=60 > SHELL_SPEED=42` ✓ | 🟡 (holds in code; unverifiable) |
+| `const/enrage-exact` | §0 #8 (LOW conf — exact numbers undocumented) | human | exact enraged-speed feel per enemy is human-tuned (no authentic source); only the ordering above is asserted | human |
+| `const/last-mult` | §0 #6/#8 (per-enemy §4 governs; global §9 2.2× removed) | invariant | last-enemy speed > enemy's normal speed for turtle & crab; **fly is exempt** (does NOT speed up as last — §0 #6). Current `ENEMY_LAST_MULT=2.0` applied uniformly (incl. fly) → see `enemy/fly-not-last-fast` | 🔴 (fly wrongly sped up) |
+| `const/flip-recovery-A` | §0 #4 (~5 s Mode A; exact frames feel-tuned) | human (loose bound) | Mode-A flip recovery sits in the **4–6 s range** (authentic ≈5 s; the old 20 000 ms was the *bonus-stage* time limit, not recovery). Current `SHELL_STUN_MS=4200` is in band. Exact frame count is feel-tuned | human |
+| `const/flip-recovery-B` | §0 #4/#7 (Mode B shorter; exact undocumented) | human | Mode-B flip recovery is **shorter than Mode A** (must kick sooner); exact value feel-tuned. No A/B mode exists yet (single 4 200 ms stun) | human |
 | `const/pow-uses` | §3.3 "3 per phase" | unit | `POW_USES === 3` | 🟢 |
 | `const/bonus-time` | §6.3 "20 seconds" | unit | bonus timer = 20 000 ms (current `BONUS_TIME_MS=20000`) | 🟢 |
 | `const/bonus-time-ice` | §6.3 "15 seconds in the Ice Bonus" | unit | ice-bonus timer = 15 000 ms (not implemented — single 20 s timer) | 🔴 |
@@ -112,14 +127,14 @@ today because no `buildTestSurface()` exists** — they are honest red.
 
 | ID | Spec ref | Oracle | Assertion (state-based) | Status |
 |----|----------|--------|--------------------------|:--:|
-| `scoring/flip` | §3.4 "Flip enemy → 10" | unit+scenario | bump a grounded target enemy from below → score increases by **exactly 10**; enemy enters `flipped` | 🔴 (current build awards **0** on flip) |
-| `scoring/kick` | §3.4 "Kick enemy off platform → 800" | unit+scenario | run into a flipped enemy → score increases by **exactly 800** (base, combo=1). Holds for turtle, crab, fly. | 🔴 (turtle 800, crab 1200, fly 1000) |
-| `scoring/slipice` | §3.4 "Hit Slipice → 500" | unit+scenario | bump a Slipice from below → score += **exactly 500**; Slipice removed | 🔴 (value correct: `SLIPICE_SCORE=500`, but unverifiable — no surface) |
+| `scoring/flip` | §3.4 + §0 #1 "Flip enemy → **0**; points only on the kick" | unit+scenario | bump a grounded target enemy from below → score increases by **exactly 0**; enemy enters `flipped`. Then the kick scores (see `scoring/kick`) | 🟡 (value now CORRECT — code awards 0 on flip; unverifiable until surface exists) |
+| `scoring/kick` | §3.4 "Kick enemy off platform → 800" | unit+scenario | run into a flipped enemy → score increases by **exactly 800** (base, combo=1). Holds for turtle, crab, fly. | 🔴 (turtle 800, crab `CRAB_SCORE=1200`, fly `FLY_SCORE=1000` — must all be 800) |
+| `scoring/slipice` | §3.4 + §0 #9 "Hit Slipice → 500 *(undocumented)*" | unit+scenario | bump a Slipice from below → score += **exactly 500**; Slipice removed. **Value is UNVERIFIED against any source (§0 #9) — flag for human**: keep 500 as the placeholder but do not treat green here as faithfulness evidence | 🟡 (code `SLIPICE_SCORE=500` matches the placeholder; both value-authenticity and runtime are unverified) |
 | `scoring/coin` | §3.4 "Collect bonus coin → 800" | unit+scenario | collect one bonus coin → score += **exactly 800** | 🔴 (current `COIN_SCORE=300`) |
-| `scoring/bonus-all-phase3` | §3.4 "all coins (Phase 3) → 3,000" | unit+scenario | collect all 10 coins in the first bonus phase → +3 000 beyond per-coin | 🟢 value present (`BONUS_COMPLETE_FIRST=3000`); 🔴 unverifiable |
-| `scoring/bonus-all-phase6+` | §3.4 "all coins (Phase 6+) → 5,000" | unit+scenario | collect all 10 coins in a later bonus phase → +5 000 | 🟢 value present (`BONUS_COMPLETE_REPEAT=5000`); 🔴 unverifiable |
-| `scoring/combo-multiplier` | §3.4 "1st=800, 2nd=1600, 3rd=3200" | scenario | kick 3 enemies within ~1 s → deltas are **800, 1600, 3200** (×2 chain); a kick after the window resets to 800 | 🔴 (multiplier logic ×2 present, but base is wrong per `scoring/kick`; unverifiable) |
-| `scoring/extra-life` | §3.4 + §1 "extra life at 20,000" | unit+scenario | crossing 20 000 points grants exactly **+1 life**, once | 🔴 (not implemented anywhere) |
+| `scoring/bonus-all-first` | §3.4 + §0 #3 "all coins, 1st bonus stage → **5,000**" | unit+scenario | collect all 10 coins in the **first** bonus stage → +5 000 beyond the 800/coin | 🔴 (current `BONUS_COMPLETE_FIRST=3000` — must be 5 000) |
+| `scoring/bonus-all-subsequent` | §3.4 + §0 #3 "all coins, 2nd bonus stage onward → **8,000**" | unit+scenario | collect all 10 coins in a **subsequent** bonus stage → +8 000 beyond the 800/coin | 🔴 (current `BONUS_COMPLETE_REPEAT=5000` — must be 8 000) |
+| `scoring/combo-additive` | §3.4 + §0 #2 "additive +800: 800/1600/2400/3200, capped at 3200 (NOT doubling)" | unit+scenario | kicking enemies in quick succession yields deltas **800, 1600, 2400, 3200, 3200…** (each +800, capped at 3200); a kick after the window resets to 800 | 🔴 (code doubles: `registerKill()` returns `Math.pow(2, n-1)` → 800/1600/3200/6400 — wrong shape AND uncapped) |
+| `scoring/extra-life` | §3.4 + §1 + §0 #5 "extra life at 20,000 (US DIP default)" | unit+scenario | crossing 20 000 points grants exactly **+1 life**, once (20 000 confirmed authentic — §0 #5) | 🔴 (not implemented anywhere — real bug) |
 
 ### Player movement (§3.1) → rows
 
@@ -136,9 +151,10 @@ today because no `buildTestSurface()` exists** — they are honest red.
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
 | `flip/from-below-only` | §3.2 Step 1 | scenario | bump the platform directly under a grounded target enemy → it flips; bumping a platform with no enemy on it does nothing | 🔴 |
-| `flip/recovery-enrage` | §3.2 + ✅ Flip Recovery | scenario | leave a flipped enemy un-kicked until `flipTimer` expires → it stands up, speed constant increases, color/state = `enraged` | 🔴 (recovery exists but timer=4200 ms not 20 000/15 000; see Q1) |
-| `flip/last-immediate-superfast` | §3.2 ✅ Flip Recovery edge case | scenario | when only 1 enemy remains → it immediately enters super-fast (`last`) state regardless of flip state | 🔴 (logic present in `updateLastEnemy`; unverifiable) |
-| `enemy/speed-states` | §3.2 speed-states table | unit | three states map to multipliers: normal 1.0×, enraged ≈1.6×, last 2.2× (per §9) | 🔴 (last=2.0×; crab enrage fixed) |
+| `flip/recovery-enrage` | §3.2 + ✅ Flip Recovery + §0 #4 | scenario | leave a flipped enemy un-kicked until `flipTimer` expires (~5 s Mode A) → it stands up, speed increases, color/state = `enraged`. (Exact timer feel-tuned — `const/flip-recovery-A`.) | 🟡 (recovery behavior present, `SHELL_STUN_MS=4200` in the 4–6 s band; unverifiable) |
+| `flip/last-immediate-superfast` | §3.2 ✅ Flip Recovery edge case + §0 #6 | scenario | when only 1 **turtle or crab** remains → it immediately enters super-fast (`last`) state regardless of flip state. **A last-enemy Fighterfly must NOT speed up** (§0 #6) — covered by `enemy/fly-not-last-fast` | 🔴 (`updateLastEnemy` calls `makeLast()` on ANY last enemy incl. fly; no turtle/crab gate) |
+| `enemy/speed-ordering` | §0 #8 (per-enemy §4 governs; global §9 removed) | invariant | normal walking-speed ordering holds: **Shellcreeper (slowest) < Fighterfly < Sidestepper (fastest)**, and for each enemy enraged > normal. Exact numbers feel-tuned. Current: turtle 42, fly 40, crab 38 → ordering is **inverted** (crab slowest, turtle fastest) | 🔴 (ordering violated — see `enemy/crab-faster`) |
+| `enemy/speed-exact` | §0 #8 (LOW conf — exact numbers undocumented) | human | exact per-enemy speed/enrage/last multipliers are human-tuned for feel; only the ordering invariant above is automatable | human |
 
 ### POW block (§3.3) → rows
 
@@ -155,7 +171,7 @@ today because no `buildTestSurface()` exists** — they are honest red.
 |----|----------|--------|-----------|:--:|
 | `enemy/turtle-one-hit-flip` | §4.1 "1 hit to flip" | scenario | one bump from below flips a Shellcreeper | 🔴 (logic present; unverifiable) |
 | `enemy/turtle-enrage-red` | §4.1 "recovers shell red, +speed" | scenario | a recovered turtle is in `enraged` state and faster than base | 🔴 |
-| `enemy/turtle-last-blue` | §4.1 "last enemy turns blue, super-fast" | scenario | as last enemy a turtle enters `last` state (blue, 2.2×) | 🔴 (2.0× used) |
+| `enemy/turtle-last-blue` | §4.1 + §0 #6/#8 "last enemy turns blue, super-fast" | scenario | as last enemy a turtle enters `last` state and is faster than its normal speed (exact multiplier feel-tuned — §0 #8); color → blue | 🟡 (turtle enters `makeLast()` and accelerates; exact value feel-tuned; unverifiable) |
 | `enemy/turtle-no-jump` | §4.1 "does not jump; walks off gaps" | invariant | a turtle's vertical motion only comes from falling through gaps, never a jump | 🔴 |
 
 ### Enemies — Sidestepper (§4.2)
@@ -164,8 +180,8 @@ today because no `buildTestSurface()` exists** — they are honest red.
 |----|----------|--------|-----------|:--:|
 | `enemy/crab-two-hit` | §4.2 + ✅ Two-Hit Mechanic | scenario | hit 1 → crab `hitPoints` 2→1, becomes enraged + faster, **not** flipped; hit 2 → flipped | 🔴 (logic present; unverifiable) |
 | `enemy/crab-recovery-no-reset` | §4.2 ✅ Two-Hit ("recovering does NOT reset hitPoints to 2") | scenario | after flip + recovery, the crab needs only **1** more hit to flip again (not 2) | 🔴 (`recover()` sets bumps to flipsToStun-1=1 → 1 hit needed; likely correct, unverifiable) |
-| `enemy/crab-faster` | §4.2 "notably faster than Shellcreeper" | unit | crab base speed > turtle base speed | 🟢 (`CRAB_SPEED 38? ` vs `SHELL_SPEED 42` — **crab is SLOWER**; spec says faster) → actually 🔴 |
-| `enemy/crab-last-blue` | §4.2 "last enemy blue 2.5×" | scenario | last crab enters `last` state at multiplier per spec (2.5× crab table vs 2.2× global §9 — see Q2) | 🔴 |
+| `enemy/crab-faster` | §4.2 + §0 #8 "Sidestepper is the fastest; Shellcreeper slowest" | unit | crab base speed > turtle base speed (and > fly) | 🔴 (`CRAB_SPEED=38 < SHELL_SPEED=42` — crab is the **slowest**; real ordering bug, §0 #8) |
+| `enemy/crab-last-blue` | §4.2 + §0 #6 "Sidestepper speeds up as last enemy" | scenario | last crab enters super-fast (`last`) state and is faster than its normal speed (exact multiplier feel-tuned — §0 #8) | 🟡 (crab does enter `makeLast()`; behavior present, exact value feel-tuned; unverifiable) |
 
 ### Enemies — Fighter Fly (§4.3)
 
@@ -174,8 +190,8 @@ today because no `buildTestSurface()` exists** — they are honest red.
 | `enemy/fly-hops` | §4.3 / §7.3 "moves by hopping 2–3 tiles" | scenario | the fly's vertical velocity is periodically launched (hops), not continuous walking | 🔴 (hop logic present; unverifiable) |
 | `enemy/fly-grounded-only-flip` | §4.3 + ✅ Jump-Only Flip | scenario | bump the platform under an **airborne** fly → no effect (stays active); bump while grounded → flips | 🔴 (current `bump()` does NOT check grounded; a mid-air fly CAN be flipped → divergence) |
 | `enemy/fly-quick-recovery` | §4.3 "gets back up very quickly" | scenario | a flipped fly's stun duration is shorter than a turtle's | 🔴 (current build uses same `SHELL_STUN_MS` for all; divergence) |
-| `enemy/fly-no-enrage` | §4.3 "no enraged faster state" | scenario | a recovered fly returns to normal speed (no enrage tier), but last-enemy still applies | 🔴 |
-| `enemy/fly-last-red` | §4.3 "last enemy red, faster hops" | scenario | last fly enters `last` state | 🔴 |
+| `enemy/fly-no-enrage` | §4.3 "no enraged faster state" | scenario | a recovered fly returns to normal speed (no enrage tier) | 🟡 (fly `angrySpeed===walkSpeed`, no enrage tier; unverifiable) |
+| `enemy/fly-not-last-fast` | §4.3 + §0 #6 "Fighterfly does NOT speed up as last enemy" | scenario+invariant | when a Fighterfly is the last enemy on screen its speed/hop-rate is **unchanged** from its normal pace (no last-enemy boost — unlike turtle/crab). The `last` color/state may still render, but `effSpeed` must not multiply | 🔴 (`makeLast()` applies to the fly and `effSpeed` multiplies by `ENEMY_LAST_MULT=2.0` for all kinds — fly wrongly accelerates; §0 #6) |
 | `enemy/fly-cross-level` | §4.3 "can hop to a different platform level" | scenario | over many hops a fly can land on a different platform row than it started | 🔴 |
 
 ### Enemies — Slipice (§4.4)
@@ -240,7 +256,8 @@ today because no `buildTestSurface()` exists** — they are honest red.
 | `phase/loop` | §6.2 "after 14, loop ~10–14" | scenario | after phase 14, the next phase is drawn from the 10–14 loop set (not phase 1) | 🔴 (current loops to phase 1) |
 | `phase/loop-speed-ramp` | §6.2 "each loop +speed" | scenario | enemy `speedScale` increases by `LOOP_SPEED_STEP` per completed loop | 🔴 (logic present; unverifiable) |
 | `phase/counter-wrap` | §6.2 "Phase 99 wraps to Phase 0" | unit | the displayed phase counter wraps at 99 → "Phase 0" | 🔴 (not implemented) |
-| `mode/A-B` | §1 / §3.2 "Mode A (default) and Mode B (faster recovery)" | unit | Mode A uses 20 000 ms recovery; Mode B uses 15 000 ms | 🔴 (no A/B mode — the menu is solo/coop/versus instead; see Q1) |
+| `mode/A-B` | §1 + §0 #7 "Mode A (default) / Mode B (faster enemies + shorter flip-recovery)" | scenario | a Mode-B run has **faster enemy speeds AND shorter flip-recovery** than Mode A (must kick sooner); exact deltas feel-tuned (§0 #7). Single-player A/B is the faithful target | 🔴 (no A/B difficulty mode exists; the menu offers solo/coop/versus player-count modes instead) |
+| `mode/2p-coop-versus` | §0 (2P co-op/versus = non-spec extra, out of faithfulness scope) | n/a | the build's solo/coop/versus player-count modes and versus mechanics (`VS_STUN_MS`, `shellHurts`, per-player score) are an **intentional out-of-spec extension** — neither green nor red; excluded from faithfulness % | n/a (out of scope per §0) |
 
 ### Bonus phase (§6.3)
 
@@ -281,19 +298,22 @@ today because no `buildTestSurface()` exists** — they are honest red.
 11. During a bonus phase, the enemy and Slipice lists are always empty.
 12. At most 3 platforms are iced at once; iced platforms are only the non-floor rows.
 13. No two active enemies occupy overlapping bounds for more than one frame (head-on reverse resolves them).
+14. Normal-state speed ordering always holds: `turtle < fly < crab`; for every enemy, `enraged ≥ normal` and `last ≥ normal` (§0 #8 ordering).
+15. A last-enemy **Fighterfly** moves at its normal pace — its `effSpeed` is never multiplied by a last-enemy factor (§0 #6); only turtle/crab get the last boost.
 
 ## 4. Scenario catalog (named, deterministic, set→act→assert)
 
-- `scoring/flip-awards-10`
+- `scoring/flip-awards-0` (flip scores nothing; only the kick scores — §0 #1)
 - `scoring/kick-awards-800-all-kinds`
 - `scoring/coin-awards-800-and-full-bonus`
-- `scoring/combo-800-1600-3200`
+- `scoring/combo-additive-800-1600-2400-3200-capped` (additive +800, cap 3200 — §0 #2)
 - `scoring/extra-life-at-20k`
-- `scoring/slipice-500-no-kick`
+- `scoring/slipice-500-no-kick` (value unverified per §0 #9)
 - `stomp/land-on-enemy-kills-player`
 - `flip/from-below-then-kick`
 - `flip/recovery-enrages-after-timer`
-- `flip/last-enemy-immediate-superfast`
+- `flip/last-enemy-immediate-superfast` (turtle/crab only)
+- `enemy/fly-last-enemy-keeps-pace` (Fighterfly does NOT speed up as last — §0 #6)
 - `enemy/crab-two-hit-then-recovery-keeps-one`
 - `enemy/fly-airborne-bump-noop`
 - `enemy/fly-grounded-bump-flips`
@@ -312,16 +332,16 @@ today because no `buildTestSurface()` exists** — they are honest red.
 - `phase/loops-10-to-14-after-14`
 - `phase/14-unique-phases-present`
 - `bonus/ten-coins-no-enemies-20s`
-- `bonus/all-coins-3000-first-5000-later`
-- `mode/B-recovers-faster-than-A`
+- `bonus/all-coins-5000-first-8000-subsequent` (§0 #3)
+- `mode/B-faster-enemies-and-shorter-recovery-than-A` (§0 #7; exact deltas feel-tuned)
 
 ## 5. Pure logic to extract for mode-1 unit tests
 
 These should be lifted out of the scene/entities into pure, import-and-call functions:
 
-- `comboMultiplier(comboCount)` → currently `Player.registerKill()` returns `2^(n-1)`; extract a pure `comboMultiplier(n)`.
+- `comboScore(comboCount)` → spec wants **additive +800 capped at 3200** (800/1600/2400/3200; §0 #2). Current `Player.registerKill()` returns `2^(n-1)` *multiplier* — wrong shape; replace with a pure `comboScore(n) = min(800*n, 3200)` and unit-test the sequence incl. the cap.
 - `extraLifeThreshold(prevScore, newScore)` → a pure stepper returning lives to grant when crossing 20 000 (does not exist yet — add it).
-- `effSpeed(base, speedScale, state, last)` → enemy speed resolver from `Enemy.effSpeed` (so the 1.6×/2.2× table is unit-checkable).
+- `effSpeed(kind, base, speedScale, state, last)` → enemy speed resolver from `Enemy.effSpeed`, so the **ordering** invariant (turtle < fly < crab; enraged > normal) and the **fly-exempt-from-last** rule (§0 #6) are unit-checkable. Exact multipliers are feel-tuned (human).
 - `bumpResult(kind, bumps)` → pure "does this bump flip or enrage?" (from `Enemy.bump`) so the two-hit crab rule is unit-checkable.
 - `parsePhases()` / phase-roster table → assert the 14-phase composition without a browser.
 - `icicleState(timer, vy)` stepper → pure state-machine transition for `hidden→forming→full→falling`.

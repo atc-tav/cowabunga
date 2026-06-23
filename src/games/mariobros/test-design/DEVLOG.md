@@ -6,6 +6,87 @@ settled questions. Pairs with `TEST_DESIGN.md` (the ledger) in this folder.
 
 ---
 
+## 2026-06-24 — Reconciled the ledger to the authoritative §0 (authentic-arcade research pass)
+
+**What I did.** The spec gained an authoritative **§0 Authentic-Arcade
+Reconciliation** (US/English single-player 1983 arcade, sources + confidence per
+row) plus matching inline fixes. I re-judged every affected ledger row against
+the *corrected* spec and the current code (`src/games/mariobros/*.ts`). **No game
+code was modified.** I also added a 🟡 status ("value/behavior matches the
+corrected spec but unverifiable until the test surface exists") so we can
+separate the genuine remaining bugs (🔴) from pure test-surface debt.
+
+**The big reframe:** several rows that were 🔴 ("code disagrees with spec") were
+*the spec being wrong*, not the code. Once §0 corrects the spec, the code is
+actually right on those points:
+- **`scoring/flip`** — spec now says flip awards **0** (only the kick scores, §0
+  #1). Code already awards 0 on flip → now CORRECT in value (🟡, unverifiable).
+- **`flip/recovery` timer** — the "20 s / 15 s" was the *bonus-stage* time limit,
+  not flip recovery; authentic recovery is ~5 s (§0 #4). Code's
+  `SHELL_STUN_MS=4200` is inside the 4–6 s band → reclassified the two
+  `const/flip-recovery-*` rows as **human** (feel-tuned), dropped the
+  20 000/15 000 ms assertions.
+- **last-enemy / enrage multipliers** — exact numbers are undocumented and
+  feel-tuned (§0 #8); the binding constraint is **ordering** (turtle < fly < crab;
+  enraged > normal). Replaced exact-multiplier unit rows with an **ordering
+  invariant** + a **human** "exact feel" row.
+
+**Genuine bugs that stayed (or got sharper) 🔴:**
+- `scoring/kick` (1200/1000 must be 800), `scoring/coin` (300→800),
+  `scoring/bonus-all-first/subsequent` (3000/5000 → **5000/8000**, §0 #3),
+  `scoring/combo-additive` (code **doubles** `2^(n-1)`; spec is **additive +800
+  capped at 3200**, §0 #2), `scoring/extra-life` (20 000 confirmed authentic §0
+  #5; code implements none).
+- `enemy/crab-faster` / `enemy/speed-ordering` — crab base 38 < turtle 42: a real
+  **ordering violation** (crab must be fastest, §0 #8).
+- `enemy/fly-not-last-fast` (new) — code's `makeLast()` + uniform
+  `ENEMY_LAST_MULT` accelerates the Fighterfly as last enemy; §0 #6 says it must
+  NOT speed up. Gated `flip/last-immediate-superfast` to turtle/crab only.
+
+**Scope:** marked solo/coop/versus player-count modes as **`n/a` out of scope**
+(non-spec extra per §0), not red. Single-player Mode A/B is the faithful target
+(`mode/A-B` stays 🔴 — no A/B difficulty exists; §0 #7 redefines B as faster
+enemies + shorter recovery).
+
+**Flagged for the human:** `scoring/slipice = 500` is **undocumented/unverified**
+(§0 #9) — kept as a placeholder (🟡) but its *value authenticity* is unproven, so
+a green here is not faithfulness evidence. Also the **bonus-phase cadence**
+(phases 3/8/13 vs §0's MED-confidence "4 and 9, then every 7th") was **not**
+turned into a hard roster integer — see "Couldn't cleanly turn into a row" below.
+
+### Resolution of the 10 open questions (all settled by §0 unless noted)
+
+1. **Modes A/B vs solo/coop/versus** → SETTLED (§0, §1). Single-player A/B is the
+   faithful target; 2P co-op/versus are an out-of-scope non-spec extra (`mode/2p-coop-versus` = n/a). Mode B = faster enemies + shorter recovery (§0 #7).
+2. **Last/enraged multiplier 2.2× global vs per-enemy** → SETTLED (§0 #8). The
+   per-enemy §4 table governs; global §9 values removed. Exact numbers are
+   feel-tuned; only the **ordering** (turtle<fly<crab; enraged>normal) and the
+   **fly-last exemption** (§0 #6) are asserted.
+3. **Combo ×2 doubling vs listed sequence** → SETTLED (§0 #2). It is **additive
+   +800, capped at 3200** (800/1600/2400/3200), NOT doubling. Window ~1–2 s is
+   feel-tuned. Code's doubling is now a confirmed bug.
+4. **"Fixed jump arc" vs air control** → STILL OPEN (§0 is silent). §0 confirms
+   "fixed jump arc (no mid-air steering)" as authentic but gives no air-drift
+   tolerance. `move/fixed-jump-arc` keeps its loose assertion; flagged below.
+5. **Ground-floor wrap vs pipe-recycle** → STILL OPEN (§0 confirms screen wrap
+   for player + enemies as authentic, but does not resolve the floor pipe-recycle
+   vs edge-wrap conflict with §7.2). `wrap/enemies` stays 🔴, flagged below.
+6. **Units px/frame (§9) vs px/second (code)** → STILL OPEN. §0 declares the §9
+   global multipliers feel-tuned/removed but does **not** give authoritative
+   absolute speeds; the `const/enemy-base-*` and player `const/*` rows stay 🔴
+   pending a units decision. The *ordering* is now the real faithfulness gate, so
+   exact absolute values are lower-stakes (many become human/feel).
+7. **POW re-flips a flipped enemy upright** → CONFIRMED IN SCOPE. §0's
+   "confirmed correct" list keeps the POW caution behavior; `pow/reflips-flipped-upright` stays 🔴 (required, not implemented).
+8. **Color-variant rendering automatability** → UNCHANGED. Split stands:
+   state→colorToken mapping = unit-ish, on-screen readability = human.
+9. **Phase 12/14 "Mixed enemies" roster** → STILL OPEN/UNDER-SPECIFIED. §0 does
+   not enumerate phase 12/14 rosters; `phase/roster-12` and `phase/roster-14`
+   remain non-decisive ("Mixed"). Flagged below.
+10. **2P/co-op/versus scope** → SETTLED (§0). Out of faithfulness scope (n/a).
+
+---
+
 ## 2026-06-23 — Drafted the Oracle Ledger from the spec (Steps 0–1)
 
 **What I did.** Linted `specs/mario-bros-arcade.md` against
