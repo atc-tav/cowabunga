@@ -6,6 +6,40 @@
 
 ---
 
+## 0. Authentic-Arcade Reconciliation (2026 research pass)
+
+> This section is **authoritative** and overrides any conflicting inline value
+> below. It records corrections made after researching the authentic 1983 US
+> arcade (sources + confidence per row). Canonical target = **US/English arcade,
+> single-player**; Mode A/B are the difficulty target (2P co-op/versus are a
+> non-spec extra and out of faithfulness scope). Where the authentic value is
+> **not documented in accessible sources**, we say so and treat it as
+> **feel-tuned** (a human-judged row), rather than inventing precision.
+
+| # | Spec said | Corrected to (authentic) | Conf. | Source |
+|---|-----------|--------------------------|-------|--------|
+| 1 | Flip enemy = **10 pts** | **0 pts** — flipping scores nothing; points are awarded only on the kick | MED | mariowiki / strategywiki (no source attributes points to a flip) |
+| 2 | Combo = 800 → 1600 → **3200** (doubling) | **Additive +800: 800 / 1600 / 2400 / 3200, capped at 3200** | HIGH | strategywiki |
+| 3 | All-coins bonus = 3,000 first / 5,000 later | **5,000 first bonus stage / 8,000 subsequent** (the 800 is per-coin and additional) | HIGH | strategywiki / mariowiki |
+| 4 | Flip recovery = **20 s** (A) / 15 s (B) | **~5 s** before it rights itself (Mode B shorter). The "20 s / 15 s" is the **bonus-stage time limit**, not recovery. Exact frames **undocumented → feel-tuned** | HIGH (that 20 s is wrong) / LOW (exact) | strategywiki, tcrf |
+| 5 | Extra life at **20,000** | **Correct** — 20,000 is the US DIP factory default (options 20k/30k/40k/None). JP adds a **recurring** life every 30,000. Current code implements **none** — that's the bug | HIGH | arcade-museum.com dipswitch, tcrf |
+| 6 | Last enemy → all turn blue/super-fast | Shellcreeper & Sidestepper jump to fastest pace; **Fighterfly does NOT speed up as last enemy** | HIGH | mariowiki / strategywiki |
+| 7 | Mode A/B = "easier/harder timing" | **Mode B = faster enemies + shorter flip-recovery** (must kick sooner); exact deltas undocumented → feel-tuned | MED | tcrf |
+| 8 | Per-enemy speed multipliers (§3.2/§9 conflict: 1.6×/2.2× global vs 1.5×/2.0×, 1.8×/2.5× per-enemy) | **The per-enemy table (§4) governs; the global §9 values are removed.** Exact numbers are **feel-tuned**; the binding constraint is the **ordering**: Shellcreeper (slowest) < Fighterfly < Sidestepper (fastest), and enraged > normal | MED (ordering) / LOW (exact numbers undocumented) | mariowiki |
+| 9 | `Hit Slipice = 500 pts` | **Undocumented** — no source confirms a Slipice point value. Left at 500 but flagged unverified | LOW | — |
+
+**Confirmed correct (no change):** kick = 800, coin = 800, POW = 3 uses + no
+effect on airborne Fighterfly, Slipice freezes a platform at its center and
+makes it slippery, two-hit Sidestepper, screen wrap for player + enemies, fixed
+jump arc (no mid-air steering).
+
+**Bonus-phase numbering** (spec says phases 3/8/13): authentic cadence is most
+likely phases **4 and 9, then every 7th** — but this is MED confidence, so the
+ledger marks phase-cadence rows as needing confirmation rather than asserting a
+specific wrong integer.
+
+---
+
 ## 1. Game Overview
 
 - **Genre:** Single-screen arena platformer
@@ -13,7 +47,7 @@
 - **Core loop:** Enemies emerge from top pipes → traverse platforms downward → exit through bottom pipes → repeat. Player must flip every *target enemy* onto its back, then kick it off the screen to clear the phase.
 - **Screen wrap:** The playfield uses horizontal wrap-around. A character exiting the left edge reappears at the right edge at the same Y position, and vice versa.
 - **Lives:** Player starts with 3 lives. Earn an extra life at 20,000 points.
-- **Game modes:** Mode A (default / easier timing) and Mode B (harder — enemies recover faster from stun).
+- **Game modes:** Mode A (default) and Mode B (expert — enemies move faster *and* recover from a flip in less time, so they must be kicked off sooner). Single-player A/B is the faithful target; 2P co-op/versus are a non-spec extra (see §0). Exact Mode-B deltas are feel-tuned (undocumented).
 
 > ✅ **CHECK — Screen Wrap:** Verify that a sprite whose `x` position exceeds `stageWidth` wraps to `0`, and a sprite at `x < 0` wraps to `stageWidth`. This should apply to both the player and all enemies.
 
@@ -100,7 +134,7 @@ All standard enemies are defeated in a two-step process:
 Step 1: HIT FROM BELOW
   → Player jumps and hits the platform directly below the enemy
   → Enemy is FLIPPED (stunned on its back)
-  → 10 points awarded
+  → NO points for the flip itself (see §0 #1) — scoring happens on the kick
 
 Step 2: KICK (contact while flipped)
   → Player runs into the flipped enemy
@@ -110,9 +144,9 @@ Step 2: KICK (contact while flipped)
 
 **Flip recovery (if player is too slow):**
 - The flipped enemy will stand back up after a timeout and re-enter the field **faster** and **with a color change indicating anger**.
-- Recovery timers:
-  - Mode A: ~20 seconds before color change and recovery
-  - Mode B: ~15 seconds before color change and recovery
+- Recovery timer (see §0 #4): **~5 seconds** before the enemy rights itself in
+  Mode A; **shorter** in Mode B. (The 20 s / 15 s figures are the *bonus-stage*
+  time limit, not recovery.) Exact frame count is undocumented → feel-tuned.
 
 **Speed states for standard enemies:**
 
@@ -120,9 +154,9 @@ Step 2: KICK (contact while flipped)
 |-------|---------|-----------------|
 | Normal | Initial spawn | Default color |
 | Enraged / Fast | Enemy recovers from a flip, OR is first-hit on a Sidestepper | Color change (see per-enemy specs) |
-| Super Fast (Last Enemy) | Only 1 enemy remains in phase | Turns blue; hardest to defeat |
+| Super Fast (Last Enemy) | Only 1 enemy remains in phase — **applies to Shellcreeper & Sidestepper only; a Fighterfly does NOT speed up as last enemy** (§0 #6) | Turns blue; hardest to defeat |
 
-> ✅ **CHECK — Flip Recovery:** Implement a `flipTimer` on each enemy. When `flipTimer` expires before kick, call `enemy.enrage()`. Verify the enemy's speed constant increments and color state changes. Test edge case: last enemy should immediately enter super-fast state regardless of being flipped.
+> ✅ **CHECK — Flip Recovery:** Implement a `flipTimer` on each enemy. When `flipTimer` expires before kick, call `enemy.enrage()`. Verify the enemy's speed constant increments and color state changes. Test edge case: a last-enemy Shellcreeper or Sidestepper should immediately enter super-fast state regardless of being flipped — but a **Fighterfly must NOT** (it keeps its pace; §0 #6).
 
 ### 3.3 POW Block
 
@@ -138,16 +172,18 @@ Step 2: KICK (contact while flipped)
 
 | Action | Points |
 |--------|--------|
-| Flip enemy | 10 |
+| Flip enemy | **0** (no score for the flip; see §0 #1) |
 | Kick enemy off platform | 800 |
-| Hit Slipice | 500 |
+| Hit Slipice | 500 *(undocumented — unverified, §0 #9)* |
 | Collect bonus coin | 800 |
-| Collect all bonus coins (Phase 3) | 3,000 |
-| Collect all bonus coins (Phase 6+) | 5,000 |
-| Extra life threshold | 20,000 points |
+| Collect all bonus coins (1st bonus stage) | **5,000** |
+| Collect all bonus coins (2nd bonus stage onward) | **8,000** |
+| Extra life threshold | 20,000 points (US DIP default; JP also recurs every 30,000 — §0 #5) |
 
-**Combo multiplier:**
-- Kicking multiple enemies within ~1 second of each other multiplies points: 1st kick = 800, 2nd = 1,600, 3rd = 3,200, etc.
+**Combo multiplier (see §0 #2):**
+- Kicking enemies in quick succession adds **+800 each**: 1st kick = 800, 2nd =
+  1,600, 3rd = 2,400, 4th = 3,200, **capped at 3,200**. (NOT a doubling.) The
+  exact succession window is undocumented (~1–2 s) → feel-tuned.
 
 ### 3.5 Enemy Collision Behavior
 
@@ -326,7 +362,7 @@ const CRAB_FLIP: string[] = [
 - **Can only be flipped when it is touching a platform or the floor** (mid-air hits from below do not flip it).
 - Requires **1 hit** to flip (when grounded).
 - Gets back up very quickly after being flipped — player must kick fast.
-- Does **not** have an enraged faster state like Shellcreeper — but as the **last enemy**, enters super-fast mode (hardest enemy in this state due to speed of recovery).
+- Does **not** have an enraged faster state like Shellcreeper, and — unlike the turtle and crab — **does NOT speed up as the last enemy** (it keeps its current pace; see §0 #6). Its difficulty comes from being flippable only while grounded, not from a last-enemy speed boost.
 - Can hop between platform levels (occasionally lands on a different row than where it started).
 
 #### Speed States
@@ -559,7 +595,7 @@ Phase 99:      Game counter wraps → displays "Phase 0", then loops as Phase 1
 - No enemies; no Slipice; no POW Block interaction needed.
 - **10 coins** appear from the top pipes.
 - Player has **20 seconds** (15 seconds in the Ice Bonus at Phase 13) to collect all 10 coins.
-- Collecting all 10 = full bonus (3,000 pts first time, 5,000 pts subsequent).
+- Collecting all 10 = full bonus (**5,000 pts in the first bonus stage, 8,000 pts subsequent**; see §0 #3) — in addition to the 800 per coin.
 - Timer runs out = partial bonus, no penalty beyond missed points.
 
 > ✅ **CHECK — Bonus Phase State:** The phase manager should have a `isBonusPhase` flag. When `true`: spawn coin objects from pipes, disable enemy spawn logic, start a countdown timer, and end the phase when timer hits 0 OR all coins are collected. Verify normal enemies cannot appear during bonus phases.
