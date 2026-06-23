@@ -6,6 +6,27 @@ settled questions. Pairs with `TEST_DESIGN.md` (the ledger) in this folder.
 
 ---
 
+## 2026-06-23 — Phase-structure deep research folded into the spec
+
+**What I did.** A deep-research pass on the authentic arcade phase structure
+(see spec §0 phase note). Resolved the "mixed" phases — **Phase 12 = Fighterfly
++ Shellcreeper + Slipice**, **Phase 14 = Fighterfly + Sidestepper + Slipice** —
+and confirmed Slipice@9, icicles@~16 (a *separate* hazard from the phase-9 ice
+floor), Sh+Si-together-only-in-5, bonus limits 20 s/15 s, rewards 5,000/8,000,
+and that "Phase 99" is a display cap (the unique set loops).
+
+**What stays open (flagged, NOT encoded).** The exact **bonus-phase cadence**,
+the **unique phase count** (22 vs 35 — two numbering schemes), exact **per-phase
+headcounts** (phases 5–22), and the **fireball debut** are genuinely
+undocumented — sources conflict and Super Mario Wiki contradicts itself; no
+disassembly exists. Decisive next step: observe a MAME run of the US ROM and log
+coin-phase numbers + per-phase spawns. Until then the phase-cadence/roster
+ledger rows remain flagged for adjudication rather than asserting an unproven
+integer. Phase-roster *implementation* (levels.ts/phases.ts) is a deferred
+Step-3 follow-up, separate from this session's behavioral fixes.
+
+---
+
 ## 2026-06-23 — Steps 2–3: stood up the test surface and drove the behavioral reds green
 
 **What I did.** Implemented Step 2 (test surface) and Step 3 (the clear

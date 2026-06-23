@@ -33,10 +33,29 @@ effect on airborne Fighterfly, Slipice freezes a platform at its center and
 makes it slippery, two-hit Sidestepper, screen wrap for player + enemies, fixed
 jump arc (no mid-air steering).
 
-**Bonus-phase numbering** (spec says phases 3/8/13): authentic cadence is most
-likely phases **4 and 9, then every 7th** — but this is MED confidence, so the
-ledger marks phase-cadence rows as needing confirmation rather than asserting a
-specific wrong integer.
+**Phase structure (2026 deep-research pass — what's solid vs. contested):**
+
+*Solid (HIGH confidence, multiple sources):* Slipice (slippery ice floors) first
+appears **Phase 9**; falling **icicles** are a *separate, later* hazard first
+appearing ~**Phase 16** (NOT phase 9 — §2.3's "Phases 9+" is the ice-floor
+debut, not icicles). Shellcreeper+Sidestepper appear together **only in Phase
+5**. Bonus stages: **first = 20 s limit, subsequent = 15 s**; rewards **5,000
+first / 8,000 after**. The on-screen "Phase 99" is a **display-counter cap**, not
+99 unique phases — the unique set loops while the number keeps climbing.
+
+*Resolved for the "mixed" phases (MED):* "Mixed enemies" = **two pest species +
+the ever-present Slipice**, not all three pests. **Phase 12 = Fighterfly +
+Shellcreeper + Slipice** (mirrors Phase 9); **Phase 14 = Fighterfly +
+Sidestepper + Slipice** (mirrors Phase 11) — both with more fireballs.
+
+*Genuinely CONTESTED — needs a MAME observation to settle, do NOT encode blindly
+(LOW):* the exact **bonus-phase cadence** (sources give 4/9-then-every-7th vs an
+irregular 4/8/16/22 vs the US "round" scheme 3/8/15/22 — Super Mario Wiki even
+contradicts itself), the **unique phase count** (22 vs 35, two numbering
+schemes), exact **per-phase enemy headcounts** for phases 5–22, and the
+**fireball debut phase**. Canonical vocabulary = the Super Mario Wiki "Phase"
+scheme (22 unique phases). The ledger keeps these rows flagged for adjudication
+rather than asserting a specific unproven integer.
 
 ---
 
@@ -560,7 +579,7 @@ export type TXKey = keyof typeof TX;
 
 ### 6.1 Phase Progression (Phases 1–14, Arcade)
 
-Phases are the game's levels. All target enemies must be kicked off-screen to complete a phase. Slipice does not count. Every group of phases includes a **Bonus Phase** (phases 3, 8, 13) where there are no enemies and the player collects 10 coins in 20 seconds for bonus points.
+Phases are the game's levels. All target enemies must be kicked off-screen to complete a phase. Slipice does not count. Bonus phases (no enemies; collect 10 coins) recur periodically — **first bonus = 20 s limit, later = 15 s**. ⚠️ The exact bonus-phase *cadence* is contested across sources (the "phases 3/8/13" here is unverified); see §0's phase-structure note — treat the cadence as needing MAME confirmation, not as a settled rule.
 
 | Phase | Enemy Composition | Special Hazards | Notes |
 |-------|-------------------|----------------|-------|
@@ -575,9 +594,9 @@ Phases are the game's levels. All target enemies must be kicked off-screen to co
 | 9 | Shellcreeper ×4, Fighter Fly ×1, Slipice | Slipice | First Slipice appearance |
 | 10 | Sidestepper ×4, Fighter Fly ×1, Slipice | Slipice | Crabs + Slipice |
 | 11 | Sidestepper ×4, Fighter Fly ×2, Slipice | Slipice | Mixed + Slipice |
-| 12 | Mixed enemies | Slipice, Icicles | Difficulty escalates |
+| 12 | Fighter Fly + Shellcreeper + Slipice (mirrors Phase 9) | Slipice, more fireballs | "Mixed" = 2 pests + Slipice (§0 phase note) |
 | 13 | **BONUS** (Ice floor variant) | Ice floor, 15-second timer | Bonus on iced platforms |
-| 14 | Mixed enemies | Slipice, Icicles | Final unique phase before loop |
+| 14 | Fighter Fly + Sidestepper + Slipice (mirrors Phase 11) | Slipice, more fireballs | Icicles begin ~Phase 16, not here (§0 phase note) |
 
 ### 6.2 Phase Looping
 
