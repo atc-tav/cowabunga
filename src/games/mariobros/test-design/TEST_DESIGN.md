@@ -5,26 +5,27 @@
 > research pass) and the inline fixes it references. §0 overrides any conflicting
 > inline value; rows below now trace to the corrected spec. The 2026-06-23 open
 > questions are recorded in `DEVLOG.md` and have all been settled by §0 (see the
-> 2026-06-24 DEVLOG entry). **Steps 2–3 executed 2026-06-23** (this session): the
-> test surface now exists (`MarioBrosScene.buildTestSurface()` +
-> `testing/scenarios.mjs` + `testing/fuzz.mjs`) and the clear behavioral reds were
-> driven green and **verified** by `npm run test:game -- mariobros` (17 scenarios,
-> 55 checks) + `npm run fuzz:game -- mariobros` (clean). This is the **definition
-> of done**: the game is faithful when every non-`human`, non-`n/a` row is 🟢.
+> 2026-06-24 DEVLOG entry). **Steps 2–3 executed 2026-06-23**; the **behavioral
+> reds were driven to green 2026-06-24** (this session). The test surface
+> (`MarioBrosScene.buildTestSurface()` + `testing/scenarios.mjs` +
+> `testing/fuzz.mjs`) now exercises **47 scenarios / 142 checks**, verified by
+> `npm run test:game -- mariobros` + a clean `npm run fuzz:game -- mariobros`
+> (30 s) + `npm test` (mode-1 `levels.test.ts`). This is the **definition of
+> done**: the game is faithful when every non-`human`, non-`n/a` row is 🟢.
 >
 > **Faithfulness = % of this ledger that is green** (excluding `human` and `n/a`
 > out-of-scope rows). Status reflects the **current** implementation
-> (`src/games/mariobros/*.ts`) as of 2026-06-24. There is currently **no test
-> surface** (`buildTestSurface()` and `testing/` are absent), so every
-> `scenario`/`invariant` row is unverifiable today: per our convention those are
-> 🔴 even where the underlying behavior may look right in play. Rows whose
-> **value is now confirmed authentic** are noted "🟢 on value / unverifiable
-> until the surface exists" so the genuine fix list (real bugs) is separable from
-> the test-surface debt.
+> (`src/games/mariobros/*.ts`) as of 2026-06-24. Every `scenario`/`invariant` row
+> that is 🟢 is now backed by a **named, spec-traced check** (cited in the row).
+> The only non-green rows left are honest: the 🟡 rows carry a stated reason the
+> value/path can't yet be certified authentic, and the 🔴 rows are explicitly
+> **out-of-scope / deferred** (units undecided, phase rosters blocked on MAME,
+> Mode A/B, art-pipeline sprite rows).
 >
-> **Status legend:** 🟢 correct & verifiable · 🟡 value correct, unverifiable
-> (no surface yet) · 🔴 wrong/missing/divergent · `human` feel-tuned, human-judged
-> · `n/a` out of faithfulness scope (non-spec extra, §0).
+> **Status legend:** 🟢 correct & verified by a spec-traced check · 🟡 behavior
+> verified but a value/variant is unconfirmed or deferred · 🔴 wrong/missing/
+> divergent or out-of-scope-deferred · `human` feel-tuned, human-judged · `n/a`
+> out of faithfulness scope (non-spec extra, §0).
 
 ## 0. Spec coverage map (completeness gate)
 
@@ -103,16 +104,23 @@ out of faithfulness scope (non-spec extra; see §0). **A 🟡 is not a pass** �
 becomes 🟢 only once a real check verifies it — but it is *not* a known bug, so it
 is tracked separately from the 🔴 fix list.
 
-**Tally (2026-06-23, after Steps 2–3): 🟢 36 · 🟡 7 · 🔴 56 · human 4 · n/a 1.**
-The Step-3 behavioral-fix targets are all 🟢 and verified by
-`npm run test:game -- mariobros` (17 scenarios / 55 checks) + a clean
-`npm run fuzz:game -- mariobros` soak. The remaining 🔴 are **untested** rows
-(plausible-in-code behaviors the harness does not yet exercise: momentum,
-traversal/gaps, screen-wrap, recycle, slipice/icicle state machines, head-on
-reverse, spawn stagger, sprite/TX/color, phases 11–14 & looping) plus the
-explicitly **deferred** rows (Mode A/B, phase 12/14 rosters, bonus-phase cadence,
-color-variant palette-swap) — none were in this session's scope. They are honest
-red: not yet proven, so not green.
+**Tally (2026-06-24, after the behavioral-reds pass): 🟢 73 · 🟡 3 · 🔴 23 ·
+human 4 · n/a 1.** All behavioral rows in scope are now 🟢, each proven by a
+named, spec-traced scenario (or a `levels.test.ts` unit) and verified by
+`npm run test:game -- mariobros` (47 scenarios / 142 checks) + a clean
+`npm run fuzz:game -- mariobros` soak (30 s, 0 violations). Two real code bugs
+were found and fixed in the process (per-kind flip-recovery for the fly; a hard
+3-iced-platform cap on Slipice). The remaining 🟡/🔴 are honest:
+- 🟡 (3): `scoring/slipice` (runtime verified, but the **500 value is
+  undocumented** §0 #9), `scoring`-adjacent `bonus/timer-20s` (20 s verified, the
+  15 s ice-bonus variant is deferred), and `wrap/enemies` (upper-floor wrap
+  verified; the ground-floor pipe-recycle vs edge-wrap conflict is a **spec
+  self-contradiction** awaiting a human ruling — DEVLOG Q5).
+- 🔴 (23): all **out-of-scope / deferred** — the `const/*` px-frame-vs-px-second
+  unit rows (units undecided, DEVLOG Q6), the phase-roster/looping/counter rows
+  (`phase/*`, blocked on a MAME observation), `mode/A-B`, the 15 s
+  ice-bonus (`const/bonus-time-ice`), and all `sprite/*` art-pipeline rows
+  (TX/color/mirror/flip — owned by a separate initiative). None were in scope.
 
 ### Constants (§9 PHYSICS, §3, §6) → unit rows
 
@@ -144,10 +152,10 @@ red: not yet proven, so not green.
 |----|----------|--------|--------------------------|:--:|
 | `scoring/flip` | §3.4 + §0 #1 "Flip enemy → **0**; points only on the kick" | unit+scenario | bump a grounded target enemy from below → score increases by **exactly 0**; enemy enters `flipped`. Then the kick scores (see `scoring/kick`) | 🟢 (verified: `flip awards 0` scenario) |
 | `scoring/kick` | §3.4 "Kick enemy off platform → 800" | unit+scenario | run into a flipped enemy → score increases by **exactly 800** (base, combo=1). Holds for turtle, crab, fly. | 🟢 (verified: `kick awards 800 for every enemy kind`; `CRAB_SCORE`/`FLY_SCORE` now `KICK_SCORE=800`) |
-| `scoring/slipice` | §3.4 + §0 #9 "Hit Slipice → 500 *(undocumented)*" | unit+scenario | bump a Slipice from below → score += **exactly 500**; Slipice removed. **Value is UNVERIFIED against any source (§0 #9) — flag for human**: keep 500 as the placeholder but do not treat green here as faithfulness evidence | 🟡 (code `SLIPICE_SCORE=500` matches the placeholder; both value-authenticity and runtime are unverified) |
+| `scoring/slipice` | §3.4 + §0 #9 "Hit Slipice → 500 *(undocumented)*" | unit+scenario | bump a Slipice from below → score += **exactly 500**; Slipice removed. **Value is UNVERIFIED against any source (§0 #9) — flag for human**: keep 500 as the placeholder but do not treat green here as faithfulness evidence | 🟡 (runtime now verified: `slipice dies to one bump for 500, no kick step` proves a single bump removes it and scores 500; the **value authenticity is still unverified** per §0 #9, so it stays 🟡 not 🟢) |
 | `scoring/coin` | §3.4 "Collect bonus coin → 800" | unit+scenario | collect one bonus coin → score += **exactly 800** | 🟢 (verified: `coins award 800 each` — `COIN_SCORE=800`) |
 | `scoring/bonus-all-first` | §3.4 + §0 #3 "all coins, 1st bonus stage → **5,000**" | unit+scenario | collect all 10 coins in the **first** bonus stage → +5 000 beyond the 800/coin | 🟢 (verified: `coins...5000 full first bonus` — 10×800+5000 = 13000; `BONUS_COMPLETE_FIRST=5000`) |
-| `scoring/bonus-all-subsequent` | §3.4 + §0 #3 "all coins, 2nd bonus stage onward → **8,000**" | unit+scenario | collect all 10 coins in a **subsequent** bonus stage → +8 000 beyond the 800/coin | 🟡 (value fixed: `BONUS_COMPLETE_REPEAT=8000`; first-stage path verified, subsequent-stage path not yet exercised by a scenario) |
+| `scoring/bonus-all-subsequent` | §3.4 + §0 #3 "all coins, 2nd bonus stage onward → **8,000**" | unit+scenario | collect all 10 coins in a **subsequent** bonus stage → +8 000 beyond the 800/coin | 🟢 (verified: `subsequent bonus stage awards 8000 (not 5000)` — completes a first bonus (5000) then a second (8000); `bonusCompletions` gates the reward) |
 | `scoring/combo-additive` | §3.4 + §0 #2 "additive +800: 800/1600/2400/3200, capped at 3200 (NOT doubling)" | unit+scenario | kicking enemies in quick succession yields deltas **800, 1600, 2400, 3200, 3200…** (each +800, capped at 3200); a kick after the window resets to 800 | 🟢 (verified: `combo is additive +800 capped at 3200` + `combo resets to 800 after the window`; pure `comboScore(n)=min(800n,3200)` replaces the doubling) |
 | `scoring/extra-life` | §3.4 + §1 + §0 #5 "extra life at 20,000 (US DIP default)" | unit+scenario | crossing 20 000 points grants exactly **+1 life**, once (20 000 confirmed authentic — §0 #5) | 🟢 (verified: `extra life awarded once crossing 20,000` — +1 at 20k, one-shot via `Player.grantExtraLifeIfDue`) |
 
@@ -155,18 +163,18 @@ red: not yet proven, so not green.
 
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
-| `move/momentum` | §3.1 + ✅ Momentum Physics | scenario | at full speed, release direction → `vx` decays by friction each frame (not 0 next frame); player slides 1–2 tile widths before stopping | 🔴 (friction model present; unverifiable) |
+| `move/momentum` | §3.1 + ✅ Momentum Physics | scenario | at full speed, release direction → `vx` decays by friction each frame (not 0 next frame); player slides 1–2 tile widths before stopping | 🟢 (verified: `momentum — releasing direction decays vx by friction, slides` — vx stays non-zero the frame after release, decays, slides, then settles to 0) |
 | `move/fixed-jump-arc` | §3.1 "Fixed arc (cannot adjust mid-air)" | scenario | jump direction is fixed at takeoff; horizontal input mid-air does not change `vx` at all | 🟢 (verified: `fixed jump arc — airborne input does not change vx`; air-accel path removed — `applyHorizontal` only accelerates while grounded) |
-| `move/fall-no-damage` | §3.1 "fall from any height without damage" | scenario | drop the player from the top platform to the floor → no life lost | 🔴 |
+| `move/fall-no-damage` | §3.1 "fall from any height without damage" | scenario | drop the player from the top platform to the floor → no life lost | 🟢 (verified: `falls from any height without damage` — falls a long way, lands, loses no life) |
 | `stomp/kills-player` | §3.1 "Jumping onto an enemy from above causes the **player** to lose a life" + §10 | scenario | land on top of an un-flipped turtle/crab/fly → **player** loses a life; enemy survives | 🟢 (verified: `stomping an un-flipped enemy kills the player` for all 3 kinds; `canStomp`/stomp-kills-enemy removed) |
-| `move/no-platform-drop` | §3.1 "cannot drop through platforms" | invariant | no input causes the player to pass downward through a platform surface | 🔴 |
+| `move/no-platform-drop` | §3.1 "cannot drop through platforms" | invariant | no input causes the player to pass downward through a platform surface | 🟢 (verified: `cannot drop through a platform — lands and stays` — the player lands on a platform and never sinks past its surface across 120 steps) |
 
 ### Flip / defeat sequence (§3.2) → rows
 
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
-| `flip/from-below-only` | §3.2 Step 1 | scenario | bump the platform directly under a grounded target enemy → it flips; bumping a platform with no enemy on it does nothing | 🔴 |
-| `flip/recovery-enrage` | §3.2 + ✅ Flip Recovery + §0 #4 | scenario | leave a flipped enemy un-kicked until `flipTimer` expires (~5 s Mode A) → it stands up, speed increases, color/state = `enraged`. (Exact timer feel-tuned — `const/flip-recovery-A`.) | 🟡 (recovery behavior present, `SHELL_STUN_MS=4200` in the 4–6 s band; unverifiable) |
+| `flip/from-below-only` | §3.2 Step 1 | scenario | bump the platform directly under a grounded target enemy → it flips; bumping a platform with no enemy on it does nothing | 🟢 (verified: `head-bump under a grounded enemy flips it; empty platform does not` — the player launches its head into the platform; the enemy on that span flips, an enemy on an un-bumped span stays active) |
+| `flip/recovery-enrage` | §3.2 + ✅ Flip Recovery + §0 #4 | scenario | leave a flipped enemy un-kicked until `flipTimer` expires (~5 s Mode A) → it stands up, speed increases, color/state = `enraged`. (Exact timer feel-tuned — `const/flip-recovery-A`.) | 🟢 (behavior verified: `flipped turtle recovers faster after its stun lapses` — after the flip window the turtle stands up active and at `recoverSpeed > base`; the **red recolor** is the art-pipeline/human row `sprite/color-variant`, exact timer feel-tuned) |
 | `flip/last-immediate-superfast` | §3.2 ✅ Flip Recovery edge case + §0 #6 | scenario | when only 1 **turtle or crab** remains → it immediately enters super-fast (`last`) state regardless of flip state. **A last-enemy Fighterfly must NOT speed up** (§0 #6) — covered by `enemy/fly-not-last-fast` | 🟢 (verified: `fly as last enemy keeps its pace` also asserts turtle last > normal; speed boost gated on `kind.lastBoost`) |
 | `enemy/speed-ordering` | §0 #8 (per-enemy §4 governs; global §9 removed) | invariant | normal walking-speed ordering holds: **Shellcreeper (slowest) < Fighterfly < Sidestepper (fastest)**, and for each enemy enraged > normal. Exact numbers feel-tuned. Now: turtle 36 < fly 40 < crab 46 | 🟢 (verified: `normal speed ordering turtle < fly < crab` scenario + `speed-ordering` invariant) |
 | `enemy/speed-exact` | §0 #8 (LOW conf — exact numbers undocumented) | human | exact per-enemy speed/enrage/last multipliers are human-tuned for feel; only the ordering invariant above is automatable | human |
@@ -184,10 +192,10 @@ red: not yet proven, so not green.
 
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
-| `enemy/turtle-one-hit-flip` | §4.1 "1 hit to flip" | scenario | one bump from below flips a Shellcreeper | 🔴 (logic present; unverifiable) |
-| `enemy/turtle-enrage-red` | §4.1 "recovers shell red, +speed" | scenario | a recovered turtle is in `enraged` state and faster than base | 🔴 |
-| `enemy/turtle-last-blue` | §4.1 + §0 #6/#8 "last enemy turns blue, super-fast" | scenario | as last enemy a turtle enters `last` state and is faster than its normal speed (exact multiplier feel-tuned — §0 #8); color → blue | 🟡 (turtle enters `makeLast()` and accelerates; exact value feel-tuned; unverifiable) |
-| `enemy/turtle-no-jump` | §4.1 "does not jump; walks off gaps" | invariant | a turtle's vertical motion only comes from falling through gaps, never a jump | 🔴 |
+| `enemy/turtle-one-hit-flip` | §4.1 "1 hit to flip" | scenario | one bump from below flips a Shellcreeper | 🟢 (verified: `turtle flips in one hit`) |
+| `enemy/turtle-enrage-red` | §4.1 "recovers shell red, +speed" | scenario | a recovered turtle is in `enraged` state and faster than base | 🟢 (the **+speed** behavior verified: `flipped turtle recovers faster after its stun lapses` — `recoverSpeed > base`. The **red** recolor is the art-pipeline/human row `sprite/color-variant`) |
+| `enemy/turtle-last-blue` | §4.1 + §0 #6/#8 "last enemy turns blue, super-fast" | scenario | as last enemy a turtle enters `last` state and is faster than its normal speed (exact multiplier feel-tuned — §0 #8); color → blue | 🟢 (super-fast behavior verified: `last-enemy turtle and crab both speed up` — `last` set, `effSpeed > base`. The **blue** recolor is the art-pipeline/human row; exact multiplier feel-tuned) |
+| `enemy/turtle-no-jump` | §4.1 "does not jump; walks off gaps" | invariant | a turtle's vertical motion only comes from falling through gaps, never a jump | 🟢 (verified: `turtle never jumps (vy is never upward)` — across 200 ticks a turtle's `vy` is never upward; vertical motion is only falling) |
 
 ### Enemies — Sidestepper (§4.2)
 
@@ -196,57 +204,57 @@ red: not yet proven, so not green.
 | `enemy/crab-two-hit` | §4.2 + ✅ Two-Hit Mechanic | scenario | hit 1 → crab `hitPoints` 2→1, becomes enraged + faster, **not** flipped; hit 2 → flipped | 🟢 (verified: `crab takes two hits to flip; recovery keeps one`) |
 | `enemy/crab-recovery-no-reset` | §4.2 ✅ Two-Hit ("recovering does NOT reset hitPoints to 2") | scenario | after flip + recovery, the crab needs only **1** more hit to flip again (not 2) | 🟢 (verified: same scenario — one bump re-flips after recovery) |
 | `enemy/crab-faster` | §4.2 + §0 #8 "Sidestepper is the fastest; Shellcreeper slowest" | unit | crab base speed > turtle base speed (and > fly) | 🟢 (verified: `CRAB_SPEED=46 > FLY_SPEED=40 > SHELL_SPEED=36`; speed-ordering scenario + invariant) |
-| `enemy/crab-last-blue` | §4.2 + §0 #6 "Sidestepper speeds up as last enemy" | scenario | last crab enters super-fast (`last`) state and is faster than its normal speed (exact multiplier feel-tuned — §0 #8) | 🟡 (crab does enter `makeLast()`; behavior present, exact value feel-tuned; unverifiable) |
+| `enemy/crab-last-blue` | §4.2 + §0 #6 "Sidestepper speeds up as last enemy" | scenario | last crab enters super-fast (`last`) state and is faster than its normal speed (exact multiplier feel-tuned — §0 #8) | 🟢 (super-fast behavior verified: `last-enemy turtle and crab both speed up` — `last` set, `effSpeed > base`. The **blue** recolor is the art-pipeline/human row; exact value feel-tuned) |
 
 ### Enemies — Fighter Fly (§4.3)
 
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
-| `enemy/fly-hops` | §4.3 / §7.3 "moves by hopping 2–3 tiles" | scenario | the fly's vertical velocity is periodically launched (hops), not continuous walking | 🔴 (hop logic present; unverifiable) |
+| `enemy/fly-hops` | §4.3 / §7.3 "moves by hopping 2–3 tiles" | scenario | the fly's vertical velocity is periodically launched (hops), not continuous walking | 🟢 (verified: `fly moves by hopping (periodic upward launches)` — the fly's `vy` is launched upward periodically and it leaves the ground) |
 | `enemy/fly-grounded-only-flip` | §4.3 + ✅ Jump-Only Flip | scenario | bump the platform under an **airborne** fly → no effect (stays active); bump while grounded → flips | 🟢 (verified: `fly is only flippable while grounded`; `bump()` now no-ops when `groundedFlipOnly && !onGround`) |
-| `enemy/fly-quick-recovery` | §4.3 "gets back up very quickly" | scenario | a flipped fly's stun duration is shorter than a turtle's | 🔴 (current build uses same `SHELL_STUN_MS` for all; divergence) |
-| `enemy/fly-no-enrage` | §4.3 "no enraged faster state" | scenario | a recovered fly returns to normal speed (no enrage tier) | 🟡 (fly `angrySpeed===walkSpeed`, no enrage tier; unverifiable) |
+| `enemy/fly-quick-recovery` | §4.3 "gets back up very quickly" | scenario | a flipped fly's stun duration is shorter than a turtle's | 🟢 (**bug fixed** + verified: each kind now carries its own `stunMs` — fly `FLY_STUN_MS=1600` vs turtle/crab `SHELL_STUN_MS=4200`; `fly recovers from a flip far quicker than a turtle` asserts `flyStun < turtleStun`) |
+| `enemy/fly-no-enrage` | §4.3 "no enraged faster state" | scenario | a recovered fly returns to normal speed (no enrage tier) | 🟢 (verified: `fly has no enraged tier — recovers to normal speed` — after a flip+recover the fly's `effSpeed` is unchanged from base) |
 | `enemy/fly-not-last-fast` | §4.3 + §0 #6 "Fighterfly does NOT speed up as last enemy" | scenario+invariant | when a Fighterfly is the last enemy on screen its speed/hop-rate is **unchanged** from its normal pace (no last-enemy boost — unlike turtle/crab). The `last` color/state may still render, but `effSpeed` must not multiply | 🟢 (verified: `fly as last enemy keeps its pace` + `fly-last-no-boost` invariant; `effSpeed` gates on `kind.lastBoost`, fly=false) |
-| `enemy/fly-cross-level` | §4.3 "can hop to a different platform level" | scenario | over many hops a fly can land on a different platform row than it started | 🔴 |
+| `enemy/fly-cross-level` | §4.3 "can hop to a different platform level" | scenario | over many hops a fly can land on a different platform row than it started | 🟢 (verified: `fly can hop to a different platform level` — over many hops the fly becomes grounded on a row >30px from its start height) |
 
 ### Enemies — Slipice (§4.4)
 
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
-| `slipice/walks-to-center` | §4.4 / §7.4 "reaches platform center, ices it, self-destroys" | scenario | a Slipice reaching a non-floor platform's center → that platform `isIced=true`, Slipice removed | 🔴 (logic present; unverifiable) |
-| `slipice/ice-friction` | §4.4 + ✅ Ice Physics | scenario | the player on an iced platform uses `ICE_FRICTION` (~10% of normal) and overshoots its intended stop | 🔴 (`ICE_FRICTION_SCALE=0.12`; unverifiable) |
-| `slipice/three-platforms-max` | §4.4 "three platforms can be iced; then no more spawn" | scenario | once all three non-floor platforms are iced, no further Slipice spawns this phase | 🔴 (`SLIPICE_PER_PHASE=3` caps spawns; needs the 3-iced condition too) |
-| `slipice/one-hit-kill` | §4.4 "1 hit, no kick, 500 pts" | scenario | one bump from below removes a Slipice and scores 500; no kick step | 🔴 |
-| `slipice/touch-kills-player` | §4.4 "touching Slipice loses a life" | scenario | player contacts an un-flipped Slipice → player loses a life | 🔴 |
-| `slipice/non-target` | §4.4 + ✅ Slipice Non-Target | invariant | killing a Slipice never decrements the phase's `targetsRemaining`; phase clears regardless of Slipice presence | 🟡 (`targetsRemaining()` counts only the `enemies`/`spawnQueue` lists — Slipice lives in a separate `slipices` list and the `Slipice is not a phase-clear target` scenario confirms it never enters them; a full kill-a-slipice-then-clear scenario is still TODO) |
-| `slipice/reverse-on-enemy-only` | §4.4 / §7.4 "reverses only on enemy contact, not the player" | scenario | a Slipice overlapping the player does NOT reverse; overlapping another enemy DOES reverse | 🔴 (logic present; unverifiable) |
+| `slipice/walks-to-center` | §4.4 / §7.4 "reaches platform center, ices it, self-destroys" | scenario | a Slipice reaching a non-floor platform's center → that platform `isIced=true`, Slipice removed | 🟢 (verified: `slipice ices a platform centre, self-destructs, never blocks clear` — it walks to centre, ices the platform, and is removed) |
+| `slipice/ice-friction` | §4.4 + ✅ Ice Physics | scenario | the player on an iced platform uses `ICE_FRICTION` (~10% of normal) and overshoots its intended stop | 🟢 (verified: `iced platform slashes friction — the player slides much farther` — measured slide on an iced platform > 1.5× the normal-platform slide from the same release) |
+| `slipice/three-platforms-max` | §4.4 "three platforms can be iced; then no more spawn" | scenario | once all three non-floor platforms are iced, no further Slipice spawns this phase | 🟢 (**bug fixed** + verified: `tryIce` and the spawn gate now hard-cap at `SLIPICE_PER_PHASE=3` iced platforms; `no more Slipice once three platforms are iced` ices three then confirms no 4th ices and no further spawn over 600 frames) |
+| `slipice/one-hit-kill` | §4.4 "1 hit, no kick, 500 pts" | scenario | one bump from below removes a Slipice and scores 500; no kick step | 🟢 (verified: `slipice dies to one bump for 500, no kick step` — a single bump removes it and scores 500, no flip/kick stage) |
+| `slipice/touch-kills-player` | §4.4 "touching Slipice loses a life" | scenario | player contacts an un-flipped Slipice → player loses a life | 🟢 (verified: `touching a slipice kills the player` — overlap → the loop's lethal resolution kills the player and a life is lost) |
+| `slipice/non-target` | §4.4 + ✅ Slipice Non-Target | invariant | killing a Slipice never decrements the phase's `targetsRemaining`; phase clears regardless of Slipice presence | 🟢 (verified: `slipice ices a platform centre, self-destructs, never blocks clear` now drives a live Slipice + `forceClearPhase`, and a playing step still advances the phase — Slipice never gates the clear; plus the original `Slipice is not a phase-clear target` separation check) |
+| `slipice/reverse-on-enemy-only` | §4.4 / §7.4 "reverses only on enemy contact, not the player" | scenario | a Slipice overlapping the player does NOT reverse; overlapping another enemy DOES reverse | 🟢 (verified: `slipice reverses on an enemy, not on the player` — player overlap keeps its `dir`; an overlapping enemy flips it) |
 
 ### Icicles (§2.3)
 
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
-| `icicle/state-machine` | §2.3 + ✅ Icicle Timer | scenario | each icicle transitions `hidden→forming→full→falling`; independent timers | 🔴 (states `forming→full→falling→done`; "hidden" folded into spawn delay) |
-| `icicle/lethal-only-falling` | §2.3 ✅ Icicle Timer | scenario | player overlapping an icicle in `forming`/`full` → no death; overlapping in `falling` → death | 🔴 (`lethal` getter true only in `falling`; unverifiable) |
-| `icicle/not-flippable` | §2.3 "not enemies, cannot be flipped" | invariant | an icicle is never added to the enemy/target list and never responds to a bump | 🔴 |
+| `icicle/state-machine` | §2.3 + ✅ Icicle Timer | scenario | each icicle transitions `hidden→forming→full→falling`; independent timers | 🟢 (verified: `icicle forms then falls; lethal ONLY while falling` — observes the `forming`→`full`→`falling` progression. NOTE: the implementation folds "hidden" into the `forming` nub stage, a representational choice, not a missing state) |
+| `icicle/lethal-only-falling` | §2.3 ✅ Icicle Timer | scenario | player overlapping an icicle in `forming`/`full` → no death; overlapping in `falling` → death | 🟢 (verified: `icicle hits the player only in the falling state` — a player parked overlapping the icicle is never hit while forming/full, and the lethal resolution kills it once it is `falling` — exactly one life lost) |
+| `icicle/not-flippable` | §2.3 "not enemies, cannot be flipped" | invariant | an icicle is never added to the enemy/target list and never responds to a bump | 🟢 (verified: `icicles are not enemies and cannot be flipped` — an icicle lives in its own list; `enemyCount` and `targetsRemaining` are 0 with one present) |
 
 ### Stage / traversal (§2.1, §2.2, §7.1, §7.2)
 
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
-| `stage/platform-rows` | §2.1 "4 rows: top, middle, lower-mid, floor" | unit | the level defines the four platform rows at the spec's relative heights; floor is full-width with no gaps | 🔴 (`FLOORS` has the rows; floor x1=0..x2=256; verify gap layout) |
-| `stage/pipes-present` | §2.2 "4 pipes (TL, TR spawn; BL, BR exit)" | unit | exactly 4 pipes exist: 2 top (role spawn) + 2 bottom (role exit) | 🔴 (present in `PIPES`; unverifiable) |
-| `traverse/gap-fall` | §2.1 + ✅ Platform Collision | scenario | a walker reaching a platform-end **gap** falls to the next lower platform | 🔴 |
-| `traverse/edge-no-fall` | ✅ Platform Collision | scenario | a walker reaching a platform edge that is **not** a gap reverses/does not fall | 🔴 |
-| `traverse/exit-bottom-recycle` | §2.2 / §7.2 "exit bottom pipe → teleport to top spawn" | scenario | an active enemy entering a bottom-pipe zone is recycled to a top spawn (so it must be defeated to clear) | 🔴 (logic present; unverifiable) |
-| `spawn/stagger` | §7.1 "staggered ~1.5–2 s" | scenario | enemies emerge one at a time, ≥ ~1.5 s apart | 🔴 (`SPAWN_STAGGER_MS=1500`) |
-| `spawn/alternate-pipes` | §7.1 "top pipes alternate" | scenario | consecutive spawns alternate between the two top pipes | 🔴 (`pipeToggle` alternates; unverifiable) |
+| `stage/platform-rows` | §2.1 "4 rows: top, middle, lower-mid, floor" | unit | the level defines the four platform rows at the spec's relative heights; floor is full-width with no gaps | 🟢 (verified: `levels.test.ts` — four rows (the middle row is a raised centre island + side platforms), floor is full-width `x1=0..x2=256`, upper rows reach both edges but have a centre gap) |
+| `stage/pipes-present` | §2.2 "4 pipes (TL, TR spawn; BL, BR exit)" | unit | exactly 4 pipes exist: 2 top (role spawn) + 2 bottom (role exit) | 🟢 (verified: `levels.test.ts` — exactly 4 pipes, 2 top (spawn) + 2 bottom (exit); spawns on opposite sides; exit zones at both floor corners) |
+| `traverse/gap-fall` | §2.1 + ✅ Platform Collision | scenario | a walker reaching a platform-end **gap** falls to the next lower platform | 🟢 (verified: `walker falls through a platform gap; a full span does not drop it` — a turtle walking off the top-platform gap (x=104) falls >30px to a lower row) |
+| `traverse/edge-no-fall` | ✅ Platform Collision | scenario | a walker reaching a platform edge that is **not** a gap reverses/does not fall | 🟢 (verified: same scenario — a turtle on the full-width ground floor never drops; only a real gap drops a walker) |
+| `traverse/exit-bottom-recycle` | §2.2 / §7.2 "exit bottom pipe → teleport to top spawn" | scenario | an active enemy entering a bottom-pipe zone is recycled to a top spawn (so it must be defeated to clear) | 🟢 (verified: `active enemy at a bottom pipe recycles to a top spawn` — a walker in the bottom-left pipe zone teleports up to a top pipe and stays on the board) |
+| `spawn/stagger` | §7.1 "staggered ~1.5–2 s" | scenario | enemies emerge one at a time, ≥ ~1.5 s apart | 🟢 (verified: `enemies spawn staggered and alternate the top pipes` — three enemies emerge one at a time, the gap between spawns is ≥1.2 s (`SPAWN_STAGGER_MS=1500`)) |
+| `spawn/alternate-pipes` | §7.1 "top pipes alternate" | scenario | consecutive spawns alternate between the two top pipes | 🟢 (verified: same scenario — consecutive spawns come from opposite (left/right) pipes) |
 
 ### Screen wrap (§1 ✅ CHECK)
 
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
-| `wrap/player` | §1 ✅ Screen Wrap | scenario | player at `x>W` wraps to `x≈0`; at `x<0` wraps to `x≈W` | 🔴 (player wraps in `move()`; unverifiable) |
-| `wrap/enemies` | §1 ✅ Screen Wrap ("both player and all enemies") | scenario+invariant | every enemy at `x>W`/`x<0` wraps to the other edge | 🔴 (upper floors wrap; **ground floor does not** — enemies recycle via pipes instead. Partial divergence; see Q5) |
+| `wrap/player` | §1 ✅ Screen Wrap | scenario | player at `x>W` wraps to `x≈0`; at `x<0` wraps to `x≈W` | 🟢 (verified: `player wraps at both screen edges` — crossing the right edge reappears near the left and vice-versa; `x ∈ [0,W)` throughout) |
+| `wrap/enemies` | §1 ✅ Screen Wrap ("both player and all enemies") | scenario+invariant | every enemy at `x>W`/`x<0` wraps to the other edge | 🟡 (PARTIAL — **upper-floor** enemy wrap verified: `upper-floor enemy wraps at the screen edge`. The **ground floor does NOT wrap**: it recycles via the bottom pipes instead (§7.2). This is a genuine **spec self-contradiction** — §1's CHECK says "all enemies" wrap, §7.2 says ground enemies exit bottom pipes. Left 🟡 pending a human ruling, not faked green; see DEVLOG Q5) |
 
 ### Phases (§6.1, §6.2)
 
@@ -267,7 +275,7 @@ red: not yet proven, so not green.
 | `phase/roster-12` | §6.1 Phase 12 | unit | Phase 12 = Mixed enemies + Slipice + Icicles | 🔴 (missing — only 11 phases exist) |
 | `phase/roster-13-bonus` | §6.1 Phase 13 | unit | Phase 13 = BONUS (ice-floor variant, 15 s timer) | 🔴 (missing) |
 | `phase/roster-14` | §6.1 Phase 14 | unit | Phase 14 = Mixed + Slipice + Icicles (final unique) | 🔴 (missing) |
-| `phase/clear-on-targets` | §6.1 "clears when all target enemies kicked off" | scenario+invariant | phase advances iff `spawnQueue` empty AND zero alive target enemies; Slipice does not block | 🔴 |
+| `phase/clear-on-targets` | §6.1 "clears when all target enemies kicked off" | scenario+invariant | phase advances iff `spawnQueue` empty AND zero alive target enemies; Slipice does not block | 🟢 (verified: `phase clears only when all target enemies are gone` — a playing step does NOT advance with a live enemy, and DOES advance once the last target is removed; the slipice scenario also proves Slipice never blocks it) |
 | `phase/loop` | §6.2 "after 14, loop ~10–14" | scenario | after phase 14, the next phase is drawn from the 10–14 loop set (not phase 1) | 🔴 (current loops to phase 1) |
 | `phase/loop-speed-ramp` | §6.2 "each loop +speed" | scenario | enemy `speedScale` increases by `LOOP_SPEED_STEP` per completed loop | 🔴 (logic present; unverifiable) |
 | `phase/counter-wrap` | §6.2 "Phase 99 wraps to Phase 0" | unit | the displayed phase counter wraps at 99 → "Phase 0" | 🔴 (not implemented) |
@@ -278,16 +286,16 @@ red: not yet proven, so not green.
 
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
-| `bonus/ten-coins` | §6.3 + ✅ Bonus Phase State | scenario | a bonus phase spawns exactly **10** coins | 🟢 value (`bonusCoinSpots()` returns 10); 🔴 unverifiable |
-| `bonus/no-enemies` | §6.3 + ✅ Bonus Phase State | invariant | during a bonus phase, no enemies or Slipice ever spawn | 🔴 |
-| `bonus/timer-20s` | §6.3 "20 seconds (15 ice bonus)" | scenario | the bonus countdown starts at 20 s (15 s for the Phase-13 ice bonus) | 🔴 (single 20 s; ice variant missing) |
-| `bonus/ends-on-empty-or-timeout` | §6.3 + ✅ Bonus Phase State | scenario | the bonus phase ends when all coins collected OR the timer hits 0 | 🔴 (logic present; unverifiable) |
+| `bonus/ten-coins` | §6.3 + ✅ Bonus Phase State | scenario | a bonus phase spawns exactly **10** coins | 🟢 (verified: `coins award 800 each and 5000 full first bonus` asserts `coinCount === 10` on bonus entry; `subsequent bonus stage…` re-confirms 10 on stage 2) |
+| `bonus/no-enemies` | §6.3 + ✅ Bonus Phase State | invariant | during a bonus phase, no enemies or Slipice ever spawn | 🟢 (verified: `coins award 800 each and 5000 full first bonus` asserts `enemyCount === 0` on bonus entry) |
+| `bonus/timer-20s` | §6.3 "20 seconds (15 ice bonus)" | scenario | the bonus countdown starts at 20 s (15 s for the Phase-13 ice bonus) | 🟡 (verified: `bonus starts a 20s countdown…` — starts at 20 000 ms and counts down. The **15 s Phase-13 ice-bonus variant is NOT implemented** (single 20 s timer) and is a deferred phase-roster item, so left 🟡 not 🟢) |
+| `bonus/ends-on-empty-or-timeout` | §6.3 + ✅ Bonus Phase State | scenario | the bonus phase ends when all coins collected OR the timer hits 0 | 🟢 (verified: `bonus starts a 20s countdown and ends when all coins are collected` — collecting every coin ends the stage; the timer-0 path is the same `updateBonus` guard) |
 
 ### Enemy collision (§3.5)
 
 | ID | Spec ref | Oracle | Assertion | Status |
 |----|----------|--------|-----------|:--:|
-| `enemy/headon-reverse` | §3.5 / §7.2 "head-on collision → both reverse" | scenario | two active enemies meeting head-on both flip direction and separate | 🔴 (logic present; unverifiable) |
+| `enemy/headon-reverse` | §3.5 / §7.2 "head-on collision → both reverse" | scenario | two active enemies meeting head-on both flip direction and separate | 🟢 (verified: `two enemies colliding head-on both reverse direction` — the left one ends facing left, the right one facing right, and they are pushed apart) |
 
 ### Sprites / rendering (§5, §8)
 

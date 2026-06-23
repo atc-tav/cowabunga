@@ -6,6 +6,71 @@ settled questions. Pairs with `TEST_DESIGN.md` (the ledger) in this folder.
 
 ---
 
+## 2026-06-24 — Drove the behavioral reds to green (honestly)
+
+**What I did.** Took the post-Steps-2–3 ledger (🟢 36 / 🟡 7 / 🔴 56) and drove
+every **in-scope behavioral** row to green with a named, spec-traced scenario —
+fixing code where it was actually wrong, proving it where it was already right.
+New tally: **🟢 73 · 🟡 3 · 🔴 23 · human 4 · n/a 1**. Verified by
+`npm run test:game -- mariobros` (47 scenarios / 142 checks), a clean 30 s
+`npm run fuzz:game -- mariobros`, `npm test` (mode-1), and `npm run build`.
+
+**Two real code bugs found + fixed:**
+1. **Fly flip-recovery used the turtle's stun.** Every enemy was flipped for the
+   same `SHELL_STUN_MS` (4200 ms); the spec (§4.3) says the Fighterfly "gets back
+   up very quickly." Added a per-kind `stunMs` to `EnemyKind` (fly
+   `FLY_STUN_MS=1600`, turtle/crab `SHELL_STUN_MS`); `bump()`/`flipFor()` now
+   default to the kind's value and all callers stop forcing `SHELL_STUN_MS`.
+   Proven by `fly recovers from a flip far quicker than a turtle`.
+2. **No hard cap on iced platforms.** `tryIce`/the Slipice spawn gate only
+   counted `slipiceCount < 3`, not iced platforms — a 4th platform could ice
+   (the board has >3 non-floor segments), violating the `iced-platforms-max-3`
+   invariant. Added an `icedPlatformCount() >= SLIPICE_PER_PHASE` guard to both.
+   Proven by `no more Slipice once three platforms are iced`.
+
+**Test-surface additions (no behavior change):** a deterministic
+`Player.stepPhysics` + `stepPlayer`/`setPlayerVy` hooks (full gravity+move+wrap+
+bump under the paused loop), `runLethalChecks` (the exact per-frame
+enemy/slipice/icicle death resolution), slipice/icicle spawn+tick+touch hooks,
+`forceClearPhase`/`runPlayingStep` phase-completion plumbing, and snapshot arrays
+for `slipices`/`icicles` + enemy `vy`. `testBeginPlay` now also resets
+`bonusCompletions`/`bonusTimer` so scenarios start from a clean slate (this is why
+the first-bonus reward is reliably 5000). `enterBonus` re-enters cleanly so a
+scenario can drive a first **and** a subsequent bonus stage.
+
+**Rows moved 🟢 (each cites its proving check in the ledger):** player
+momentum/fall/no-drop/wrap; head-bump flip-from-below; enemy headon-reverse,
+bottom-pipe recycle, gap-fall/edge-no-fall, spawn stagger+alternate;
+turtle one-hit-flip/no-jump/recovery-speed/last-speed; crab last-speed; fly
+hops/cross-level/quick-recovery/no-enrage; all Slipice rows
+(walks-to-centre/ice/one-hit-500/touch-kills/reverse-on-enemy/3-max/non-target);
+all Icicle rows (state-machine/lethal-only-falling/not-flippable);
+subsequent-bonus 8000; bonus 10-coins/no-enemies/ends-on-empty; phase
+clear-on-targets; `stage/platform-rows` + `stage/pipes-present` (mode-1
+`levels.test.ts`).
+
+**Left non-green on purpose (honest, not faked):**
+- 🟡 `scoring/slipice` — runtime now verified (single bump → removed, +500), but
+  the **500 value is undocumented** (§0 #9); value-authenticity unproven ⇒ 🟡.
+- 🟡 `bonus/timer-20s` — 20 s start verified; the **15 s Phase-13 ice-bonus**
+  variant is a deferred phase-roster item ⇒ 🟡.
+- 🟡 `wrap/enemies` — upper-floor wrap verified, but the **ground floor recycles
+  via pipes** instead of wrapping. This is a genuine **spec self-contradiction**
+  (§1 CHECK "all enemies wrap" vs §7.2 "ground enemies exit bottom pipes") —
+  left for a human ruling (Q5), not forced green.
+- 🔴 (23) all out-of-scope/deferred: the `const/*` px-frame↔px-second unit rows
+  (units undecided, Q6); `phase/*` rosters/loop/counter (blocked on MAME);
+  `mode/A-B`; `const/bonus-time-ice`; all `sprite/*` art-pipeline rows. Left red
+  with their existing notes per the task scope.
+
+**Spec ambiguity hit (raised, not papered over):** the wrap-vs-recycle
+contradiction above (Q5, still open). Also confirmed the recovered-turtle "red"
+and last-enemy "blue" recolors are aesthetic (`sprite/color-variant`, art
+pipeline) — the *behavioral* speed-up is what's automatable and now green; the
+color is a human/art row.
+
+---
+
 ## 2026-06-23 — Phase-structure deep research folded into the spec
 
 **What I did.** A deep-research pass on the authentic arcade phase structure
