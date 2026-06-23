@@ -14,6 +14,33 @@ Audio. Personal/educational project — not for commercialization.
 > Readiness, Faithfulness, Modularity, Procedural Everything). Start at
 > [`docs/README.md`](docs/README.md) when a decision spans goals.
 
+## ⭐ THE PROCESS (read this before building, fixing, or regenerating any game)
+
+We are a **factory for faithful arcade clones**, and the process *is* the
+product. There is **one rule** that separates our best clone (Arkanoid, 86%
+faithful) from our worst (Donkey Kong, 48% — and it has a *longer* spec):
+
+> **Make the spec executable before you write the game. Don't write the game and
+> then test whatever you happened to write.**
+
+Concretely: from `specs/<game>.md` you build an **Oracle Ledger** — a complete,
+risk-ranked list where every spec mechanic, constant, scoring value, stage, and
+`✅ CHECK` is a checkable row that traces to the spec — **before** writing game
+code, then implement until every row is green. **Faithfulness = % of the ledger
+that is green.** A passing test that doesn't trace to the spec proves nothing
+(that's how Galaga shipped a green suite at 52% faithful).
+
+- **The full process:** [`docs/spec-driven-development.md`](docs/spec-driven-development.md) ← start here
+- **The spec quality bar + lint:** [`specs/SPEC_GUIDE.md`](specs/SPEC_GUIDE.md)
+- **The Oracle Ledger template:** [`src/shared/testkit/TEST_DESIGN.template.md`](src/shared/testkit/TEST_DESIGN.template.md)
+- **The worked example (copy this):** [`src/games/arkanoid/test-design/`](src/games/arkanoid/test-design/)
+- **Commands:** `/new-game <id>`, `/regen-game <id>`, `/spec-lint <id>`
+
+**You are expected to call out missing inputs to a human** (via
+`AskUserQuestion`) the moment a spec is ambiguous, contradicts itself, or a
+`✅ CHECK` can't be made automatable. Guessing silently is how clones come out
+fake. See "Calling out to humans" in the process doc.
+
 ## Key decisions (read before building)
 
 - **Plugins: native Phaser first.** Use built-in Phaser 3.60+ FX
@@ -78,18 +105,29 @@ exercises the whole foundation. Remove or keep as a harness as you like.
 
 ## Adding a game
 
-1. Create `src/games/<name>/` with a scene extending `BaseGameScene` (pass
-   `key`, `gameId`, native `width`/`height`).
-2. Implement `createGame()` and `updateGame(time, delta)`.
-3. Add one entry to `GAMES` in `src/registry.ts`. Done — it's registered and
-   appears in the menu.
-4. **Make it testable.** Add a `buildTestSurface()` to the scene (a `snapshot`
-   + `invariants` + `hooks`, registered under `import.meta.env.DEV`) and a
-   `src/games/<name>/testing/scenarios.mjs`. Then `npm run test:game -- <name>`
-   verifies your game headlessly. This is part of building a game, not an
-   afterthought — follow the checklist in
+> Follow **[THE PROCESS](#-the-process-read-this-before-building-fixing-or-regenerating-any-game)**
+> above — the steps below are the mechanics, not the method. The order is
+> deliberate: **spec → Oracle Ledger → test surface → implement to green.** Do
+> not skip to step 2. Run `/new-game <id>` to have an agent drive this.
+
+0. **Lint the spec** (`specs/<name>.md`) against
+   [`specs/SPEC_GUIDE.md`](specs/SPEC_GUIDE.md); raise every gap/contradiction to
+   a human. No spec → no faithful game (write one first).
+1. **Build the Oracle Ledger** *before any game code*: copy
+   [`src/shared/testkit/TEST_DESIGN.template.md`](src/shared/testkit/TEST_DESIGN.template.md)
+   to `src/games/<name>/test-design/TEST_DESIGN.md`, enumerate every spec
+   section as a spec-traced, risk-ranked row, and get it reviewed.
+2. Create `src/games/<name>/` with a scene extending `BaseGameScene` (pass
+   `key`, `gameId`, native `width`/`height`); implement `createGame()` and
+   `updateGame(time, delta)`; add one entry to `GAMES` in `src/registry.ts`.
+3. **Stand up the test surface.** Add a `buildTestSurface()` to the scene (a
+   `snapshot` + `invariants` + `hooks`, registered under `import.meta.env.DEV`)
+   and `src/games/<name>/testing/scenarios.mjs` (+ `fuzz.mjs`) — wired to the
+   ledger's assertions. Follow the checklist in
    [`src/shared/testkit/README.md`](src/shared/testkit/README.md), using
-   Arkanoid/Galaga as templates.
+   Arkanoid as the template.
+4. **Implement to green.** Build the game chasing the ledger; done = every
+   non-`human` row 🟢 and `npm run test:game -- <name>` + `fuzz:game` pass clean.
 
 Build order for the games themselves: **Pac-Man → Galaga → Donkey Kong →
 Mario Bros. → Dig Dug**, each one slice at a time.

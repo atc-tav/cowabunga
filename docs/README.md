@@ -15,6 +15,15 @@ the decision in front of you.
 | 4 | **Modularity & Reuse** | ~80–90% shared primitives; behavior composes on top. | [modularity.md](./modularity.md) |
 | 5 | **Procedural Everything** | No asset files. Sprites drawn in code, sound synthesized in code. | [procedural-assets-and-audio.md](./procedural-assets-and-audio.md) |
 
+## ⭐ The factory process (read before building any game)
+
+- [spec-driven-development.md](./spec-driven-development.md) — **the most
+  important doc in the repo.** Make the spec executable (an *Oracle Ledger*)
+  *before* writing the game. This single discipline is the difference between
+  our best clone (Arkanoid, 86% faithful) and our worst (Donkey Kong, 48%, with
+  a *longer* spec). The imperatives above are the goals; *this* is the method
+  that actually hits them. Faithfulness (#3) is the outcome; this is the how.
+
 ## Playbooks
 
 Reusable how-tos for cross-cutting features:

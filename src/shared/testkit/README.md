@@ -4,6 +4,14 @@
 > workflow; the implementation lands incrementally. Arkanoid is the first
 > worked example — see `src/games/arkanoid/test-design/TEST_DESIGN.md`.
 
+> **This is the machine; the method that feeds it is
+> [`docs/spec-driven-development.md`](../../../docs/spec-driven-development.md).**
+> `testkit` runs the checks — but *which* checks must exist comes from an
+> **Oracle Ledger** built from the spec *before* the game is written. Tests that
+> don't trace to the spec certify the wrong thing (that's how Galaga went green
+> at 52% faithful). Start a new game's ledger from
+> [`TEST_DESIGN.template.md`](./TEST_DESIGN.template.md).
+
 ## Why this exists
 
 The collection is built by agents, slice by slice. The bottleneck on quality
@@ -111,26 +119,35 @@ invariant violations } → report`.
 
 ## Adapting `testkit` to a new game — the checklist
 
-Onboarding a game is a bounded, mechanical task:
+Onboarding a game is a bounded, mechanical task — **but the order matters.** The
+Oracle Ledger comes *first*, derived from the spec, because it dictates what the
+snapshot and hooks must expose. (Building the surface first, then testing
+whatever it could reach, is how a game goes green while missing half its spec.)
 
-1. **Switch gameplay RNG to `shared/Rng.ts`.** Grep the game for
+1. **Author the Oracle Ledger first** — copy
+   [`TEST_DESIGN.template.md`](./TEST_DESIGN.template.md) to
+   `src/games/<game>/test-design/TEST_DESIGN.md` and fill it **from the spec**
+   (`specs/<game>.md`, linted per `specs/SPEC_GUIDE.md`): the risk map
+   (P0/P1/P2 + human), a spec-traced oracle-per-mechanic table, the invariant
+   catalog, and the scenario list. Every spec section becomes a row. This is the
+   expertise layer and the definition of done — see
+   `docs/spec-driven-development.md`. Get it reviewed before writing game code.
+2. **Switch gameplay RNG to `shared/Rng.ts`.** Grep the game for
    `Math.random` and route it through the injected instance.
-2. **Write `<Game>TestSurface`** implementing `GameTestSurface`:
+3. **Write `<Game>TestSurface`** implementing `GameTestSurface`, shaped by what
+   the ledger's assertions need to read and drive:
    - `snapshot()` — surface the scalar state your assertions need (score,
      lives, phase/flow, entity counts, key flags).
-   - `invariants()` — encode the "can never be true" list for this game
+   - `invariants()` — encode the ledger's "can never be true" list for this game
      (see the Arkanoid catalog as a template: bounds, conservation counts,
      mutually-exclusive flags, no overlaps, known-state-only).
    - `hooks` — the minimum set of deterministic seams your scenarios need to
      reach interesting states quickly (skip-to-level, spawn, force-drop, etc.).
-3. **Author a `test-design/TEST_DESIGN.md`** for the game: the risk map
-   (P0/P1/P2 + human), an oracle-per-mechanic table, the invariant catalog,
-   and the scenario list. This is the expertise; write it from knowing the
-   game, not from a template.
 4. **Register the surface** behind the test-build flag.
-5. Reuse the shared harness, scenario runner, and human-pack generator as-is.
+5. **Implement the game to green** against the ledger; reuse the shared harness,
+   scenario runner, and human-pack generator as-is.
 
-If steps 1–2 feel hard for a game, that is usually a *design* signal: state
+If steps 2–3 feel hard for a game, that is usually a *design* signal: state
 that can't be snapshotted or seams that can't be reached often means logic is
 tangled into rendering and should be teased apart anyway.
 
