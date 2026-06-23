@@ -95,6 +95,96 @@ template is
 > it is literally how we scored these games. The ledger turns "is it faithful?"
 > from a human gut-check into a number you can watch climb.
 
+## Spec vs. ledger — a worked comparison
+
+New to the idea? Here is the distinction in one line, then the same mechanic
+shown in both forms.
+
+- A **spec** is *prose that describes the game* — what it **is**.
+- A **ledger** is *an enumerated checklist of verifiable claims derived from the
+  spec* — what must be **true**, **how you check each**, and **whether it's true
+  yet**.
+
+The ledger is a **function of the spec**: a lossless, executable *projection* of
+it. Every row traces back to a spec line; every spec line should land in ≥1 row
+(that's what the §0 coverage map proves). The spec is the source of truth for
+**intent**; the ledger is the source of truth for **done**.
+
+| | **Spec** (`specs/<game>.md`) | **Oracle Ledger** (`test-design/TEST_DESIGN.md`) |
+|---|---|---|
+| Form | Narrative prose + tables | Rows: `id · spec-ref · oracle · assertion · status` |
+| Answers | "What is this game?" | "Is this row true yet, and how do I know?" |
+| Author | Human / consultant (once) | Agent drafts from spec → human vets (per game) |
+| Changes during build? | No (frozen intent) | Yes — status flips 🔴→🟢 as you implement |
+| Completeness test | Subjective ("reads thorough") | Objective: every spec section has a row |
+| Can be vague? | Yes, and often is | No — every row is a checkable predicate or `human` |
+| Proves | Nothing by itself | Faithfulness = % of rows green |
+
+### One spec sentence → many checkable rows
+
+Real DOH-boss text from `specs/arkanoid.md` §7.2:
+
+> **Invulnerability:** DOH is only vulnerable to the **ball** — lasers have no
+> effect on him. `✅ CHECK — DOH Death Sequence:` … verify the victory sequence
+> only plays when the 16th hit is by the ball (not a laser). Constants:
+> `dohHitsRequired: 16`, `dohHitPoints: 1000`.
+
+That prose is *descriptive* — readable, but you can't run it, and "only
+vulnerable to the ball" is exactly the kind of sentence a build nods along to
+and then quietly violates. The ledger expands the same intent into rows you can
+execute:
+
+| ID | Spec ref | Oracle | Assertion (state-based) | Status |
+|----|----------|--------|--------------------------|:--:|
+| `doh/sixteen-hits-to-victory` | §7.2 + `dohHitsRequired:16` | scenario | skip→33, inject 16 ball hits → `dohHits` 16→0; `flow→victory` on the 16th | 🟢 |
+| `doh/laser-no-effect` | §7.2 + ✅ CHECK | scenario | fire laser at DOH → `dohHits` **unchanged**; beam consumed | 🟢 |
+| `doh/hit-points` | const `dohHitPoints:1000` | unit | each ball hit → `score += 1000` | 🟢 |
+| `doh/projectile-instant-kills` | ✅ CHECK | scenario | projectile hits Vaus → `flow→dying` regardless of ball count | 🟢 |
+| `inv/doh-hits-monotonic` | §7.2 | invariant | `dohHits ∈ [0,16]` and only ever **decreases**, never via a laser | 🟢 |
+
+**One paragraph of spec → five independent checks**, one of them an invariant
+verified on every frame of random play. "Lasers have no effect" stops being a
+sentence everyone agrees with and becomes a test that fails loudly the day
+someone wires laser damage to the boss.
+
+### How to build a ledger efficiently (the passes)
+
+It's mechanical, not creative — which is why an agent can draft it and a human
+can vet it fast. Make **structured passes**, each harvesting one row-type:
+
+1. **Constants table → `unit` rows.** Every named value, one assertion each.
+   Cheapest, least flaky. (~near-automatic.)
+2. **Scoring table → `unit` rows.** Every point value, multiplier, extra-life
+   threshold. *(This pass alone catches Mario Bros.' every-value-wrong scoring.)*
+3. **Every `✅ CHECK` → one P0/P1 row**, lifted 1:1 — the spec author already
+   pre-chewed these into assertions.
+4. **Every stage / level / phase → a presence row** ("stage N exists and is
+   reachable"). *(This makes DK's missing 75m stage an unmissable red row.)*
+5. **Every mechanic heading → behavior rows + invariants.** The judgment part:
+   turn "enemy deflects the ball" into "ball's vx,vy both invert, enemy
+   survives."
+6. **Sprites → mostly `human` rows.** Readability isn't automatable.
+
+Then **risk-rank** (P0/P1/P2/human) and fill the §0 coverage map — if a spec
+section has no row, the ledger is incomplete *and you know it before writing
+code*. A first ledger for a ~750-line spec is ~60–90 rows; passes 1–4 are
+turn-the-crank.
+
+### Why the ledger is the lever for designing and vetting agents
+
+- **It's your inspection point *before any code exists*.** You don't read 2,000
+  lines of game code to judge whether an agent understood Galaga — you read its
+  ledger. No `morph-enemies` row ⇒ the agent didn't understand the spec, caught
+  in five minutes for the price of a review instead of a rebuild.
+- **It turns "is it good?" into a number** — the status column is an objective
+  faithfulness %, not the agent's opinion of "done."
+- **It localizes failure** — a red row names exactly what's wrong and traces to
+  the exact spec line; feedback is "rows X, Y, Z are red," not "it feels off."
+
+So the agent loop is: **lint spec → draft ledger → *human vets the ledger* →
+implement to green → human spot-checks the green.** Vetting the ledger is where
+human attention has the highest leverage.
+
 ## The pipeline (the sequence that feeds the machine)
 
 Follow these in order. **Do not start a step before the previous one is signed
