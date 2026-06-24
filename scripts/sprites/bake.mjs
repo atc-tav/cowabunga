@@ -23,6 +23,7 @@ import {
   quantize,
   formatLegend,
 } from './quantize.mjs';
+import { intrinsicScale, detectAA } from './density.mjs';
 
 function parseArgs(argv) {
   const out = {};
@@ -76,6 +77,25 @@ const palette = parsePaletteText(paletteText);
 if (palette.length === 0) fail(`no "name: 0xRRGGBB" pairs found in ${palettePath}`);
 
 const img = decodePng(src);
+
+// ---- pixel-cohesion warnings (advisory; never changes exit code) ------------
+// If the source looks ×S upscaled ("fake hi-res") and the user did not already
+// account for it with --cell S, nudge them. If edges are anti-aliased, the atom
+// is already compromised — warn too. See scripts/sprites/density.mjs.
+const cellPassed = args.cell !== undefined;
+const detectedScale = intrinsicScale(img);
+if (detectedScale > 1 && (!cellPassed || cell !== detectedScale)) {
+  console.error(
+    `bake: WARNING: source looks ×${detectedScale} upscaled — did you mean --cell ${detectedScale}?`,
+  );
+}
+const aa = detectAA(img);
+if (aa.isAA) {
+  console.error(
+    `bake: WARNING: ${(aa.softFraction * 100).toFixed(1)}% soft/AA pixels in source — the atom is compromised (soft edges won't bake crisply)`,
+  );
+}
+
 const { rows, legend, usedNames, width, height } = quantize(img, palette, cell);
 
 // ---- emit the snippet -------------------------------------------------------

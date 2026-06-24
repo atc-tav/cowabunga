@@ -13,7 +13,9 @@
     "fuzz:game": "node src/shared/testkit/fuzz-run.mjs",
     "factory:status": "node scripts/factory-status.mjs",
     "sprites:bake": "node scripts/sprites/bake.mjs",
-    "sprites:selftest": "node scripts/sprites/selftest.mjs"
+    "sprites:selftest": "node scripts/sprites/selftest.mjs",
+    "sprites:density": "node scripts/sprites/density.mjs",
+    "sprites:density-selftest": "node scripts/sprites/density-selftest.mjs"
   },
   "dependencies": {
     "phaser": "^3.80.1"
